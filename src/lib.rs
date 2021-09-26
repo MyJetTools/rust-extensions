@@ -1,3 +1,3 @@
 mod task_completion;
 
-pub use task_completion::TaskCompletion;
+pub use task_completion::{TaskCompletion, TaskCompletionAwaiter};
