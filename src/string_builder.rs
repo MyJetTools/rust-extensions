@@ -18,6 +18,10 @@ impl StringBuilder {
         self.buffer.push(b'\n');
     }
 
+    pub fn append_bytes(&mut self, s: &[u8]) {
+        self.buffer.extend(s);
+    }
+
     pub fn append_char(&mut self, c: char) {
         self.buffer.push(c as u8)
     }
