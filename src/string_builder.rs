@@ -22,6 +22,9 @@ impl StringBuilder {
         self.buffer.extend(s);
     }
 
+    pub fn append_byte(&mut self, b: u8) {
+        self.buffer.push(b);
+    }
     pub fn append_char(&mut self, c: char) {
         self.buffer.push(c as u8)
     }
