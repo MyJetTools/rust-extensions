@@ -2,6 +2,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 
+const ONE_SECOND: i64 = 1_000_000;
+
 #[derive(Clone, Copy, Debug)]
 pub struct DateTimeAsMicroseconds {
     pub unix_microseconds: i64,
@@ -32,7 +34,23 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn seconds_before(&self, before: DateTimeAsMicroseconds) -> i64 {
-        (self.unix_microseconds - before.unix_microseconds) / 1000000
+        (self.unix_microseconds - before.unix_microseconds) / ONE_SECOND
+    }
+
+    pub fn add_seconds(&mut self, seconds: i64) {
+        self.unix_microseconds += seconds * ONE_SECOND;
+    }
+
+    pub fn add_minutes(&mut self, minutes: i64) {
+        self.add_seconds(60 * minutes);
+    }
+
+    pub fn add_hours(&mut self, hours: i64) {
+        self.add_minutes(60 * hours);
+    }
+
+    pub fn add_days(&mut self, days: i64) {
+        self.add_hours(24 * days);
     }
 
     pub fn duration_since(&self, before: DateTimeAsMicroseconds) -> Duration {
