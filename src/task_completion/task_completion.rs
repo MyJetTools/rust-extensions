@@ -2,6 +2,12 @@ use tokio::sync::oneshot::{Receiver, Sender};
 
 use super::{CompletionEvent, TaskCompletionAwaiter};
 
+#[derive(Debug)]
+pub enum TaskCompletionError {
+    CanNotSetOkResult(String),
+    CanNotSetErrorResult(String),
+}
+
 pub struct TaskCompletion<OkResult, ErrorResult> {
     pub receiver: Option<Receiver<CompletionEvent<OkResult, ErrorResult>>>,
     pub sender: Option<Sender<CompletionEvent<OkResult, ErrorResult>>>,
@@ -32,14 +38,38 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
         let sender = self.get_sender();
 
         match sender {
-            Some(sender) => {
-                let result = sender.send(CompletionEvent::Ok(result));
-                if let Err(_) = result {
+            Some(sender) => match sender.send(CompletionEvent::Ok(result)) {
+                Ok(_) => {
+                    return;
+                }
+                Err(_) => {
                     panic!("Can not set Ok result to the task completion.");
                 }
-            }
+            },
             None => {
                 panic!("You are trying to set Ok as a result for a second time");
+            }
+        }
+    }
+
+    pub fn try_set_ok(&mut self, result: OkResult) -> Result<(), TaskCompletionError> {
+        let sender = self.get_sender();
+
+        match sender {
+            Some(sender) => match sender.send(CompletionEvent::Ok(result)) {
+                Ok(_) => {
+                    return Ok(());
+                }
+                Err(_) => {
+                    return Err(TaskCompletionError::CanNotSetOkResult(
+                        "Can not set Ok result to the task completion.".to_string(),
+                    ));
+                }
+            },
+            None => {
+                return Err(TaskCompletionError::CanNotSetOkResult(
+                    "You are trying to set Ok as a result for a second time.".to_string(),
+                ));
             }
         }
     }
@@ -56,6 +86,28 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
             }
             None => {
                 panic!("You are trying to set error as a result for a second time");
+            }
+        }
+    }
+
+    pub fn try_set_error(&mut self, result: ErrorResult) -> Result<(), TaskCompletionError> {
+        let sender = self.get_sender();
+
+        match sender {
+            Some(sender) => {
+                let result = sender.send(CompletionEvent::Error(result));
+                if let Err(_) = result {
+                    return Err(TaskCompletionError::CanNotSetErrorResult(
+                        "Can not set Error result to the task completion.".to_string(),
+                    ));
+                } else {
+                    return Ok(());
+                }
+            }
+            None => {
+                return Err(TaskCompletionError::CanNotSetErrorResult(
+                    "You are trying to set error as a result for a second time.".to_string(),
+                ));
             }
         }
     }
