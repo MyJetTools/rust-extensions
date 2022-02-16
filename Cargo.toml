@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 tokio = { version = "*", features = ["full"] }
 chrono = "*"
+async-trait = "*"
