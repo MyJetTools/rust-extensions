@@ -12,4 +12,4 @@ pub use task_completion::{TaskCompletion, TaskCompletionAwaiter, TaskCompletionE
 
 pub use application_states::ApplicationStates;
 
-pub use my_timer::{MyTimer, MyTimerTick};
+pub use my_timer::{MyTimer, MyTimerLogEventLevel, MyTimerTick};

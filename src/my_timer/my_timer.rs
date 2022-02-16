@@ -4,7 +4,13 @@ use crate::ApplicationStates;
 
 use super::MyTimerTick;
 
+pub enum MyTimerLogEventLevel {
+    Info,
+    FatalError,
+}
+
 pub struct MyTimerLogEvent {
+    pub level: MyTimerLogEventLevel,
     pub timer_id: String,
     pub message: String,
 }
@@ -53,6 +59,7 @@ async fn timer_loop<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
             interval.as_secs()
         );
         logger(MyTimerLogEvent {
+            level: MyTimerLogEventLevel::Info,
             timer_id: timer.get_name().to_string(),
             message,
         });
@@ -71,8 +78,9 @@ async fn timer_loop<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
             let result = timer_handler.await;
 
             if let Err(err) = result {
-                let message = format!("Timer {} is paniced {:?}", id, err);
+                let message = format!("Timer {} is panicked {:?}", id, err);
                 logger(MyTimerLogEvent {
+                    level: MyTimerLogEventLevel::FatalError,
                     timer_id: id.to_string(),
                     message,
                 });
