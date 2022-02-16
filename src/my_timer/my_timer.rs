@@ -17,19 +17,26 @@ pub struct MyTimerLogEvent {
 
 pub struct MyTimer {
     interval: Duration,
-    timers: Vec<Arc<dyn MyTimerTick + Send + Sync + 'static>>,
+    timers: HashMap<String, Arc<dyn MyTimerTick + Send + Sync + 'static>>,
 }
 
 impl MyTimer {
     pub fn new(interval: Duration) -> Self {
         Self {
             interval,
-            timers: Vec::new(),
+            timers: HashMap::new(),
         }
     }
 
-    pub fn register_timer(&mut self, my_timer_tick: Arc<dyn MyTimerTick + Send + Sync + 'static>) {
-        self.timers.push(my_timer_tick);
+    pub fn register_timer(
+        &mut self,
+        name: &str,
+        my_timer_tick: Arc<dyn MyTimerTick + Send + Sync + 'static>,
+    ) {
+        if self.timers.contains_key(name) {
+            panic!("Timer with the name [{}] is already registered", name);
+        }
+        self.timers.insert(name.to_string(), my_timer_tick);
     }
 
     pub fn start<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
@@ -43,7 +50,7 @@ impl MyTimer {
 }
 
 async fn timer_loop<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
-    timers: Vec<Arc<dyn MyTimerTick + Send + Sync + 'static>>,
+    timers: HashMap<String, Arc<dyn MyTimerTick + Send + Sync + 'static>>,
     interval: Duration,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<TLogger>,
@@ -52,15 +59,15 @@ async fn timer_loop<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
-    for timer in &timers {
+    for timer_id in timers.keys() {
         let message = format!(
             "Timer {} is started with delay {} sec",
-            timer.get_name(),
+            timer_id,
             interval.as_secs()
         );
         logger(MyTimerLogEvent {
             level: MyTimerLogEventLevel::Info,
-            timer_id: timer.get_name().to_string(),
+            timer_id: timer_id.to_string(),
             message,
         });
     }
@@ -69,19 +76,19 @@ async fn timer_loop<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
         tokio::time::sleep(interval).await;
 
         let mut timer_handles = HashMap::new();
-        for timer in &timers {
+        for (timer_id, timer) in &timers {
             let handle = tokio::spawn(execute_timer(timer.clone()));
-            timer_handles.insert(timer.get_name(), handle);
+            timer_handles.insert(timer_id, handle);
         }
 
-        for (id, timer_handler) in timer_handles {
+        for (timer_id, timer_handler) in timer_handles {
             let result = timer_handler.await;
 
             if let Err(err) = result {
-                let message = format!("Timer {} is panicked {:?}", id, err);
+                let message = format!("Timer {} is panicked {:?}", timer_id, err);
                 logger(MyTimerLogEvent {
                     level: MyTimerLogEventLevel::FatalError,
-                    timer_id: id.to_string(),
+                    timer_id: timer_id.to_string(),
                     message,
                 });
             }
