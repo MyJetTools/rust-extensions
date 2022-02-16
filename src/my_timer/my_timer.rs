@@ -85,7 +85,7 @@ async fn timer_loop<TLogger: Send + Sync + 'static + Fn(MyTimerLogEvent)>(
             let result = timer_handler.await;
 
             if let Err(err) = result {
-                let message = format!("Timer {} is panicked {:?}", timer_id, err);
+                let message = format!("Timer {} is panicked. Err: {:?}", timer_id, err);
                 logger(MyTimerLogEvent {
                     level: MyTimerLogEventLevel::FatalError,
                     timer_id: timer_id.to_string(),
