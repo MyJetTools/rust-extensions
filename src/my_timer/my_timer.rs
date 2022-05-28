@@ -72,8 +72,13 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
 
             if let Err(err) = result {
                 let message = format!("Timer {} is panicked. Err: {:?}", timer_id, err);
+                let timer_id = timer_id.to_string();
+                let logger = logger.clone();
 
-                logger.write_error(timer_id.to_string(), message);
+                tokio::spawn(async move {
+                    println!("{}", message);
+                    logger.write_error(timer_id.to_string(), message);
+                });
             }
         }
     }
