@@ -99,7 +99,7 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
                     }
                 }
                 Err(err) => {
-                    println!("Timer is timeouted with err: {:?}", err);
+                    println!("Timer {} is timeouted with err: {:?}", timer_id, err);
                 }
             }
         }
