@@ -7,6 +7,7 @@ use super::{MyTimerLogger, MyTimerTick};
 pub struct MyTimer {
     interval: Duration,
     timers: HashMap<String, Arc<dyn MyTimerTick + Send + Sync + 'static>>,
+    iteration_timeout: Duration,
 }
 
 impl MyTimer {
@@ -14,6 +15,15 @@ impl MyTimer {
         Self {
             interval,
             timers: HashMap::new(),
+            iteration_timeout: Duration::from_secs(60),
+        }
+    }
+
+    pub fn new_with_execute_timeout(interval: Duration, iteration_timeout: Duration) -> Self {
+        Self {
+            interval,
+            timers: HashMap::new(),
+            iteration_timeout,
         }
     }
 
@@ -34,7 +44,13 @@ impl MyTimer {
         logger: Arc<TLogger>,
     ) {
         let timers = self.timers.clone();
-        tokio::spawn(timer_loop(timers, self.interval, app_states, logger));
+        tokio::spawn(timer_loop(
+            timers,
+            self.interval,
+            app_states,
+            logger,
+            self.iteration_timeout,
+        ));
     }
 }
 
@@ -43,6 +59,7 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
     interval: Duration,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<TLogger>,
+    iteration_timeout: Duration,
 ) {
     while !app_states.is_initialized() {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -68,17 +85,22 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
         }
 
         for (timer_id, timer_handler) in timer_handles {
-            let result = timer_handler.await;
+            match tokio::time::timeout(iteration_timeout, timer_handler).await {
+                Ok(result) => {
+                    if let Err(err) = result {
+                        let message = format!("Timer {} is panicked. Err: {:?}", timer_id, err);
+                        let timer_id = timer_id.to_string();
+                        let logger = logger.clone();
 
-            if let Err(err) = result {
-                let message = format!("Timer {} is panicked. Err: {:?}", timer_id, err);
-                let timer_id = timer_id.to_string();
-                let logger = logger.clone();
-
-                tokio::spawn(async move {
-                    println!("{}", message);
-                    logger.write_error(timer_id.to_string(), message);
-                });
+                        tokio::spawn(async move {
+                            println!("{}", message);
+                            logger.write_error(timer_id.to_string(), message);
+                        });
+                    }
+                }
+                Err(err) => {
+                    println!("Timer is timeouted with err: {:?}", err);
+                }
             }
         }
     }
