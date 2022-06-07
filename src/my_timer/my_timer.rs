@@ -6,7 +6,7 @@ use super::{MyTimerLogger, MyTimerTick};
 
 pub struct MyTimer {
     interval: Duration,
-    timers: HashMap<String, Arc<dyn MyTimerTick + Send + Sync + 'static>>,
+    timers: Vec<(String, Arc<dyn MyTimerTick + Send + Sync + 'static>)>,
     iteration_timeout: Duration,
 }
 
@@ -14,7 +14,7 @@ impl MyTimer {
     pub fn new(interval: Duration) -> Self {
         Self {
             interval,
-            timers: HashMap::new(),
+            timers: Vec::new(),
             iteration_timeout: Duration::from_secs(60),
         }
     }
@@ -22,7 +22,7 @@ impl MyTimer {
     pub fn new_with_execute_timeout(interval: Duration, iteration_timeout: Duration) -> Self {
         Self {
             interval,
-            timers: HashMap::new(),
+            timers: Vec::new(),
             iteration_timeout,
         }
     }
@@ -32,10 +32,13 @@ impl MyTimer {
         name: &str,
         my_timer_tick: Arc<dyn MyTimerTick + Send + Sync + 'static>,
     ) {
-        if self.timers.contains_key(name) {
-            panic!("Timer with the name [{}] is already registered", name);
+        for (timer_name, _) in &self.timers {
+            if timer_name == name {
+                panic!("Timer with the name [{}] is already registered", name);
+            }
         }
-        self.timers.insert(name.to_string(), my_timer_tick);
+
+        self.timers.push((name.to_string(), my_timer_tick));
     }
 
     pub fn start<TLogger: MyTimerLogger + Send + Sync + 'static>(
@@ -55,7 +58,7 @@ impl MyTimer {
 }
 
 async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
-    timers: HashMap<String, Arc<dyn MyTimerTick + Send + Sync + 'static>>,
+    timers: Vec<(String, Arc<dyn MyTimerTick + Send + Sync + 'static>)>,
     interval: Duration,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<TLogger>,
@@ -65,7 +68,7 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
-    for timer_id in timers.keys() {
+    for (timer_id, _) in &timers {
         let message = format!(
             "Timer {} is started with delay {} sec",
             timer_id,
