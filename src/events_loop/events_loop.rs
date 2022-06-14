@@ -27,25 +27,18 @@ impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
     }
 }
 
-pub struct EventsLoop<
-    TModel: Send + Sync + 'static,
-    TLogger: EventsLoopLogger + Send + Sync + 'static,
-> {
+pub struct EventsLoop<TModel: Send + Sync + 'static> {
     tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     iteration_timeout: Duration,
     receiver: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
     name: String,
-    logger: Arc<TLogger>,
 }
 
-impl<TModel: Send + Sync + 'static, TLogger: EventsLoopLogger + Send + Sync + 'static>
-    EventsLoop<TModel, TLogger>
-{
+impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     pub fn new(
         name: String,
         tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
-        logger: Arc<TLogger>,
     ) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         Self {
@@ -54,16 +47,12 @@ impl<TModel: Send + Sync + 'static, TLogger: EventsLoopLogger + Send + Sync + 's
             receiver: Mutex::new(Some(receiver)),
             sender,
             name,
-            logger,
         }
     }
 
     pub fn send(&self, model: TModel) {
         if let Err(_) = self.sender.send(EventsLoopMessage::NewMessage(model)) {
-            self.logger.write_error(
-                self.name.to_string(),
-                format!("Can not send model to event loop {}", self.name),
-            );
+            println!("Can not send model to event loop {}", self.name);
         }
     }
 
@@ -82,14 +71,18 @@ impl<TModel: Send + Sync + 'static, TLogger: EventsLoopLogger + Send + Sync + 's
         result.unwrap()
     }
 
-    pub async fn start(&self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
+    pub async fn start<TLogger: EventsLoopLogger + Send + Sync + 'static>(
+        &self,
+        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+        logger: Arc<TLogger>,
+    ) {
         let receiver = self.get_receiver().await;
 
         tokio::spawn(events_loop_reader(
             self.name.clone(),
             self.tick.clone(),
             app_states,
-            self.logger.clone(),
+            logger.clone(),
             self.iteration_timeout,
             receiver,
         ));
@@ -97,10 +90,7 @@ impl<TModel: Send + Sync + 'static, TLogger: EventsLoopLogger + Send + Sync + 's
 
     pub fn stop(&self) {
         if let Err(_) = self.sender.send(EventsLoopMessage::Shutdown) {
-            self.logger.write_error(
-                self.name.to_string(),
-                format!("Can not send shutdown message to event loop {}", self.name),
-            );
+            println!("Can not send shutdown message to event loop {}", self.name);
         }
     }
 }
