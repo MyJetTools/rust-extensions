@@ -1,6 +1,7 @@
 mod application_states;
 pub mod date_time;
 pub mod duration_utils;
+pub mod events_loop;
 pub mod lazy;
 mod my_timer;
 mod stop_watch;
