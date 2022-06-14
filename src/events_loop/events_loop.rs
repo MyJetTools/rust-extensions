@@ -28,7 +28,7 @@ impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
 }
 
 pub struct EventsLoop<TModel: Send + Sync + 'static> {
-    tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
+    tick: Mutex<Option<Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>>>,
     iteration_timeout: Duration,
     receiver: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
@@ -36,18 +36,23 @@ pub struct EventsLoop<TModel: Send + Sync + 'static> {
 }
 
 impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
-    pub fn new(
-        name: String,
-        tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
-    ) -> Self {
+    pub fn new(name: String) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         Self {
-            tick,
             iteration_timeout: Duration::from_secs(5),
             receiver: Mutex::new(Some(receiver)),
             sender,
+            tick: Mutex::new(None),
             name,
         }
+    }
+
+    pub async fn register_event_loop(
+        &self,
+        event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
+    ) {
+        let mut write_access = self.tick.lock().await;
+        *write_access = Some(event_loop);
     }
 
     pub fn send(&self, model: TModel) {
@@ -78,9 +83,18 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     ) {
         let receiver = self.get_receiver().await;
 
+        let event_loop = {
+            let read_access = self.tick.lock().await;
+            if read_access.is_none() {
+                panic!("Event Loop is not registered");
+            }
+
+            read_access.as_ref().unwrap().clone()
+        };
+
         tokio::spawn(events_loop_reader(
             self.name.clone(),
-            self.tick.clone(),
+            event_loop,
             app_states,
             logger.clone(),
             self.iteration_timeout,
