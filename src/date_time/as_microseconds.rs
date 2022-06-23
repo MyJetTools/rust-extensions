@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 
 const ONE_SECOND: i64 = 1_000_000;
 
@@ -12,6 +12,25 @@ pub struct DateTimeAsMicroseconds {
 impl DateTimeAsMicroseconds {
     pub fn new(unix_microseconds: i64) -> Self {
         Self { unix_microseconds }
+    }
+
+    pub fn create(
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+        second: u32,
+        microsecond: i64,
+    ) -> Self {
+        let date_time =
+            NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, minute, second, 0);
+
+        let result = date_time.timestamp_millis() * 1000;
+
+        Self {
+            unix_microseconds: result + microsecond,
+        }
     }
 
     pub fn now() -> Self {
