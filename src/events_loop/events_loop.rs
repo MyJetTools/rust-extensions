@@ -2,9 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::sync::Mutex;
 
-use crate::ApplicationStates;
+use crate::{ApplicationStates, Logger};
 
-use super::{EventsLoopLogger, EventsLoopTick};
+use super::EventsLoopTick;
 
 pub enum EventsLoopMessage<TModel: Send + Sync + 'static> {
     NewMessage(TModel),
@@ -76,10 +76,10 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         result.unwrap()
     }
 
-    pub async fn start<TLogger: EventsLoopLogger + Send + Sync + 'static>(
+    pub async fn start(
         &self,
         app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<TLogger>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
     ) {
         let receiver = self.get_receiver().await;
 
@@ -109,14 +109,11 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     }
 }
 
-async fn events_loop_reader<
-    TModel: Send + Sync + 'static,
-    TLogger: EventsLoopLogger + Send + Sync + 'static,
->(
+async fn events_loop_reader<TModel: Send + Sync + 'static>(
     name: String,
     event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-    logger: Arc<TLogger>,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
     iteration_timeout: Duration,
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
 ) {
@@ -146,7 +143,7 @@ async fn events_loop_reader<
 
                         tokio::spawn(async move {
                             println!("{}", message);
-                            logger.write_error(name, message);
+                            logger.write_error(name, message, None);
                         });
                     }
                 }
