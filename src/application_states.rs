@@ -33,7 +33,7 @@ impl AppStates {
         }
     }
 
-    pub async fn start_application(&self) {
+    pub async fn wait_until_shutdown(&self) {
         signal_hook::flag::register(signal_hook::consts::SIGTERM, self.shutting_down.clone())
             .unwrap();
 
@@ -42,6 +42,15 @@ impl AppStates {
 
         while !self.is_shutting_down() {
             tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    pub fn set_initialized(&self) {
+        match &self.initialized {
+            AppStateCreated::NotInitliazed(state) => {
+                state.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            AppStateCreated::Initialized => {}
         }
     }
 }
