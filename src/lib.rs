@@ -12,7 +12,7 @@ pub use stop_watch::StopWatch;
 pub use string_builder::StringBuilder;
 pub use task_completion::{TaskCompletion, TaskCompletionAwaiter, TaskCompletionError};
 
-pub use application_states::ApplicationStates;
+pub use application_states::*;
 
 pub use logger::Logger;
 pub use my_timer::{MyTimer, MyTimerTick};
