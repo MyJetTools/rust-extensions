@@ -19,7 +19,7 @@ pub struct AppStates {
 }
 
 impl AppStates {
-    pub fn new() -> Self {
+    pub fn create_un_initialized() -> Self {
         Self {
             initialized: AppStateCreated::NotInitliazed(AtomicBool::new(false)),
             shutting_down: Arc::new(AtomicBool::new(false)),
