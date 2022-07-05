@@ -5,6 +5,7 @@ pub mod events_loop;
 pub mod lazy;
 mod logger;
 mod my_timer;
+pub mod objects_pool;
 mod stop_watch;
 mod string_builder;
 mod task_completion;
