@@ -18,4 +18,8 @@ impl<T> LazyVec<T> {
     pub fn get_result(self) -> Option<Vec<T>> {
         self.result
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.result.is_none()
+    }
 }
