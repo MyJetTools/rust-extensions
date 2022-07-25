@@ -53,6 +53,11 @@ impl AppStates {
             AppStateCreated::Initialized => {}
         }
     }
+
+    pub fn set_shutting_down(&self) {
+        self.shutting_down
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl ApplicationStates for AppStates {
