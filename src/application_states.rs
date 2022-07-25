@@ -58,6 +58,11 @@ impl AppStates {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
+
+    fn is_shutting_down(&self) -> bool {
+        self.shutting_down
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl ApplicationStates for AppStates {
