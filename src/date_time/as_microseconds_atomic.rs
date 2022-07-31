@@ -5,7 +5,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 
-use super::DateTimeAsMicroseconds;
+use super::{DateTimeAsMicroseconds, DateTimeDuration};
 
 #[derive(Debug)]
 pub struct AtomicDateTimeAsMicroseconds {
@@ -62,14 +62,9 @@ impl AtomicDateTimeAsMicroseconds {
         (self.get_unix_microseconds() - before.unix_microseconds) / 1000000
     }
 
-    pub fn duration_since(&self, before: DateTimeAsMicroseconds) -> Duration {
-        let dur = self.get_unix_microseconds() - before.unix_microseconds;
-
-        if dur < 0 {
-            return Duration::from_micros(0);
-        }
-
-        Duration::from_micros(dur as u64)
+    pub fn duration_since(&self, before: DateTimeAsMicroseconds) -> DateTimeDuration {
+        let current = self.as_date_time();
+        DateTimeDuration::new(&before, &current)
     }
 
     pub fn to_rfc3339(&self) -> String {
