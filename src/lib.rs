@@ -7,6 +7,7 @@ mod logger;
 mod my_timer;
 pub mod objects_pool;
 mod stop_watch;
+mod str_or_string;
 mod string_builder;
 mod task_completion;
 pub use stop_watch::StopWatch;
@@ -17,3 +18,4 @@ pub use application_states::*;
 
 pub use logger::Logger;
 pub use my_timer::{MyTimer, MyTimerTick};
+pub use str_or_string::StrOrString;
