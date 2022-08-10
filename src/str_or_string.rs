@@ -28,4 +28,16 @@ impl<'s> StrOrString<'s> {
 
         panic!("Somehow we are here");
     }
+
+    pub fn to_string(self) -> String {
+        if let Some(as_str) = self.as_str {
+            return as_str.to_string();
+        }
+
+        if let Some(as_string) = self.as_string {
+            return as_string;
+        }
+
+        panic!("Somehow we are here");
+    }
 }
