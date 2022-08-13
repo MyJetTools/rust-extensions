@@ -1,0 +1,48 @@
+use std::collections::HashMap;
+
+pub struct GroupedDataAsHashmap<TGroupKey, TKey, TValue>
+where
+    TGroupKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+{
+    items: HashMap<TGroupKey, HashMap<TKey, TValue>>,
+}
+
+impl<TGroupKey, TKey, TValue> GroupedDataAsHashmap<TGroupKey, TKey, TValue>
+where
+    TGroupKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+{
+    pub fn new() -> Self {
+        Self {
+            items: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, group_key: &TGroupKey, key: TKey, value: TValue) -> Option<TValue> {
+        if !self.items.contains_key(group_key) {
+            self.items.insert(group_key.to_owned(), HashMap::new());
+        }
+
+        self.items.get_mut(group_key).unwrap().insert(key, value)
+    }
+
+    pub fn remove(&mut self, group_key: &TGroupKey, key: &TKey) -> Option<TValue> {
+        if !self.items.contains_key(group_key) {
+            return None;
+        }
+
+        let (items_after_delete, result) = {
+            let items = self.items.get_mut(group_key).unwrap();
+            let result = items.remove(key);
+
+            (items.len(), result)
+        };
+
+        if items_after_delete == 0 {
+            self.items.remove(group_key);
+        }
+
+        result
+    }
+}

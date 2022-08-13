@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 
-pub struct LazyGroupIntoHashMap<TKey: std::cmp::Eq + core::hash::Hash + Clone, TValue> {
+pub struct LazyGroupIntoHashMap<TKey, TValue>
+where
+    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+{
     items: Option<HashMap<TKey, Vec<TValue>>>,
 }
 
-impl<TKey: std::cmp::Eq + core::hash::Hash + Clone, TValue> LazyGroupIntoHashMap<TKey, TValue> {
+impl<TKey, TValue> LazyGroupIntoHashMap<TKey, TValue>
+where
+    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+{
     pub fn new() -> Self {
         Self { items: None }
     }
