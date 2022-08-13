@@ -1,21 +1,21 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-pub struct GroupedDataAsHashmap<TGroupKey, TKey, TValue>
+pub struct GroupedDataBTreeMap<TGroupKey, TKey, TValue>
 where
-    TGroupKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TGroupKey: std::cmp::Eq + core::hash::Hash + Ord + Clone,
     TKey: std::cmp::Eq + core::hash::Hash + Clone,
 {
-    pub items: HashMap<TGroupKey, HashMap<TKey, TValue>>,
+    pub items: BTreeMap<TGroupKey, HashMap<TKey, TValue>>,
 }
 
-impl<TGroupKey, TKey, TValue> GroupedDataAsHashmap<TGroupKey, TKey, TValue>
+impl<TGroupKey, TKey, TValue> GroupedDataBTreeMap<TGroupKey, TKey, TValue>
 where
-    TGroupKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TGroupKey: std::cmp::Eq + core::hash::Hash + Ord + Clone,
     TKey: std::cmp::Eq + core::hash::Hash + Clone,
 {
     pub fn new() -> Self {
         Self {
-            items: HashMap::new(),
+            items: BTreeMap::new(),
         }
     }
 
