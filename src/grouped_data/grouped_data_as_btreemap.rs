@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-pub struct GroupedDataBTreeMap<TGroupKey, TKey, TValue>
+pub struct GroupedDataAsBTreeMap<TGroupKey, TKey, TValue>
 where
     TGroupKey: std::cmp::Eq + core::hash::Hash + Ord + Clone,
     TKey: std::cmp::Eq + core::hash::Hash + Clone,
@@ -8,7 +8,7 @@ where
     pub items: BTreeMap<TGroupKey, HashMap<TKey, TValue>>,
 }
 
-impl<TGroupKey, TKey, TValue> GroupedDataBTreeMap<TGroupKey, TKey, TValue>
+impl<TGroupKey, TKey, TValue> GroupedDataAsBTreeMap<TGroupKey, TKey, TValue>
 where
     TGroupKey: std::cmp::Eq + core::hash::Hash + Ord + Clone,
     TKey: std::cmp::Eq + core::hash::Hash + Clone,
