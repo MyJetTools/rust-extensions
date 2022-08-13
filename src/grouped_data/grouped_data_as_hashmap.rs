@@ -45,4 +45,8 @@ where
 
         result
     }
+
+    pub fn get_data_by_group(&self, group_key: &TGroupKey) -> Option<&HashMap<TKey, TValue>> {
+        self.items.get(group_key)
+    }
 }
