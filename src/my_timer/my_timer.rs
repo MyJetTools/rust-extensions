@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use crate::ApplicationStates;
+use crate::{ApplicationStates, Logger};
 
-use super::{MyTimerLogger, MyTimerTick};
+use super::MyTimerTick;
 
 pub struct MyTimer {
     interval: Duration,
@@ -41,10 +41,10 @@ impl MyTimer {
         self.timers.push((name.to_string(), my_timer_tick));
     }
 
-    pub fn start<TLogger: MyTimerLogger + Send + Sync + 'static>(
+    pub fn start(
         &self,
         app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<TLogger>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
     ) {
         let timers = self.timers.clone();
         tokio::spawn(timer_loop(
@@ -57,11 +57,11 @@ impl MyTimer {
     }
 }
 
-async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
+async fn timer_loop(
     timers: Vec<(String, Arc<dyn MyTimerTick + Send + Sync + 'static>)>,
     interval: Duration,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-    logger: Arc<TLogger>,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
     iteration_timeout: Duration,
 ) {
     while !app_states.is_initialized() {
@@ -75,7 +75,7 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
             interval.as_secs()
         );
 
-        logger.write_info(timer_id.to_string(), message);
+        logger.write_info(timer_id.to_string(), message, None);
     }
 
     while !app_states.is_shutting_down() {
@@ -97,7 +97,7 @@ async fn timer_loop<TLogger: MyTimerLogger + Send + Sync + 'static>(
 
                         tokio::spawn(async move {
                             println!("{}", message);
-                            logger.write_error(timer_id.to_string(), message);
+                            logger.write_error(timer_id.to_string(), message, None);
                         });
                     }
                 }

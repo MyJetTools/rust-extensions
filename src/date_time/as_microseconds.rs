@@ -2,6 +2,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDate, Utc};
 
+use super::DateTimeDuration;
+
 const ONE_SECOND: i64 = 1_000_000;
 
 #[derive(Clone, Copy, Debug)]
@@ -72,14 +74,8 @@ impl DateTimeAsMicroseconds {
         self.add_hours(24 * days);
     }
 
-    pub fn duration_since(&self, before: DateTimeAsMicroseconds) -> Duration {
-        let dur = self.unix_microseconds - before.unix_microseconds;
-
-        if dur < 0 {
-            return Duration::from_micros(0);
-        }
-
-        Duration::from_micros(dur as u64)
+    pub fn duration_since(&self, before: DateTimeAsMicroseconds) -> DateTimeDuration {
+        DateTimeDuration::new(&before, self)
     }
 
     pub fn to_rfc3339(&self) -> String {
