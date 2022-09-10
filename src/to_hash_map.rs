@@ -1,21 +1,30 @@
 use std::collections::HashMap;
 
-pub trait ToHashMap<TKey, TValue> {
-    fn to_hash_map(self, get_key: fn(&TValue) -> TKey) -> HashMap<TKey, TValue>;
+pub trait ToHashMap<TSrcValue, TKey, TValue> {
+    fn to_hash_map(
+        self,
+        get_key: fn(&TSrcValue) -> TKey,
+        get_value: fn(TSrcValue) -> TValue,
+    ) -> HashMap<TKey, TValue>;
 }
 
-impl<TKey, TValue> ToHashMap<TKey, TValue> for Vec<TValue>
+impl<TSrcValue, TKey, TValue> ToHashMap<TSrcValue, TKey, TValue> for Vec<TSrcValue>
 where
     TKey: std::cmp::Eq + core::hash::Hash + Clone,
 {
-    fn to_hash_map(self, get_key: fn(&TValue) -> TKey) -> HashMap<TKey, TValue> {
-        to_hash_map(self.into_iter(), get_key)
+    fn to_hash_map(
+        self,
+        get_key: fn(&TSrcValue) -> TKey,
+        get_value: fn(TSrcValue) -> TValue,
+    ) -> HashMap<TKey, TValue> {
+        to_hash_map(self.into_iter(), get_key, get_value)
     }
 }
 
-pub fn to_hash_map<TKey, TValue, TIter: Iterator<Item = TValue>>(
+pub fn to_hash_map<TSrcValue, TKey, TValue, TIter: Iterator<Item = TSrcValue>>(
     items: TIter,
-    get_key: fn(&TValue) -> TKey,
+    get_key: fn(&TSrcValue) -> TKey,
+    get_value: fn(TSrcValue) -> TValue,
 ) -> HashMap<TKey, TValue>
 where
     TKey: std::cmp::Eq + core::hash::Hash + Clone,
@@ -23,7 +32,7 @@ where
     let mut result = HashMap::new();
 
     for item in items {
-        result.insert(get_key(&item), item);
+        result.insert(get_key(&item), get_value(item));
     }
 
     result
@@ -37,7 +46,7 @@ mod tests {
     fn test_to_hash_map() {
         let items = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-        let result = to_hash_map(items.into_iter(), |item| item.to_string());
+        let result = to_hash_map(items.into_iter(), |item| item.to_string(), |item| item);
 
         assert_eq!(result.len(), 10);
 
