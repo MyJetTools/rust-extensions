@@ -10,6 +10,8 @@ mod stop_watch;
 mod str_or_string;
 mod string_builder;
 mod task_completion;
+pub mod to_hash_map;
+
 pub use stop_watch::StopWatch;
 pub use string_builder::StringBuilder;
 pub use task_completion::{TaskCompletion, TaskCompletionAwaiter, TaskCompletionError};
