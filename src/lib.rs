@@ -10,7 +10,7 @@ mod stop_watch;
 mod str_or_string;
 mod string_builder;
 mod task_completion;
-pub mod to_hash_map;
+mod to_hash_map;
 
 pub use stop_watch::StopWatch;
 pub use string_builder::StringBuilder;
@@ -22,3 +22,4 @@ pub mod grouped_data;
 pub use logger::Logger;
 pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::StrOrString;
+pub use to_hash_map::ToHashMap;
