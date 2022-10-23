@@ -37,6 +37,18 @@ impl DateTimeDuration {
             _ => Duration::from_secs(0),
         }
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Positive(duration) => {
+                format!("+{}", crate::duration_utils::duration_to_string(*duration))
+            }
+            Self::Negative(duration) => {
+                format!("-{}", crate::duration_utils::duration_to_string(*duration))
+            }
+            Self::Zero => String::from("0"),
+        }
+    }
 }
 
 #[cfg(test)]

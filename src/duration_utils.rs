@@ -60,7 +60,7 @@ fn format_duration(mut secs: i64) -> String {
     secs = secs - minutes * 60;
 
     return if days > 0 {
-        format!("{}:{:02}:{:02}:{:02}", days, hours, minutes, secs)
+        format!("{}d:{:02}:{:02}:{:02}", days, hours, minutes, secs)
     } else {
         format!("{:02}:{:02}:{:02}", hours, minutes, secs)
     };
@@ -75,5 +75,36 @@ pub enum ParseDurationError {
 impl From<ParseIntError> for ParseDurationError {
     fn from(src: ParseIntError) -> Self {
         Self::ParseIntError(src)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_minutes() {
+        assert_eq!("00:01:00", format_duration(60));
+        assert_eq!("00:01:01", format_duration(61));
+
+        assert_eq!("00:02:00", format_duration(60 * 2));
+        assert_eq!("00:02:01", format_duration(60 * 2 + 1));
+
+        assert_eq!("00:59:00", format_duration(60 * 59));
+        assert_eq!("00:59:59", format_duration(60 * 59 + 59));
+    }
+
+    #[test]
+    fn test_hours() {
+        assert_eq!("01:00:00", format_duration(60 * 60));
+        assert_eq!("01:01:00", format_duration(60 * 60 + 60));
+        assert_eq!("01:01:01", format_duration(60 * 60 + 61));
+    }
+
+    #[test]
+    fn test_days() {
+        assert_eq!("1d:00:00:00", format_duration(60 * 60 * 24));
+        assert_eq!("1d:00:00:01", format_duration(60 * 60 * 24 + 1));
     }
 }
