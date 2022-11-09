@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{Date, DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 
 use super::DateTimeDuration;
 
@@ -42,6 +42,26 @@ impl DateTimeAsMicroseconds {
             .as_micros() as i64;
 
         Self { unix_microseconds }
+    }
+
+    pub fn from_str(src: &str) -> Option<Self> {
+        let as_bytes = src.as_bytes();
+        if as_bytes.len() == 14 {
+            let result = super::utils::parse_compact_date_time(as_bytes)?;
+            return DateTimeAsMicroseconds::new(result).into();
+        }
+
+        if as_bytes[4] == b'-' {
+            let result = super::utils::parse_iso_string(as_bytes)?;
+            return DateTimeAsMicroseconds::new(result).into();
+        }
+
+        let value: Result<i64, _> = src.parse();
+
+        match value {
+            Ok(result) => return Some(result.into()),
+            Err(_) => return None,
+        }
     }
 
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {

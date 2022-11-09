@@ -32,6 +32,26 @@ pub fn parse_iso_string(src: &[u8]) -> Option<i64> {
     Some(result + microsec)
 }
 
+pub fn parse_compact_date_time(src: &[u8]) -> Option<i64> {
+    let year = parse_four_digits(&src[0..4])?;
+
+    let month = parse_two_digits(&src[4..6])?;
+
+    let day = parse_two_digits(&src[6..8])?;
+
+    let hour = parse_two_digits(&src[8..10])?;
+
+    let min = parse_two_digits(&src[10..12])?;
+
+    let sec = parse_two_digits(&src[12..14])?;
+
+    let date_time = NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, min, sec, 0);
+
+    let result = date_time.timestamp_millis() * 1000;
+
+    Some(result)
+}
+
 #[inline]
 fn parse_number(src: u8) -> Option<i32> {
     if src < START_ZERO || src > START_NINE {
@@ -106,6 +126,18 @@ mod tests {
         let dest = dt.to_rfc3339();
 
         assert_eq!(src, &dest[0..26]);
+    }
+
+    #[test]
+    pub fn test_parse_compact_string() {
+        let src = "20210425173043";
+        let micros = parse_compact_date_time(src.as_bytes()).unwrap();
+
+        let dt = DateTimeAsMicroseconds::new(micros);
+
+        let dest = dt.to_rfc3339();
+
+        assert_eq!("2021-04-25T17:30:43", &dest[..19]);
     }
 
     #[test]
