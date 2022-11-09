@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{Date, DateTime, NaiveDate, Utc};
 
 use super::DateTimeDuration;
 
@@ -84,6 +84,38 @@ impl DateTimeAsMicroseconds {
     }
 }
 
+impl From<i64> for DateTimeAsMicroseconds {
+    fn from(src: i64) -> Self {
+        //Milicecondes
+        if src > 1577840461000 && src < 4733514061000 {
+            return DateTimeAsMicroseconds::new(src * 1000);
+        }
+        //Seconds
+        if src > 1577840461 && src < 4733514061 {
+            return DateTimeAsMicroseconds::new(src * 1000_000);
+        }
+
+        return DateTimeAsMicroseconds::new(src);
+    }
+}
+
+impl From<u64> for DateTimeAsMicroseconds {
+    fn from(src: u64) -> Self {
+        let src = src as i64;
+
+        //Miliseconds
+        if src > 1577840461000 && src < 4733514061000 {
+            return DateTimeAsMicroseconds::new(src * 1000);
+        }
+        //Seconds
+        if src > 1577840461 && src < 4733514061 {
+            return DateTimeAsMicroseconds::new(src * 1000_000);
+        }
+
+        return DateTimeAsMicroseconds::new(src);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,5 +165,28 @@ mod tests {
 
         let result = DateTimeAsMicroseconds::parse_iso_string("2021-04-26T17:30:03.000Z").unwrap();
         assert_eq!(now.unix_microseconds, result.unix_microseconds)
+    }
+
+    #[test]
+    fn test_from_trait() {
+        let now = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+
+        let now_microseconds = now.unix_microseconds;
+
+        let result: DateTimeAsMicroseconds = now_microseconds.into();
+
+        assert_eq!("2021-04-25T17:30:03", &result.to_rfc3339()[..19]);
+
+        let now_miliseconds = now_microseconds / 1000;
+
+        let result: DateTimeAsMicroseconds = now_miliseconds.into();
+
+        assert_eq!("2021-04-25T17:30:03", &result.to_rfc3339()[..19]);
+
+        let now_seconds = now_miliseconds / 1000;
+
+        let result: DateTimeAsMicroseconds = now_seconds.into();
+
+        assert_eq!("2021-04-25T17:30:03", &result.to_rfc3339()[..19]);
     }
 }
