@@ -34,22 +34,16 @@ pub fn parse_iso_string(src: &[u8]) -> Option<i64> {
 
 pub fn parse_url_encoded_iso_string(src: &[u8]) -> Option<i64> {
     let year = parse_four_digits(&src[0..4])?;
-    println!("Year: {}", year);
 
     let month = parse_two_digits(&src[5..7])?;
-    println!("Month: {}", month);
 
     let day = parse_two_digits(&src[8..10])?;
-    println!("Day: {}", day);
 
     let hour = parse_two_digits(&src[11..13])?;
-    println!("Hour: {}", hour);
 
     let min = parse_two_digits(&src[16..18])?;
-    println!("Min: {}", min);
 
     let sec = parse_two_digits(&src[21..23])?;
-    println!("Sec: {}", sec);
 
     let date_time = NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, min, sec, 0);
 
@@ -60,7 +54,6 @@ pub fn parse_url_encoded_iso_string(src: &[u8]) -> Option<i64> {
     }
 
     let microsec = parse_microseconds(&src[24..]);
-    println!("Micros: {}", microsec);
 
     Some(result + microsec)
 }
