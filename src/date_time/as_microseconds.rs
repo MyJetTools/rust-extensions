@@ -51,9 +51,14 @@ impl DateTimeAsMicroseconds {
             return DateTimeAsMicroseconds::new(result).into();
         }
 
-        if as_bytes[4] == b'-' {
-            let result = super::utils::parse_iso_string(as_bytes)?;
-            return DateTimeAsMicroseconds::new(result).into();
+        if as_bytes[4] == b'-' && as_bytes.len() >= 19 {
+            if as_bytes[13] == b'%' {
+                let result = super::utils::parse_url_encoded_iso_string(as_bytes)?;
+                return DateTimeAsMicroseconds::new(result).into();
+            } else {
+                let result = super::utils::parse_iso_string(as_bytes)?;
+                return DateTimeAsMicroseconds::new(result).into();
+            }
         }
 
         let value: Result<i64, _> = src.parse();
