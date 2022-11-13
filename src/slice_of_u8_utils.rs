@@ -7,10 +7,23 @@ pub fn find_sequence_pos(src: &[u8], sequence: &[u8], pos_start: usize) -> Optio
     None
 }
 
-pub fn find_byte(src: &[u8], byte: u8, pos_start: usize) -> Option<usize> {
+pub fn find_byte_pos(src: &[u8], byte: u8, pos_start: usize) -> Option<usize> {
     for i in pos_start..src.len() {
         if src[i] == byte {
             return Some(i);
+        }
+    }
+    None
+}
+
+pub fn find_pos_by_condition<TCondition: Fn(u8) -> bool>(
+    src: &[u8],
+    pos_start: usize,
+    condition: TCondition,
+) -> Option<usize> {
+    for pos in pos_start..src.len() {
+        if condition(src[pos]) {
+            return Some(pos);
         }
     }
     None
