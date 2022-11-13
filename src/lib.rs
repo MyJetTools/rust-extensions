@@ -7,6 +7,7 @@ pub mod linq;
 mod logger;
 mod my_timer;
 pub mod objects_pool;
+pub mod slice_of_u8_utils;
 mod stop_watch;
 mod str_or_string;
 mod string_builder;
