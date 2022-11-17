@@ -93,6 +93,31 @@ impl<TItem: Send + Sync + 'static> RoundTripPusher<TItem> {
             );
         }
     }
+
+    pub async fn publish_many<TIter: Iterator<Item = TItem>>(&self, items: TIter) {
+        if self.app_states.is_shutting_down() {
+            panic!(
+                "Can not publish to RoundTripPusher {} when shutting down",
+                self.name
+            );
+        }
+
+        {
+            let mut write_access = self.inner.0.lock().await;
+            write_access.queue.extend(items);
+            self.inner.1.store(
+                write_access.queue.len(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+        }
+        if self.sender.send(()).is_err() {
+            self.logger.write_fatal_error(
+                format!("publish to pusher {}", self.name),
+                "can not send".to_string(),
+                None,
+            );
+        }
+    }
 }
 
 async fn read_loop<TItem: Send + Sync + 'static>(
@@ -105,8 +130,6 @@ async fn read_loop<TItem: Send + Sync + 'static>(
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
 ) {
     loop {
-        receiver.recv().await;
-
         let to_publish = {
             let mut write_access = inner.0.lock().await;
 
@@ -191,6 +214,8 @@ async fn read_loop<TItem: Send + Sync + 'static>(
 
                 break;
             }
+        } else {
+            receiver.recv().await;
         }
     }
 }
