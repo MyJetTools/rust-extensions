@@ -6,7 +6,7 @@ use crate::{ApplicationStates, Logger, RoundTripCallback};
 
 use super::round_trip_pusher_inner::RoundTripPusherInner;
 
-pub struct RoundTripPusher<TItem: Clone + Send + Sync + 'static> {
+pub struct RoundTripPusher<TItem: Send + Sync + 'static> {
     inner: Arc<(Mutex<RoundTripPusherInner<TItem>>, AtomicUsize)>,
     sender: tokio::sync::mpsc::UnboundedSender<()>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
@@ -16,7 +16,7 @@ pub struct RoundTripPusher<TItem: Clone + Send + Sync + 'static> {
     pub tick_timeout: std::time::Duration,
 }
 
-impl<TItem: Clone + Send + Sync + 'static> RoundTripPusher<TItem> {
+impl<TItem: Send + Sync + 'static> RoundTripPusher<TItem> {
     pub fn new(
         name: String,
         max_amount_per_round_trip: usize,
@@ -95,7 +95,7 @@ impl<TItem: Clone + Send + Sync + 'static> RoundTripPusher<TItem> {
     }
 }
 
-async fn read_loop<TItem: Clone + Send + Sync + 'static>(
+async fn read_loop<TItem: Send + Sync + 'static>(
     name: String,
     inner: Arc<(Mutex<RoundTripPusherInner<TItem>>, AtomicUsize)>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
@@ -142,13 +142,14 @@ async fn read_loop<TItem: Clone + Send + Sync + 'static>(
         };
 
         if let Some(to_publish) = to_publish {
+            let to_publish = Arc::new(to_publish);
             let mut attempt_no = 0;
             loop {
                 let cloned = to_publish.clone();
                 let callback = callback.clone();
 
                 let future = tokio::spawn(async move {
-                    callback.handle(cloned).await;
+                    callback.handle(cloned.as_ref()).await;
                 });
 
                 let result = tokio::time::timeout(tick_timeout, future).await;
