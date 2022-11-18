@@ -9,7 +9,7 @@ pub struct Request<
     pub completion: TaskCompletion<TResult, Arc<TError>>,
 }
 
-pub struct RpcMixerInner<
+pub struct RpcAggregatorInner<
     TItem: Send + Sync + 'static,
     TResult: Send + Sync + 'static,
     TError: Send + Sync + 'static,
@@ -22,7 +22,7 @@ impl<
         TItem: Send + Sync + 'static,
         TResult: Send + Sync + 'static,
         TError: Send + Sync + 'static,
-    > RpcMixerInner<TItem, TResult, TError>
+    > RpcAggregatorInner<TItem, TResult, TError>
 {
     pub fn new(receiver: tokio::sync::mpsc::UnboundedReceiver<()>) -> Self {
         Self {

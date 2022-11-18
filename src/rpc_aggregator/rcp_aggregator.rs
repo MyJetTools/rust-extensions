@@ -2,16 +2,19 @@ use std::sync::{atomic::AtomicUsize, Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{ApplicationStates, Logger, RoundTripCallbackWithConfirmation, TaskCompletion};
+use crate::{ApplicationStates, Logger, RpcAggregatorCallback, TaskCompletion};
 
-use super::rcp_mixer_inner::{Request, RpcMixerInner};
+use super::rcp_aggregator_inner::{Request, RpcAggregatorInner};
 
-pub struct RpcMixer<
+pub struct RpcAggregator<
     TItem: Send + Sync + 'static,
     TResult: Send + Sync + 'static,
     TError: Send + Sync + 'static,
 > {
-    inner: Arc<(Mutex<RpcMixerInner<TItem, TResult, TError>>, AtomicUsize)>,
+    inner: Arc<(
+        Mutex<RpcAggregatorInner<TItem, TResult, TError>>,
+        AtomicUsize,
+    )>,
     sender: tokio::sync::mpsc::UnboundedSender<()>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
     name: String,
@@ -24,7 +27,7 @@ impl<
         TItem: Send + Sync + 'static,
         TResult: Send + Sync + 'static,
         TError: Send + Sync + 'static,
-    > RpcMixer<TItem, TResult, TError>
+    > RpcAggregator<TItem, TResult, TError>
 {
     pub fn new(
         name: String,
@@ -36,7 +39,7 @@ impl<
 
         Self {
             inner: Arc::new((
-                Mutex::new(RpcMixerInner::new(receiver)),
+                Mutex::new(RpcAggregatorInner::new(receiver)),
                 AtomicUsize::new(0),
             )),
             sender,
@@ -65,9 +68,7 @@ impl<
 
     pub async fn start(
         &self,
-        callback: Arc<
-            dyn RoundTripCallbackWithConfirmation<TItem, TResult, TError> + Send + Sync + 'static,
-        >,
+        callback: Arc<dyn RpcAggregatorCallback<TItem, TResult, TError> + Send + Sync + 'static>,
     ) {
         let receiver = self.get_receiver().await;
 
@@ -124,11 +125,12 @@ async fn read_loop<
     TError: Send + Sync + 'static,
 >(
     name: String,
-    inner: Arc<(Mutex<RpcMixerInner<TItem, TResult, TError>>, AtomicUsize)>,
+    inner: Arc<(
+        Mutex<RpcAggregatorInner<TItem, TResult, TError>>,
+        AtomicUsize,
+    )>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
-    callback: Arc<
-        dyn RoundTripCallbackWithConfirmation<TItem, TResult, TError> + Send + Sync + 'static,
-    >,
+    callback: Arc<dyn RpcAggregatorCallback<TItem, TResult, TError> + Send + Sync + 'static>,
     max_amount_per_round_trip: usize,
     tick_timeout: std::time::Duration,
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
