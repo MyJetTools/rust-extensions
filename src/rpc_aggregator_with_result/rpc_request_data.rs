@@ -2,15 +2,24 @@ use std::sync::Arc;
 
 use crate::TaskCompletion;
 
-use super::rcp_aggregator_inner::Request;
+use super::rcp_aggregator_with_result_inner::Request;
 
-pub struct RcpRequestData<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> {
+pub struct RcpRequestData<
+    TItem: Send + Sync + 'static,
+    TResult: Send + Sync + 'static,
+    TError: Send + Sync + 'static,
+> {
     data: Option<Vec<TItem>>,
-    completions: Vec<TaskCompletion<(), Arc<TError>>>,
+    completions: Vec<TaskCompletion<TResult, Arc<TError>>>,
 }
 
-impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RcpRequestData<TItem, TError> {
-    pub fn new(requests: Vec<Request<TItem, TError>>) -> Self {
+impl<
+        TItem: Send + Sync + 'static,
+        TResult: Send + Sync + 'static,
+        TError: Send + Sync + 'static,
+    > RcpRequestData<TItem, TResult, TError>
+{
+    pub fn new(requests: Vec<Request<TItem, TResult, TError>>) -> Self {
         let mut data = Vec::with_capacity(requests.len());
         let mut completions = Vec::with_capacity(requests.len());
 
@@ -31,9 +40,18 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RcpRequestData
         Arc::new(new_result.unwrap())
     }
 
-    pub fn set_results(&mut self) -> Result<(), String> {
+    pub fn set_results(&mut self, mut results: Vec<TResult>) -> Result<(), String> {
+        if results.len() != self.completions.len() {
+            return Err(format!(
+                "amount of results {} != amount of requests {}",
+                results.len(),
+                self.completions.len()
+            ));
+        }
+
         for completion in &mut self.completions {
-            if let Err(err) = completion.try_set_ok(()) {
+            let result = results.remove(0);
+            if let Err(err) = completion.try_set_ok(result) {
                 println!("can not set result: {:?}", err);
             }
         }

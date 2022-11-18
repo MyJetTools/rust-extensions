@@ -2,15 +2,22 @@ use std::sync::{atomic::AtomicUsize, Arc};
 
 use tokio::sync::Mutex;
 
-use crate::{ApplicationStates, Logger, RpcAggregatorCallback, TaskCompletion};
+use crate::{ApplicationStates, Logger, RpcAggregatorWithResultCallback, TaskCompletion};
 
 use super::{
-    rcp_aggregator_inner::{Request, RpcAggregatorInner},
+    rcp_aggregator_with_result_inner::{Request, RpcAggregatorWithResultInner},
     rpc_request_data::RcpRequestData,
 };
 
-pub struct RpcAggregator<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> {
-    inner: Arc<(Mutex<RpcAggregatorInner<TItem, TError>>, AtomicUsize)>,
+pub struct RpcAggregatorWithResult<
+    TItem: Send + Sync + 'static,
+    TResult: Send + Sync + 'static,
+    TError: Send + Sync + 'static,
+> {
+    inner: Arc<(
+        Mutex<RpcAggregatorWithResultInner<TItem, TResult, TError>>,
+        AtomicUsize,
+    )>,
     sender: tokio::sync::mpsc::UnboundedSender<()>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
     name: String,
@@ -19,7 +26,12 @@ pub struct RpcAggregator<TItem: Send + Sync + 'static, TError: Send + Sync + 'st
     pub tick_timeout: std::time::Duration,
 }
 
-impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<TItem, TError> {
+impl<
+        TItem: Send + Sync + 'static,
+        TResult: Send + Sync + 'static,
+        TError: Send + Sync + 'static,
+    > RpcAggregatorWithResult<TItem, TResult, TError>
+{
     pub fn new(
         name: String,
         max_amount_per_round_trip: usize,
@@ -30,7 +42,7 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
 
         Self {
             inner: Arc::new((
-                Mutex::new(RpcAggregatorInner::new(receiver)),
+                Mutex::new(RpcAggregatorWithResultInner::new(receiver)),
                 AtomicUsize::new(0),
             )),
             sender,
@@ -59,7 +71,9 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
 
     pub async fn start(
         &self,
-        callback: Arc<dyn RpcAggregatorCallback<TItem, TError> + Send + Sync + 'static>,
+        callback: Arc<
+            dyn RpcAggregatorWithResultCallback<TItem, TResult, TError> + Send + Sync + 'static,
+        >,
     ) {
         let receiver = self.get_receiver().await;
 
@@ -75,7 +89,7 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
         ));
     }
 
-    pub async fn execute_request(&self, data: TItem) -> Result<(), Arc<TError>> {
+    pub async fn execute_request(&self, data: TItem) -> Result<TResult, Arc<TError>> {
         if self.app_states.is_shutting_down() {
             panic!(
                 "Can not publish to RoundTripPusher {} when shutting down",
@@ -110,7 +124,10 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
         task_await.get_result().await
     }
 
-    pub async fn execute_multi_requests(&self, data: Vec<TItem>) -> Vec<Result<(), Arc<TError>>> {
+    pub async fn execute_multi_requests(
+        &self,
+        data: Vec<TItem>,
+    ) -> Vec<Result<TResult, Arc<TError>>> {
         if self.app_states.is_shutting_down() {
             panic!(
                 "Can not publish to RoundTripPusher {} when shutting down",
@@ -158,11 +175,20 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
     }
 }
 
-async fn read_loop<TItem: Send + Sync + 'static, TError: Send + Sync + 'static>(
+async fn read_loop<
+    TItem: Send + Sync + 'static,
+    TResult: Send + Sync + 'static,
+    TError: Send + Sync + 'static,
+>(
     name: String,
-    inner: Arc<(Mutex<RpcAggregatorInner<TItem, TError>>, AtomicUsize)>,
+    inner: Arc<(
+        Mutex<RpcAggregatorWithResultInner<TItem, TResult, TError>>,
+        AtomicUsize,
+    )>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
-    callback: Arc<dyn RpcAggregatorCallback<TItem, TError> + Send + Sync + 'static>,
+    callback: Arc<
+        dyn RpcAggregatorWithResultCallback<TItem, TResult, TError> + Send + Sync + 'static,
+    >,
     max_amount_per_round_trip: usize,
     tick_timeout: std::time::Duration,
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<()>,
@@ -265,8 +291,8 @@ async fn read_loop<TItem: Send + Sync + 'static, TError: Send + Sync + 'static>(
                 }
 
                 match result.unwrap() {
-                    Ok(_) => {
-                        if let Err(message) = to_publish.set_results() {
+                    Ok(results) => {
+                        if let Err(message) = to_publish.set_results(results) {
                             to_publish.set_panic(message.as_str());
                         }
                         break;
