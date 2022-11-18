@@ -106,6 +106,28 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
         }
     }
 
+    pub fn try_set_panic(&mut self, message: String) -> Result<(), TaskCompletionError> {
+        let sender = self.get_sender();
+
+        match sender {
+            Some(sender) => {
+                let result = sender.send(CompletionEvent::Panic(message));
+                if let Err(_) = result {
+                    return Err(TaskCompletionError::CanNotSetErrorResult(
+                        "Can not set Panic result to the task completion. ".to_string(),
+                    ));
+                } else {
+                    return Ok(());
+                }
+            }
+            None => {
+                return Err(TaskCompletionError::CanNotSetErrorResult(
+                    "You are trying to set panic as a result for a second time ".to_string(),
+                ));
+            }
+        }
+    }
+
     pub fn try_set_error(&mut self, result: ErrorResult) -> Result<(), TaskCompletionError> {
         let sender = self.get_sender();
 
