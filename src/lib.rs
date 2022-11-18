@@ -8,6 +8,7 @@ mod logger;
 mod my_timer;
 pub mod objects_pool;
 mod round_trip_pusher;
+mod rpc_mixer;
 pub mod slice_of_u8_utils;
 mod stop_watch;
 mod str_or_string;
@@ -26,3 +27,4 @@ pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::StrOrString;
 
 pub use round_trip_pusher::*;
+pub use rpc_mixer::*;

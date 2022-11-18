@@ -1,9 +1,10 @@
 use tokio::sync::oneshot::Receiver;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum CompletionEvent<OkResult, ErrorResult> {
     Ok(OkResult),
     Error(ErrorResult),
+    Panic(String),
 }
 
 pub enum TaskCompletionAwaiter<OkResult, ErrorResult> {
@@ -29,6 +30,9 @@ impl<OkResult, ErrorResult> TaskCompletionAwaiter<OkResult, ErrorResult> {
                     Ok(result) => match result {
                         CompletionEvent::Ok(ok) => return Ok(ok),
                         CompletionEvent::Error(err) => return Err(err),
+                        CompletionEvent::Panic(message) => {
+                            panic!("Task completion panic result: {}", message)
+                        }
                     },
                     Err(error) => panic!(
                         "Can not recivev result for a task completion. Err: {:?}",

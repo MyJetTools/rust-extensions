@@ -90,6 +90,22 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
         }
     }
 
+    pub fn set_panic(&mut self, message: String) {
+        let sender = self.get_sender();
+
+        match sender {
+            Some(sender) => {
+                let result = sender.send(CompletionEvent::Panic(message));
+                if let Err(_) = result {
+                    panic!("Can not set Error result to the task completion. ");
+                }
+            }
+            None => {
+                panic!("You are trying to set error as a result for a second time");
+            }
+        }
+    }
+
     pub fn try_set_error(&mut self, result: ErrorResult) -> Result<(), TaskCompletionError> {
         let sender = self.get_sender();
 
