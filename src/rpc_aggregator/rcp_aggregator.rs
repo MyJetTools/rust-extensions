@@ -1,4 +1,7 @@
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{atomic::AtomicUsize, Arc},
+};
 
 use tokio::sync::Mutex;
 
@@ -110,7 +113,10 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
         task_await.get_result().await
     }
 
-    pub async fn execute_multi_requests(&self, data: Vec<TItem>) -> Vec<Result<(), Arc<TError>>> {
+    pub async fn execute_multi_requests(
+        &self,
+        data: Vec<TItem>,
+    ) -> Result<(), BTreeMap<usize, Arc<TError>>> {
         if self.app_states.is_shutting_down() {
             panic!(
                 "Can not publish to RoundTripPusher {} when shutting down",
@@ -148,13 +154,26 @@ impl<TItem: Send + Sync + 'static, TError: Send + Sync + 'static> RpcAggregator<
             );
         }
 
-        let mut result = Vec::with_capacity(awaiters.len());
+        let mut errs: Option<BTreeMap<usize, Arc<TError>>> = None;
 
+        let mut i = 0;
         for awaiter in awaiters {
-            result.push(awaiter.get_result().await);
+            if let Err(err) = awaiter.get_result().await {
+                if errs.is_none() {
+                    errs = Some(BTreeMap::new());
+                }
+
+                errs.as_mut().unwrap().insert(i, err);
+            }
+
+            i += 1
         }
 
-        result
+        if let Some(errs) = errs {
+            Err(errs)
+        } else {
+            Ok(())
+        }
     }
 }
 
