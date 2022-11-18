@@ -1,11 +1,12 @@
 use crate::TaskCompletion;
 use std::sync::Arc;
+
 pub struct Request<
     TItem: Send + Sync + 'static,
     TResult: Send + Sync + 'static,
     TError: Send + Sync + 'static,
 > {
-    pub item: TItem,
+    pub request_data: TItem,
     pub completion: TaskCompletion<TResult, Arc<TError>>,
 }
 

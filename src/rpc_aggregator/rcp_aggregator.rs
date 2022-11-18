@@ -4,7 +4,10 @@ use tokio::sync::Mutex;
 
 use crate::{ApplicationStates, Logger, RpcAggregatorCallback, TaskCompletion};
 
-use super::rcp_aggregator_inner::{Request, RpcAggregatorInner};
+use super::{
+    rcp_aggregator_inner::{Request, RpcAggregatorInner},
+    rpc_request_data::RcpRequestData,
+};
 
 pub struct RpcAggregator<
     TItem: Send + Sync + 'static,
@@ -84,7 +87,7 @@ impl<
         ));
     }
 
-    pub async fn publish(&self, item: TItem) -> Result<TResult, Arc<TError>> {
+    pub async fn execute_request(&self, data: TItem) -> Result<TResult, Arc<TError>> {
         if self.app_states.is_shutting_down() {
             panic!(
                 "Can not publish to RoundTripPusher {} when shutting down",
@@ -93,7 +96,7 @@ impl<
         }
 
         let mut event = Request {
-            item,
+            request_data: data,
             completion: TaskCompletion::new(),
         };
 
@@ -101,6 +104,7 @@ impl<
 
         {
             let mut write_access = self.inner.0.lock().await;
+
             write_access.queue.push(event);
             self.inner.1.store(
                 write_access.queue.len(),
@@ -116,6 +120,56 @@ impl<
         }
 
         task_await.get_result().await
+    }
+
+    pub async fn execute_multi_requests(
+        &self,
+        data: Vec<TItem>,
+    ) -> Vec<Result<TResult, Arc<TError>>> {
+        if self.app_states.is_shutting_down() {
+            panic!(
+                "Can not publish to RoundTripPusher {} when shutting down",
+                self.name
+            );
+        }
+
+        let mut awaiters = Vec::with_capacity(data.len());
+
+        {
+            let mut write_access = self.inner.0.lock().await;
+
+            for data in data {
+                let mut event = Request {
+                    request_data: data,
+                    completion: TaskCompletion::new(),
+                };
+
+                let task_await = event.completion.get_awaiter();
+                write_access.queue.push(event);
+
+                awaiters.push(task_await)
+            }
+
+            self.inner.1.store(
+                write_access.queue.len(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+        }
+        if self.sender.send(()).is_err() {
+            self.logger.write_fatal_error(
+                format!("publish to pusher {}", self.name),
+                "can not send".to_string(),
+                None,
+            );
+        }
+
+        let mut result = Vec::with_capacity(awaiters.len());
+
+        for awaiter in awaiters {
+            result.push(awaiter.get_result().await);
+        }
+
+        result
     }
 }
 
@@ -157,7 +211,7 @@ async fn read_loop<
                     std::sync::atomic::Ordering::SeqCst,
                 );
 
-                Some(to_yield)
+                Some(RcpRequestData::new(to_yield))
             } else {
                 let mut result = Vec::new();
                 std::mem::swap(&mut write_access.queue, &mut result);
@@ -166,24 +220,16 @@ async fn read_loop<
                     write_access.queue.len(),
                     std::sync::atomic::Ordering::SeqCst,
                 );
-                Some(result)
+                Some(RcpRequestData::new(result))
             }
         };
 
-        if let Some(to_publish) = to_publish {
-            let mut items = Vec::new();
-            let mut requests = Vec::new();
-
-            for to_publish in to_publish {
-                items.push(to_publish.item);
-                requests.push(to_publish.completion);
-            }
-
-            let items = Arc::new(items);
+        if let Some(mut to_publish) = to_publish {
+            let data_to_callback = to_publish.get_data_to_callback();
 
             let mut attempt_no = 0;
             loop {
-                let cloned = items.clone();
+                let cloned = data_to_callback.clone();
                 let callback = callback.clone();
 
                 let future = tokio::spawn(async move { callback.handle(cloned.as_ref()).await });
@@ -200,9 +246,7 @@ async fn read_loop<
                             None,
                         );
 
-                        for mut request in requests {
-                            request.set_panic("Timeout".to_string());
-                        }
+                        to_publish.set_panic("Timeout");
 
                         break;
                     }
@@ -227,9 +271,7 @@ async fn read_loop<
                             None,
                         );
 
-                        for mut request in requests {
-                            request.set_panic(format!("{}", err));
-                        }
+                        to_publish.set_panic(format!("{}", err).as_str());
 
                         break;
                     }
@@ -245,32 +287,14 @@ async fn read_loop<
                 }
 
                 match result.unwrap() {
-                    Ok(responses) => {
-                        let requests_len = requests.len();
-
-                        if responses.len() != requests_len {
-                            for mut request in requests {
-                                request.set_panic(format!("Amount of requests and responses should be the smame. Requests: {}, Responses: {}", requests_len, responses.len()));
-                            }
-
-                            break;
+                    Ok(results) => {
+                        if let Err(message) = to_publish.set_results(results) {
+                            to_publish.set_panic(message.as_str());
                         }
-
-                        let mut index = 0;
-
-                        for response in responses {
-                            requests.get_mut(index).unwrap().set_ok(response);
-                            index += 1;
-                        }
-
                         break;
                     }
                     Err(err) => {
-                        let err = Arc::new(err);
-                        for mut request in requests {
-                            request.set_error(err.clone());
-                        }
-
+                        to_publish.set_error(err);
                         break;
                     }
                 }
