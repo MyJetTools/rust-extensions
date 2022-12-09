@@ -3,16 +3,21 @@ use std::collections::HashMap;
 pub fn group_to_hash_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
     src: TIterator,
     get_key: TGetKey,
-) -> HashMap<TKey, TValue>
+) -> HashMap<TKey, Vec<TValue>>
 where
-    TKey: std::cmp::Eq + core::hash::Hash,
+    TKey: std::cmp::Eq + core::hash::Hash + Clone,
     TGetKey: Fn(&TValue) -> TKey,
 {
     let mut result = HashMap::new();
 
     for itm in src {
         let key = get_key(&itm);
-        result.insert(key, itm);
+
+        if !result.contains_key(&key) {
+            result.insert(key.clone(), Vec::new());
+        }
+
+        result.get_mut(&key).unwrap().push(itm);
     }
 
     result

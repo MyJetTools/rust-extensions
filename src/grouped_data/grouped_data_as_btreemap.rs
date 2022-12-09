@@ -3,16 +3,21 @@ use std::collections::{BTreeMap, HashMap};
 pub fn group_to_btree_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
     src: TIterator,
     get_key: TGetKey,
-) -> BTreeMap<TKey, TValue>
+) -> BTreeMap<TKey, Vec<TValue>>
 where
-    TKey: Ord,
+    TKey: Ord + Clone,
     TGetKey: Fn(&TValue) -> TKey,
 {
     let mut result = BTreeMap::new();
 
     for itm in src {
         let key = get_key(&itm);
-        result.insert(key, itm);
+
+        if !result.contains_key(&key) {
+            result.insert(key.clone(), Vec::new());
+        }
+
+        result.get_mut(&key).unwrap().push(itm);
     }
 
     result
