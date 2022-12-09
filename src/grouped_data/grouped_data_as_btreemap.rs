@@ -1,5 +1,23 @@
 use std::collections::{BTreeMap, HashMap};
 
+pub fn group_to_btree_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
+    src: TIterator,
+    get_key: TGetKey,
+) -> BTreeMap<TKey, TValue>
+where
+    TKey: Ord,
+    TGetKey: Fn(&TValue) -> TKey,
+{
+    let mut result = BTreeMap::new();
+
+    for itm in src {
+        let key = get_key(&itm);
+        result.insert(key, itm);
+    }
+
+    result
+}
+
 pub struct GroupedDataAsBTreeMap<TGroupKey, TKey, TValue>
 where
     TGroupKey: std::cmp::Eq + core::hash::Hash + Ord + Clone,

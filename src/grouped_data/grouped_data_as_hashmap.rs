@@ -1,5 +1,23 @@
 use std::collections::HashMap;
 
+pub fn group_to_hash_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
+    src: TIterator,
+    get_key: TGetKey,
+) -> HashMap<TKey, TValue>
+where
+    TKey: std::cmp::Eq + core::hash::Hash,
+    TGetKey: Fn(&TValue) -> TKey,
+{
+    let mut result = HashMap::new();
+
+    for itm in src {
+        let key = get_key(&itm);
+        result.insert(key, itm);
+    }
+
+    result
+}
+
 pub struct GroupedDataAsHashmap<TGroupKey, TKey, TValue>
 where
     TGroupKey: std::cmp::Eq + core::hash::Hash + Clone,
