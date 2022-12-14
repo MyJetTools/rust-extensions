@@ -10,4 +10,11 @@ pub trait Logger {
         message: String,
         ctx: Option<HashMap<String, String>>,
     );
+
+    fn write_debug_info(
+        &self,
+        process: String,
+        message: String,
+        ctx: Option<HashMap<String, String>>,
+    );
 }
