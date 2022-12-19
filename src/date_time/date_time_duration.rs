@@ -18,7 +18,7 @@ impl DateTimeDuration {
 
         if dur < 0 {
             let dur = -dur;
-            return Self::Positive(Duration::from_micros(dur as u64));
+            return Self::Negative(Duration::from_micros(dur as u64));
         }
 
         Self::Zero
