@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-
 pub enum RentResult<T: Sync + Send + 'static> {
     Rented(T),
     CreateNew,
@@ -9,7 +5,7 @@ pub enum RentResult<T: Sync + Send + 'static> {
 }
 
 pub struct ObjectPoolInner<T: Sync + Send + 'static> {
-    pool: Vec<Arc<Mutex<T>>>,
+    pool: Vec<T>,
     created_amount: usize,
 }
 
@@ -21,7 +17,7 @@ impl<T: Sync + Send + 'static> ObjectPoolInner<T> {
         }
     }
 
-    pub fn take(&mut self, max_amount: usize) -> RentResult<Arc<Mutex<T>>> {
+    pub fn take(&mut self, max_amount: usize) -> RentResult<T> {
         if self.pool.len() > 0 {
             let result = self.pool.pop().unwrap();
             return RentResult::Rented(result);
@@ -36,7 +32,7 @@ impl<T: Sync + Send + 'static> ObjectPoolInner<T> {
         return RentResult::CreateNew;
     }
 
-    pub fn return_element(&mut self, item: Arc<Mutex<T>>) {
+    pub fn return_element(&mut self, item: T) {
         self.pool.push(item);
     }
 }

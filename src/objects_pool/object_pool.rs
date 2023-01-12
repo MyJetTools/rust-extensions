@@ -38,10 +38,7 @@ impl<T: Sync + Send + 'static, TFactory: ObjectsPoolFactory<T>> ObjectsPool<T, T
                     return result;
                 }
                 RentResult::CreateNew => {
-                    return RentedObject::new(
-                        self.inner.clone(),
-                        Arc::new(Mutex::new(self.factory.create_new().await)),
-                    );
+                    return RentedObject::new(self.inner.clone(), self.factory.create_new().await);
                 }
                 RentResult::Wait => {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

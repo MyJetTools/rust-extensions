@@ -25,8 +25,17 @@ impl DateTimeAsMicroseconds {
         second: u32,
         microsecond: i64,
     ) -> Self {
-        let date_time =
-            NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, minute, second, 0);
+        let date_time = NaiveDate::from_ymd_opt(year, month, day).expect(&format!(
+            "Invalid date with year:{}, month:{}, day:{}",
+            year, month, day
+        ));
+
+        let date_time = date_time
+            .and_hms_milli_opt(hour, minute, second, 0)
+            .expect(&format!(
+                "Invalid date with hour:{}, min:{}, sec:{}",
+                hour, minute, second
+            ));
 
         let result = date_time.timestamp_millis() * 1000;
 

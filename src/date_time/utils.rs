@@ -20,7 +20,8 @@ pub fn parse_iso_string(src: &[u8]) -> Option<i64> {
 
     let sec = parse_two_digits(&src[17..19])?;
 
-    let date_time = NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, min, sec, 0);
+    let date_time =
+        NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;
 
     let result = date_time.timestamp_millis() * 1000;
 
@@ -45,7 +46,8 @@ pub fn parse_url_encoded_iso_string(src: &[u8]) -> Option<i64> {
 
     let sec = parse_two_digits(&src[21..23])?;
 
-    let date_time = NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, min, sec, 0);
+    let date_time =
+        NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;
 
     let result = date_time.timestamp_millis() * 1000;
 
@@ -71,7 +73,8 @@ pub fn parse_compact_date_time(src: &[u8]) -> Option<i64> {
 
     let sec = parse_two_digits(&src[12..14])?;
 
-    let date_time = NaiveDate::from_ymd(year, month, day).and_hms_milli(hour, min, sec, 0);
+    let date_time =
+        NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;
 
     let result = date_time.timestamp_millis() * 1000;
 
