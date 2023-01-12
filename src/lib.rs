@@ -6,6 +6,7 @@ pub mod lazy;
 pub mod linq;
 mod logger;
 mod my_timer;
+#[cfg(feature = "objects-pool")]
 pub mod objects_pool;
 
 pub mod slice_of_u8_utils;
