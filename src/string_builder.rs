@@ -1,35 +1,37 @@
-use std::string::FromUtf8Error;
-
 pub struct StringBuilder {
-    buffer: Vec<u8>,
+    buffer: String,
 }
 
 impl StringBuilder {
     pub fn new() -> Self {
-        Self { buffer: Vec::new() }
+        Self {
+            buffer: String::new(),
+        }
     }
 
     pub fn append_str(&mut self, s: &str) {
-        self.buffer.extend(s.as_bytes())
+        self.buffer.push_str(s)
     }
 
     pub fn append_line(&mut self, s: &str) {
-        self.buffer.extend(s.as_bytes());
-        self.buffer.push(b'\n');
+        self.buffer.push_str(s);
+        self.buffer.push('\n');
     }
 
-    pub fn append_bytes(&mut self, s: &[u8]) {
-        self.buffer.extend(s);
+    pub fn append_bytes(&mut self, s: &[u8]) -> Result<(), std::str::Utf8Error> {
+        let str = std::str::from_utf8(s)?;
+        self.buffer.push_str(str);
+        Ok(())
     }
 
     pub fn append_byte(&mut self, b: u8) {
-        self.buffer.push(b);
+        self.buffer.push(b as char);
     }
     pub fn append_char(&mut self, c: char) {
-        self.buffer.push(c as u8)
+        self.buffer.push(c)
     }
 
-    pub fn to_string_utf8(self) -> Result<String, FromUtf8Error> {
-        return String::from_utf8(self.buffer);
+    pub fn to_string_utf8(self) -> String {
+        self.buffer
     }
 }
