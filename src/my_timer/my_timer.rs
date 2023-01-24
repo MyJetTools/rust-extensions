@@ -55,6 +55,19 @@ impl MyTimer {
             self.iteration_timeout,
         ));
     }
+
+    pub async fn execute_timer(&self, timer_name: &str) {
+        for (timer_id, timer_tick) in &self.timers {
+            if timer_id == timer_name {
+                tokio::spawn(execute_timer(timer_tick.clone()))
+                    .await
+                    .unwrap();
+                return;
+            }
+        }
+
+        panic!("Timer with the name [{}] is not found", timer_name);
+    }
 }
 
 async fn timer_loop(
