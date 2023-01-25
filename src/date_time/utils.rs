@@ -14,11 +14,17 @@ pub fn parse_iso_string(src: &[u8]) -> Option<i64> {
 
     let day = parse_two_digits(&src[8..10])?;
 
-    let hour = parse_two_digits(&src[11..13])?;
+    let mut hour = 0;
+    let mut min = 0;
+    let mut sec = 0;
 
-    let min = parse_two_digits(&src[14..16])?;
+    if src.len() > 10 {
+        hour = parse_two_digits(&src[11..13])?;
 
-    let sec = parse_two_digits(&src[17..19])?;
+        min = parse_two_digits(&src[14..16])?;
+
+        sec = parse_two_digits(&src[17..19])?;
+    }
 
     let date_time =
         NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;

@@ -55,6 +55,12 @@ impl DateTimeAsMicroseconds {
 
     pub fn from_str(src: &str) -> Option<Self> {
         let as_bytes = src.as_bytes();
+
+        if as_bytes.len() == 10 && as_bytes[4] == b'-' && as_bytes[7] == b'-' {
+            let result = super::utils::parse_iso_string(as_bytes)?;
+            return DateTimeAsMicroseconds::new(result).into();
+        }
+
         if as_bytes.len() == 14 {
             let result = super::utils::parse_compact_date_time(as_bytes)?;
             return DateTimeAsMicroseconds::new(result).into();
@@ -222,5 +228,12 @@ mod tests {
         let result: DateTimeAsMicroseconds = now_seconds.into();
 
         assert_eq!("2021-04-25T17:30:03", &result.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_parse_date_only() {
+        let now = DateTimeAsMicroseconds::from_str("2021-04-25").unwrap();
+
+        assert_eq!("2021-04-25T00:00:00", &now.to_rfc3339()[..19]);
     }
 }
