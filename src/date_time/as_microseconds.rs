@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use super::DateTimeDuration;
+use super::{ClientServerTimeDifference, DateTimeDuration};
 
 const ONE_SECOND: i64 = 1_000_000;
 
@@ -122,6 +122,13 @@ impl DateTimeAsMicroseconds {
         let chrono = self.to_chrono_utc();
         return chrono.to_rfc3339();
     }
+
+    pub fn get_client_server_time_difference(
+        &self,
+        server_time: DateTimeAsMicroseconds,
+    ) -> ClientServerTimeDifference {
+        ClientServerTimeDifference::new(*self, server_time)
+    }
 }
 
 impl From<i64> for DateTimeAsMicroseconds {
@@ -233,7 +240,6 @@ mod tests {
     #[test]
     fn test_parse_date_only() {
         let now = DateTimeAsMicroseconds::from_str("2021-04-25").unwrap();
-
         assert_eq!("2021-04-25T00:00:00", &now.to_rfc3339()[..19]);
     }
 }
