@@ -129,6 +129,18 @@ impl DateTimeAsMicroseconds {
     ) -> ClientServerTimeDifference {
         ClientServerTimeDifference::new(*self, server_time)
     }
+
+    pub fn client_input_time_to_server_time(
+        client_input_time: DateTimeAsMicroseconds,
+        client_now_time: DateTimeAsMicroseconds,
+        server_now_time: DateTimeAsMicroseconds,
+    ) -> Self {
+        let difference = client_now_time.get_client_server_time_difference(server_now_time);
+
+        let mut result = client_input_time.clone();
+        result.add_minutes(difference.difference_in_half_hours() * 30);
+        result
+    }
 }
 
 impl From<i64> for DateTimeAsMicroseconds {
@@ -241,5 +253,50 @@ mod tests {
     fn test_parse_date_only() {
         let now = DateTimeAsMicroseconds::from_str("2021-04-25").unwrap();
         assert_eq!("2021-04-25T00:00:00", &now.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn client_input_time_to_server_time_1() {
+        let client_time =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T19:30:03.000Z").unwrap();
+        let server_time =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:00.000Z").unwrap();
+
+        let input_time = DateTimeAsMicroseconds::client_input_time_to_server_time(
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T19:30:03.000Z").unwrap(),
+            client_time,
+            server_time,
+        );
+        assert_eq!("2021-04-25T17:30:03", &input_time.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn client_input_time_to_server_time_2() {
+        let client_time =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+        let server_time =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T19:30:00.000Z").unwrap();
+
+        let input_time = DateTimeAsMicroseconds::client_input_time_to_server_time(
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap(),
+            client_time,
+            server_time,
+        );
+        assert_eq!("2021-04-25T19:30:03", &input_time.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn client_input_time_to_server_time_4() {
+        let client_time =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+        let server_time =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T19:30:00.000Z").unwrap();
+
+        let input_time = DateTimeAsMicroseconds::client_input_time_to_server_time(
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T16:30:03.000Z").unwrap(),
+            client_time,
+            server_time,
+        );
+        assert_eq!("2021-04-25T18:30:03", &input_time.to_rfc3339()[..19]);
     }
 }
