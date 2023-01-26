@@ -138,7 +138,7 @@ impl DateTimeAsMicroseconds {
         let difference = client_now_time.get_client_server_time_difference(server_now_time);
 
         let mut result = client_input_time.clone();
-        result.add_minutes(difference.difference_in_half_hours() * 30);
+        result.add_minutes(-difference.difference_in_half_hours() * 30);
         result
     }
 }
@@ -224,6 +224,17 @@ mod tests {
 
         let result = DateTimeAsMicroseconds::parse_iso_string("2021-04-26T17:30:03.000Z").unwrap();
         assert_eq!(now.unix_microseconds, result.unix_microseconds)
+    }
+
+    #[test]
+    fn test_duration_since() {
+        let now = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+
+        let before = DateTimeAsMicroseconds::new(now.unix_microseconds - 1);
+
+        let duration = now.duration_since(before);
+
+        assert_eq!(1, duration.as_positive_or_zero().as_micros());
     }
 
     #[test]

@@ -10,7 +10,7 @@ pub enum DateTimeDuration {
 
 impl DateTimeDuration {
     pub fn new(prev: &DateTimeAsMicroseconds, next: &DateTimeAsMicroseconds) -> Self {
-        let dur = prev.unix_microseconds - next.unix_microseconds;
+        let dur = next.unix_microseconds - prev.unix_microseconds;
 
         if dur > 0 {
             return Self::Positive(Duration::from_micros(dur as u64));
