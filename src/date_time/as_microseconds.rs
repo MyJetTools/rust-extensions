@@ -130,6 +130,14 @@ impl DateTimeAsMicroseconds {
         ClientServerTimeDifference::new(*self, server_time)
     }
 
+    pub fn is_later_than(&self, other_time: DateTimeAsMicroseconds) -> bool {
+        self.unix_microseconds > other_time.unix_microseconds
+    }
+
+    pub fn is_earlier_than(&self, other_time: DateTimeAsMicroseconds) -> bool {
+        self.unix_microseconds < other_time.unix_microseconds
+    }
+
     pub fn client_input_time_to_server_time(
         client_input_time: DateTimeAsMicroseconds,
         client_now_time: DateTimeAsMicroseconds,
@@ -309,5 +317,19 @@ mod tests {
             server_time,
         );
         assert_eq!("2021-04-25T18:30:03", &input_time.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_is_later_than() {
+        let now = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+        let later = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:04.000Z").unwrap();
+        let earlier = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:02.000Z").unwrap();
+
+        assert!(later.is_later_than(now));
+        assert!(!now.is_later_than(later));
+        assert!(!now.is_later_than(now));
+        assert!(!earlier.is_later_than(now));
+
+        assert!(earlier.is_earlier_than(now));
     }
 }
