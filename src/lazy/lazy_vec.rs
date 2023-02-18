@@ -37,4 +37,11 @@ impl<T> LazyVec<T> {
     pub fn is_empty(&self) -> bool {
         self.result.is_none()
     }
+
+    pub fn len(&self) -> usize {
+        match &self.result {
+            Some(result) => result.len(),
+            None => 0,
+        }
+    }
 }
