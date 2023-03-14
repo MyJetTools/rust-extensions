@@ -148,7 +148,7 @@ async fn events_loop_reader<TModel: Send + Sync + 'static>(
                     }
                 }
                 Err(err) => {
-                    println!("Timer {} is timeouted with err: {:?}", name.as_str(), err);
+                    println!("Timer {} is time outed with err: {:?}", name.as_str(), err);
                 }
             }
         }

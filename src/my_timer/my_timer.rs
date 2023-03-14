@@ -115,7 +115,7 @@ async fn timer_loop(
                     }
                 }
                 Err(err) => {
-                    println!("Timer {} is timeouted with err: {:?}", timer_id, err);
+                    println!("Timer {} is time outed with err: {:?}", timer_id, err);
                 }
             }
         }

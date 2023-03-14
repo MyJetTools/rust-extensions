@@ -10,7 +10,7 @@ pub trait ApplicationStates {
 
 pub enum AppStateCreated {
     Initialized,
-    NotInitliazed(AtomicBool),
+    NotInitialized(AtomicBool),
 }
 
 pub struct AppStates {
@@ -21,7 +21,7 @@ pub struct AppStates {
 impl AppStates {
     pub fn create_un_initialized() -> Self {
         Self {
-            initialized: AppStateCreated::NotInitliazed(AtomicBool::new(false)),
+            initialized: AppStateCreated::NotInitialized(AtomicBool::new(false)),
             shutting_down: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -47,7 +47,7 @@ impl AppStates {
 
     pub fn set_initialized(&self) {
         match &self.initialized {
-            AppStateCreated::NotInitliazed(state) => {
+            AppStateCreated::NotInitialized(state) => {
                 state.store(true, std::sync::atomic::Ordering::SeqCst);
             }
             AppStateCreated::Initialized => {}
@@ -62,7 +62,7 @@ impl AppStates {
     pub fn is_initialized(&self) -> bool {
         match self.initialized {
             AppStateCreated::Initialized => true,
-            AppStateCreated::NotInitliazed(ref initialized) => {
+            AppStateCreated::NotInitialized(ref initialized) => {
                 initialized.load(std::sync::atomic::Ordering::Relaxed)
             }
         }

@@ -26,17 +26,19 @@ pub fn parse_iso_string(src: &[u8]) -> Option<i64> {
         sec = parse_two_digits(&src[17..19])?;
     }
 
+    /* cSpell:disable */
     let date_time =
         NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;
+    /* cSpell:enable */
 
     let result = date_time.timestamp_millis() * 1000;
 
     if src.len() <= 19 {
         return Some(result);
     }
-    let microsec = parse_microseconds(&src[20..]);
+    let microseconds = parse_microseconds(&src[20..]);
 
-    Some(result + microsec)
+    Some(result + microseconds)
 }
 
 pub fn parse_url_encoded_iso_string(src: &[u8]) -> Option<i64> {
@@ -52,8 +54,10 @@ pub fn parse_url_encoded_iso_string(src: &[u8]) -> Option<i64> {
 
     let sec = parse_two_digits(&src[21..23])?;
 
+    /* cSpell:disable */
     let date_time =
         NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;
+    /* cSpell:enable */
 
     let result = date_time.timestamp_millis() * 1000;
 
@@ -61,9 +65,9 @@ pub fn parse_url_encoded_iso_string(src: &[u8]) -> Option<i64> {
         return Some(result);
     }
 
-    let microsec = parse_microseconds(&src[24..]);
+    let microseconds = parse_microseconds(&src[24..]);
 
-    Some(result + microsec)
+    Some(result + microseconds)
 }
 
 pub fn parse_compact_date_time(src: &[u8]) -> Option<i64> {
@@ -79,8 +83,10 @@ pub fn parse_compact_date_time(src: &[u8]) -> Option<i64> {
 
     let sec = parse_two_digits(&src[12..14])?;
 
+    /* cSpell:disable */
     let date_time =
         NaiveDate::from_ymd_opt(year, month, day)?.and_hms_milli_opt(hour, min, sec, 0)?;
+    /* cSpell:enable */
 
     let result = date_time.timestamp_millis() * 1000;
 
@@ -172,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_parse_url_endcoded_iso_string_and_back() {
+    pub fn test_parse_url_encoded_iso_string_and_back() {
         let src = "2021-04-25T17%3A30%3A43.602432";
         let micros = parse_url_encoded_iso_string(src.as_bytes()).unwrap();
 

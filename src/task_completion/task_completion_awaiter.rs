@@ -35,7 +35,7 @@ impl<OkResult, ErrorResult> TaskCompletionAwaiter<OkResult, ErrorResult> {
                         }
                     },
                     Err(error) => panic!(
-                        "Can not recivev result for a task completion. Err: {:?}",
+                        "Can not receive result for a task completion. Err: {:?}",
                         error
                     ),
                 }

@@ -69,10 +69,10 @@ mod tests {
                 assert_eq!(value.as_micros(), 1);
             }
             DateTimeDuration::Negative(_) => {
-                panic!("Shold not be here")
+                panic!("Should not be here")
             }
             DateTimeDuration::Zero => {
-                panic!("Shold not be here")
+                panic!("Should not be here")
             }
         }
     }
@@ -86,13 +86,13 @@ mod tests {
 
         match duration {
             DateTimeDuration::Positive(_) => {
-                panic!("Shold not be here")
+                panic!("Should not be here")
             }
             DateTimeDuration::Negative(value) => {
                 assert_eq!(value.as_micros(), 1);
             }
             DateTimeDuration::Zero => {
-                panic!("Shold not be here")
+                panic!("Should not be here")
             }
         }
     }
@@ -106,10 +106,10 @@ mod tests {
 
         match duration {
             DateTimeDuration::Positive(_) => {
-                panic!("Shold not be here")
+                panic!("Should not be here")
             }
             DateTimeDuration::Negative(_) => {
-                panic!("Shold not be here")
+                panic!("Should not be here")
             }
             DateTimeDuration::Zero => {
                 println!("Zero");

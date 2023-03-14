@@ -30,12 +30,14 @@ impl DateTimeAsMicroseconds {
             year, month, day
         ));
 
+        /* cSpell:disable */
         let date_time = date_time
             .and_hms_milli_opt(hour, minute, second, 0)
             .expect(&format!(
                 "Invalid date with hour:{}, min:{}, sec:{}",
                 hour, minute, second
             ));
+        /* cSpell:enable */
 
         let result = date_time.timestamp_millis() * 1000;
 
@@ -153,7 +155,7 @@ impl DateTimeAsMicroseconds {
 
 impl From<i64> for DateTimeAsMicroseconds {
     fn from(src: i64) -> Self {
-        //Milicecondes
+        //Milliseconds
         if src > 1577840461000 && src < 4733514061000 {
             return DateTimeAsMicroseconds::new(src * 1000);
         }
@@ -170,7 +172,7 @@ impl From<u64> for DateTimeAsMicroseconds {
     fn from(src: u64) -> Self {
         let src = src as i64;
 
-        //Miliseconds
+        //Milliseconds
         if src > 1577840461000 && src < 4733514061000 {
             return DateTimeAsMicroseconds::new(src * 1000);
         }
@@ -255,13 +257,13 @@ mod tests {
 
         assert_eq!("2021-04-25T17:30:03", &result.to_rfc3339()[..19]);
 
-        let now_miliseconds = now_microseconds / 1000;
+        let now_milliseconds = now_microseconds / 1000;
 
-        let result: DateTimeAsMicroseconds = now_miliseconds.into();
+        let result: DateTimeAsMicroseconds = now_milliseconds.into();
 
         assert_eq!("2021-04-25T17:30:03", &result.to_rfc3339()[..19]);
 
-        let now_seconds = now_miliseconds / 1000;
+        let now_seconds = now_milliseconds / 1000;
 
         let result: DateTimeAsMicroseconds = now_seconds.into();
 
