@@ -37,3 +37,19 @@ impl ToString for StrOrString<'_> {
         self.as_str().to_string()
     }
 }
+
+pub trait IntoStringOrStr<'s> {
+    fn into_string_or_str(self) -> StrOrString<'s>;
+}
+
+impl<'s> IntoStringOrStr<'s> for String {
+    fn into_string_or_str(self) -> StrOrString<'s> {
+        StrOrString::AsString(self)
+    }
+}
+
+impl<'s> IntoStringOrStr<'s> for &'s str {
+    fn into_string_or_str(self) -> StrOrString<'s> {
+        StrOrString::AsStr(self)
+    }
+}
