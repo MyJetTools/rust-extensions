@@ -2,11 +2,16 @@ use std::{num::ParseIntError, time::Duration};
 
 pub trait DurationExtensions {
     fn from_str(s: &str) -> Result<Duration, ParseDurationError>;
+    fn format_to_string(&self) -> String;
 }
 
 impl DurationExtensions for Duration {
     fn from_str(src: &str) -> Result<Duration, ParseDurationError> {
         parse_duration(src)
+    }
+
+    fn format_to_string(&self) -> String {
+        duration_to_string(*self)
     }
 }
 
@@ -23,7 +28,27 @@ pub fn parse_duration(src: &str) -> Result<Duration, ParseDurationError> {
 }
 
 fn parse_seconds(str: &str) -> Result<u64, ParseDurationError> {
-    let hms: Vec<&str> = str.split(":").collect();
+    let mut days: u64 = 0;
+    let mut seconds = 0;
+    for s in str.split_whitespace() {
+        if s.ends_with("d") {
+            let s = &s[..s.len() - 1];
+            match s.parse() {
+                Ok(result) => {
+                    days = result;
+                }
+                Err(err) => return Err(ParseDurationError::ParseIntError(err)),
+            }
+        } else {
+            seconds = parse_hms(s)?;
+        }
+    }
+
+    Ok(days * 86400 + seconds)
+}
+
+fn parse_hms(src: &str) -> Result<u64, ParseDurationError> {
+    let hms: Vec<&str> = src.split(":").collect();
 
     if hms.len() == 3 {
         let h = hms[0].parse::<u64>()?;
@@ -41,7 +66,8 @@ fn parse_seconds(str: &str) -> Result<u64, ParseDurationError> {
         return Ok(seconds);
     }
 
-    let err = ParseDurationError::Other(format!("Can not parse duration: {}", str));
+    let err =
+        ParseDurationError::Other(format!("Can not parse hours minutes and seconds: {}", src));
     Err(err)
 }
 
@@ -51,12 +77,13 @@ pub fn duration_to_string(d: Duration) -> String {
         return format!("{:?}", d);
     }
 
-    return format_duration(secs as i64);
+    return format_duration_seconds(secs as i64);
 }
 
 const SECS_PER_DAY: i64 = 3600 * 24;
 
-fn format_duration(mut secs: i64) -> String {
+fn format_duration_seconds(secs: i64) -> String {
+    let mut secs = secs;
     let days = secs / SECS_PER_DAY;
 
     secs = secs - days * SECS_PER_DAY;
@@ -95,26 +122,44 @@ mod tests {
 
     #[test]
     fn test_minutes() {
-        assert_eq!("00:01:00", format_duration(60));
-        assert_eq!("00:01:01", format_duration(61));
+        assert_eq!("00:01:00", format_duration_seconds(60));
+        assert_eq!("00:01:01", format_duration_seconds(61));
 
-        assert_eq!("00:02:00", format_duration(60 * 2));
-        assert_eq!("00:02:01", format_duration(60 * 2 + 1));
+        assert_eq!("00:02:00", format_duration_seconds(60 * 2));
+        assert_eq!("00:02:01", format_duration_seconds(60 * 2 + 1));
 
-        assert_eq!("00:59:00", format_duration(60 * 59));
-        assert_eq!("00:59:59", format_duration(60 * 59 + 59));
+        assert_eq!("00:59:00", format_duration_seconds(60 * 59));
+        assert_eq!("00:59:59", format_duration_seconds(60 * 59 + 59));
     }
 
     #[test]
     fn test_hours() {
-        assert_eq!("01:00:00", format_duration(60 * 60));
-        assert_eq!("01:01:00", format_duration(60 * 60 + 60));
-        assert_eq!("01:01:01", format_duration(60 * 60 + 61));
+        assert_eq!("01:00:00", format_duration_seconds(60 * 60));
+        assert_eq!("01:01:00", format_duration_seconds(60 * 60 + 60));
+        assert_eq!("01:01:01", format_duration_seconds(60 * 60 + 61));
     }
 
     #[test]
     fn test_days() {
-        assert_eq!("1d:00:00:00", format_duration(60 * 60 * 24));
-        assert_eq!("1d:00:00:01", format_duration(60 * 60 * 24 + 1));
+        assert_eq!("1d:00:00:00", format_duration_seconds(60 * 60 * 24));
+        assert_eq!("1d:00:00:01", format_duration_seconds(60 * 60 * 24 + 1));
+    }
+
+    #[test]
+    fn test_parse_with_days() {
+        let src = "15d 1:01:01";
+
+        let duration = Duration::from_str(src).unwrap();
+
+        assert_eq!("15d:01:01:01", duration_to_string(duration));
+    }
+
+    #[test]
+    fn test_parse_days() {
+        let src = "15d";
+
+        let duration = Duration::from_str(src).unwrap();
+
+        assert_eq!("15d:00:00:00", duration_to_string(duration));
     }
 }
