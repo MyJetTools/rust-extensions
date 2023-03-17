@@ -1,5 +1,15 @@
 use std::{num::ParseIntError, time::Duration};
 
+pub trait DurationExtensions {
+    fn from_str(s: &str) -> Result<Duration, ParseDurationError>;
+}
+
+impl DurationExtensions for Duration {
+    fn from_str(src: &str) -> Result<Duration, ParseDurationError> {
+        parse_duration(src)
+    }
+}
+
 pub fn parse_duration(src: &str) -> Result<Duration, ParseDurationError> {
     let secs = parse_seconds(src);
 
