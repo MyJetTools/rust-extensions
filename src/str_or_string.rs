@@ -5,7 +5,7 @@ pub struct StrOrString<'s> {
 }
 
 impl<'s> StrOrString<'s> {
-    pub fn crate_as_str(s: &'s str) -> Self {
+    pub fn create_as_str(s: &'s str) -> Self {
         Self {
             data: StrOrStringData::AsStr(s),
             from: None,
@@ -13,7 +13,7 @@ impl<'s> StrOrString<'s> {
         }
     }
 
-    pub fn crate_as_string(s: String) -> Self {
+    pub fn create_as_string(s: String) -> Self {
         Self {
             data: StrOrStringData::AsString(s),
             from: None,
@@ -90,13 +90,13 @@ pub trait IntoStringOrStr<'s> {
 
 impl<'s> IntoStringOrStr<'s> for String {
     fn into_string_or_str(self) -> StrOrString<'s> {
-        StrOrString::crate_as_string(self)
+        StrOrString::create_as_string(self)
     }
 }
 
 impl<'s> IntoStringOrStr<'s> for &'s str {
     fn into_string_or_str(self) -> StrOrString<'s> {
-        StrOrString::crate_as_str(self)
+        StrOrString::create_as_str(self)
     }
 }
 
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_src_with_cut() {
-        let mut src = StrOrString::crate_as_str("123");
+        let mut src = StrOrString::create_as_str("123");
         src.slice_it(1.into(), 2.into());
 
         assert_eq!("2", src.as_str())
@@ -114,21 +114,21 @@ mod tests {
 
     #[test]
     fn test_string_with_cut() {
-        let mut src = StrOrString::crate_as_string("123".to_string());
+        let mut src = StrOrString::create_as_string("123".to_string());
         src.slice_it(1.into(), 2.into());
 
         assert_eq!("2", src.as_str())
     }
     #[test]
     fn test_src_with_no_cut() {
-        let src = StrOrString::crate_as_str("123");
+        let src = StrOrString::create_as_str("123");
 
         assert_eq!("123", src.as_str())
     }
 
     #[test]
     fn test_string_with_no_cut() {
-        let src = StrOrString::crate_as_string("123".to_string());
+        let src = StrOrString::create_as_string("123".to_string());
 
         assert_eq!("123", src.as_str())
     }
