@@ -119,4 +119,17 @@ mod tests {
 
         assert_eq!("2", src.as_str())
     }
+    #[test]
+    fn test_src_with_no_cut() {
+        let src = StrOrString::crate_as_str("123");
+
+        assert_eq!("123", src.as_str())
+    }
+
+    #[test]
+    fn test_string_with_no_cut() {
+        let src = StrOrString::crate_as_string("123".to_string());
+
+        assert_eq!("123", src.as_str())
+    }
 }
