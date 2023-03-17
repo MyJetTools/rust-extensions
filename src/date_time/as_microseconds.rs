@@ -64,8 +64,10 @@ impl DateTimeAsMicroseconds {
         }
 
         if as_bytes.len() == 14 {
-            let result = super::utils::parse_compact_date_time(as_bytes)?;
-            return DateTimeAsMicroseconds::new(result).into();
+            if src >= "19700101000000" && src <= "21501231235959" {
+                let result = super::utils::parse_compact_date_time(as_bytes)?;
+                return DateTimeAsMicroseconds::new(result).into();
+            }
         }
 
         if as_bytes[4] == b'-' && as_bytes.len() >= 19 {
@@ -163,13 +165,13 @@ impl DateTimeAsMicroseconds {
 
 impl From<i64> for DateTimeAsMicroseconds {
     fn from(src: i64) -> Self {
-        //Milliseconds
-        if src > 1577840461000 && src < 4733514061000 {
-            return DateTimeAsMicroseconds::new(src * 1000);
-        }
-        //Seconds
-        if src > 1577840461 && src < 4733514061 {
+        //Seconds946677600000
+        if src < 4733514061 {
             return DateTimeAsMicroseconds::new(src * 1000_000);
+        }
+        //Milliseconds From  to [Mon Jan 01 2120 01:01:01]
+        if src < 4733514061000 {
+            return DateTimeAsMicroseconds::new(src * 1000);
         }
 
         return DateTimeAsMicroseconds::new(src);
@@ -179,17 +181,7 @@ impl From<i64> for DateTimeAsMicroseconds {
 impl From<u64> for DateTimeAsMicroseconds {
     fn from(src: u64) -> Self {
         let src = src as i64;
-
-        //Milliseconds
-        if src > 1577840461000 && src < 4733514061000 {
-            return DateTimeAsMicroseconds::new(src * 1000);
-        }
-        //Seconds
-        if src > 1577840461 && src < 4733514061 {
-            return DateTimeAsMicroseconds::new(src * 1000_000);
-        }
-
-        return DateTimeAsMicroseconds::new(src);
+        src.into()
     }
 }
 
@@ -359,5 +351,26 @@ mod tests {
         assert!(!earlier.is_later_than(now));
 
         assert!(earlier.is_earlier_than(now));
+    }
+
+    #[test]
+    fn test_from_mil_micro_secs() {
+        //milliseconds
+        let value: DateTimeAsMicroseconds = 1679059876123456i64.into();
+        assert_eq!("2023-03-17T13:31:16.123456", &value.to_rfc3339()[..26]);
+        let value: DateTimeAsMicroseconds = 315525600123456i64.into();
+        assert_eq!("1979-12-31T22:00:00.123456", &value.to_rfc3339()[..26]);
+
+        //milliseconds
+        let value: DateTimeAsMicroseconds = 1679059876123i64.into();
+        assert_eq!("2023-03-17T13:31:16.123", &value.to_rfc3339()[..23]);
+        let value: DateTimeAsMicroseconds = 315525600123i64.into();
+        assert_eq!("1979-12-31T22:00:00.123", &value.to_rfc3339()[..23]);
+
+        //seconds
+        let value: DateTimeAsMicroseconds = 1679059876i64.into();
+        assert_eq!("2023-03-17T13:31:16", &value.to_rfc3339()[..19]);
+        let value: DateTimeAsMicroseconds = 315525600i64.into();
+        assert_eq!("1979-12-31T22:00:00", &value.to_rfc3339()[..19]);
     }
 }
