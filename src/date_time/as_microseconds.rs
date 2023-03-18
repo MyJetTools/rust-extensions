@@ -373,4 +373,10 @@ mod tests {
         let value: DateTimeAsMicroseconds = 315525600i64.into();
         assert_eq!("1979-12-31T22:00:00", &value.to_rfc3339()[..19]);
     }
+
+    #[test]
+    fn some_random_tests() {
+        let value: DateTimeAsMicroseconds = 1679000370000i64.into();
+        println!("{}", value.to_rfc3339());
+    }
 }
