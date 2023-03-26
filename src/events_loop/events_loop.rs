@@ -143,7 +143,7 @@ async fn events_loop_reader<TModel: Send + Sync + 'static>(
 
                         tokio::spawn(async move {
                             println!("{}", message);
-                            logger.write_error(name, message, None);
+                            logger.write_error(name.into(), message.into(), None.into());
                         });
                     }
                 }

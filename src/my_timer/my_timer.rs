@@ -88,7 +88,7 @@ async fn timer_loop(
             interval.as_secs()
         );
 
-        logger.write_info(timer_id.to_string(), message, None);
+        logger.write_info(timer_id.to_string().into(), message.into(), None.into());
     }
 
     while !app_states.is_shutting_down() {
@@ -110,7 +110,7 @@ async fn timer_loop(
 
                         tokio::spawn(async move {
                             println!("{}", message);
-                            logger.write_error(timer_id.to_string(), message, None);
+                            logger.write_error(timer_id.into(), message.into(), None.into());
                         });
                     }
                 }

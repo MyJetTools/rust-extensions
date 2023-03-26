@@ -67,6 +67,24 @@ fn cut_data(src: &str, src_from: Option<usize>, src_to: Option<usize>) -> &str {
     }
     src
 }
+
+impl<'s> Into<StrOrString<'s>> for &'s str {
+    fn into(self) -> StrOrString<'s> {
+        StrOrString::create_as_str(self)
+    }
+}
+
+impl<'s> Into<StrOrString<'s>> for &'s String {
+    fn into(self) -> StrOrString<'s> {
+        StrOrString::create_as_str(self)
+    }
+}
+
+impl<'s> Into<StrOrString<'s>> for String {
+    fn into(self) -> StrOrString<'s> {
+        StrOrString::create_as_string(self)
+    }
+}
 pub enum StrOrStringData<'s> {
     AsStr(&'s str),
     AsString(String),
@@ -81,22 +99,6 @@ impl Into<String> for StrOrString<'_> {
 impl ToString for StrOrString<'_> {
     fn to_string(&self) -> String {
         self.as_str().to_string()
-    }
-}
-
-pub trait IntoStringOrStr<'s> {
-    fn into_string_or_str(self) -> StrOrString<'s>;
-}
-
-impl<'s> IntoStringOrStr<'s> for String {
-    fn into_string_or_str(self) -> StrOrString<'s> {
-        StrOrString::create_as_string(self)
-    }
-}
-
-impl<'s> IntoStringOrStr<'s> for &'s str {
-    fn into_string_or_str(self) -> StrOrString<'s> {
-        StrOrString::create_as_str(self)
     }
 }
 
