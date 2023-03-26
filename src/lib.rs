@@ -22,6 +22,6 @@ pub use task_completion::{TaskCompletion, TaskCompletionAwaiter, TaskCompletionE
 pub use application_states::*;
 pub mod grouped_data;
 
-pub use logger::Logger;
+pub use logger::*;
 pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::*;
