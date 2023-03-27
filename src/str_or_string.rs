@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StrOrString<'s> {
     data: StrOrStringData<'s>,
     from: Option<usize>,
@@ -86,7 +86,7 @@ impl<'s> Into<StrOrString<'s>> for String {
         StrOrString::create_as_string(self)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StrOrStringData<'s> {
     AsStr(&'s str),
     AsString(String),
