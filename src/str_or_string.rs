@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct StrOrString<'s> {
     data: StrOrStringData<'s>,
     from: Option<usize>,
