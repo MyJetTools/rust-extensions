@@ -9,6 +9,11 @@ pub struct ShortString {
 }
 
 impl ShortString {
+    pub fn new_empty() -> Self {
+        let data = [0u8; 256];
+        Self { data }
+    }
+
     pub fn from_str(src: &str) -> Self {
         if src.len() > 255 {
             panic!(
