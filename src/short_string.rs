@@ -15,6 +15,12 @@ impl ShortString {
     }
 
     pub fn from_str(src: &str) -> Self {
+        let mut result = Self::new_empty();
+        result.update(src);
+        result
+    }
+
+    pub fn update(&mut self, src: &str) {
         if src.len() > 255 {
             panic!(
                 "ShortString is too long. Len must be no more than 255. Now it is {}",
@@ -22,11 +28,8 @@ impl ShortString {
             );
         }
 
-        let mut data = [0u8; 256];
-        data[1..src.len() + 1].copy_from_slice(src.as_bytes());
-        data[0] = src.len() as u8;
-
-        Self { data }
+        self.data[1..src.len() + 1].copy_from_slice(src.as_bytes());
+        self.data[0] = src.len() as u8;
     }
 
     pub fn len(&self) -> usize {
