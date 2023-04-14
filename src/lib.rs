@@ -6,6 +6,8 @@ pub mod lazy;
 pub mod linq;
 mod logger;
 mod my_timer;
+mod short_string;
+pub use short_string::*;
 #[cfg(feature = "objects-pool")]
 pub mod objects_pool;
 
