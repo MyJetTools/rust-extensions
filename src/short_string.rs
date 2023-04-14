@@ -73,6 +73,17 @@ impl Debug for ShortString {
     }
 }
 
+impl<'s> From<&'s String> for ShortString {
+    fn from(value: &'s String) -> Self {
+        Self::from_str(value.as_str())
+    }
+}
+
+impl<'s> From<&'s str> for ShortString {
+    fn from(value: &'s str) -> Self {
+        Self::from_str(value)
+    }
+}
 #[cfg(test)]
 mod test {
     use crate::ShortString;
