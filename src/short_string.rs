@@ -1,5 +1,9 @@
-use std::ops::Deref;
+use std::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 
+#[derive(Clone)]
 pub struct ShortString {
     data: [u8; 256],
 }
@@ -55,6 +59,20 @@ impl Deref for ShortString {
     }
 }
 
+impl Display for ShortString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl Debug for ShortString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShortString")
+            .field("value", &self.as_str())
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::ShortString;
@@ -68,5 +86,8 @@ mod test {
         my_str.push_str(" world");
 
         assert_eq!(my_str.as_str(), "Hello world");
+
+        println!("{}", my_str);
+        println!("{:?}", my_str);
     }
 }
