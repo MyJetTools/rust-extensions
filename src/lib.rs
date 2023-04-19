@@ -1,5 +1,5 @@
 mod application_states;
-mod as_u8_slice;
+mod as_slice_or_vec;
 pub mod date_time;
 pub mod duration_utils;
 pub mod events_loop;
@@ -25,7 +25,7 @@ pub use task_completion::{TaskCompletion, TaskCompletionAwaiter, TaskCompletionE
 pub use application_states::*;
 pub mod grouped_data;
 
-pub use as_u8_slice::*;
+pub use as_slice_or_vec::*;
 pub use logger::*;
 pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::*;
