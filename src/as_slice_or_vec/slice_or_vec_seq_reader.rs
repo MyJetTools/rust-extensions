@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Seek};
 
 use crate::AsSliceOrVec;
 
@@ -43,6 +43,49 @@ impl<'s> Read for SliceOrVecSeqReader<'s, u8> {
         self.shift_offset_forward(read_len);
 
         Ok(read_len)
+    }
+}
+
+impl<'s> Seek for SliceOrVecSeqReader<'s, u8> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        match pos {
+            std::io::SeekFrom::Start(value) => {
+                self.offset = value as usize;
+
+                if self.offset >= self.src.get_len() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "invalid seek to overflowing position",
+                    ));
+                }
+            }
+            std::io::SeekFrom::End(value) => {
+                let offset = self.src.get_len() as i64 + value;
+
+                if offset < 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "invalid seek to a negative or overflowing position",
+                    ));
+                } else {
+                    self.offset = offset as usize;
+                }
+            }
+            std::io::SeekFrom::Current(value) => {
+                let offset = self.offset as i64 + value;
+
+                if offset < 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "invalid seek to a negative or overflowing position",
+                    ));
+                } else {
+                    self.offset = offset as usize;
+                }
+            }
+        }
+
+        Ok(self.offset as u64)
     }
 }
 
