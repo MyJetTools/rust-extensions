@@ -4,6 +4,13 @@ pub enum AsSliceOrVec<'s, T: Clone> {
 }
 
 impl<'s, T: Clone> AsSliceOrVec<'s, T> {
+    pub fn create_as_slice(slice: &'s [T]) -> AsSliceOrVec<'s, T> {
+        AsSliceOrVec::AsSlice(slice)
+    }
+
+    pub fn create_as_vec(vec: Vec<T>) -> AsSliceOrVec<'s, T> {
+        AsSliceOrVec::AsVec(vec)
+    }
     pub fn as_slice(&self) -> &[T] {
         match self {
             AsSliceOrVec::AsSlice(slice) => slice,
@@ -15,6 +22,13 @@ impl<'s, T: Clone> AsSliceOrVec<'s, T> {
         match self {
             AsSliceOrVec::AsSlice(slice) => slice.to_vec(),
             AsSliceOrVec::AsVec(vec) => vec,
+        }
+    }
+
+    pub fn get_len(&self) -> usize {
+        match self {
+            AsSliceOrVec::AsSlice(slice) => slice.len(),
+            AsSliceOrVec::AsVec(vec) => vec.len(),
         }
     }
 }
