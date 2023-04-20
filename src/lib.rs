@@ -1,5 +1,6 @@
 mod application_states;
 mod as_slice_or_vec;
+mod binary_payload_builder;
 pub mod date_time;
 pub mod duration_utils;
 pub mod events_loop;
@@ -26,6 +27,7 @@ pub use application_states::*;
 pub mod grouped_data;
 
 pub use as_slice_or_vec::*;
+pub use binary_payload_builder::*;
 pub use logger::*;
 pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::*;
