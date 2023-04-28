@@ -58,6 +58,10 @@ impl DateTimeAsMicroseconds {
     pub fn from_str(src: &str) -> Option<Self> {
         let as_bytes = src.as_bytes();
 
+        if as_bytes.len() == 0 {
+            return None;
+        }
+
         if as_bytes.len() == 10 && as_bytes[4] == b'-' && as_bytes[7] == b'-' {
             let result = super::utils::parse_iso_string(as_bytes)?;
             return DateTimeAsMicroseconds::new(result).into();
@@ -378,5 +382,13 @@ mod tests {
     fn some_random_tests() {
         let value: DateTimeAsMicroseconds = 1679000370000i64.into();
         println!("{}", value.to_rfc3339());
+    }
+
+    #[test]
+    fn from_str_empty() {
+        let time =
+            DateTimeAsMicroseconds::from_str("");
+
+        assert_eq!(true, time.is_none());
     }
 }
