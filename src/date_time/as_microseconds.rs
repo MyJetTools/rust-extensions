@@ -57,7 +57,7 @@ impl DateTimeAsMicroseconds {
 
     pub fn from_str(src: &str) -> Option<Self> {
         if let Some(result) = DateTimeStruct::from_str(src) {
-            return result.to_date_time_as_microseconds();
+            return Some(Self::new(result.to_unix_microseconds()?));
         }
 
         let value: Result<i64, _> = src.parse();
@@ -362,5 +362,12 @@ mod tests {
     fn some_random_tests() {
         let value: DateTimeAsMicroseconds = 1679000370000i64.into();
         println!("{}", value.to_rfc3339());
+    }
+
+    #[test]
+    fn from_str_empty() {
+        let time = DateTimeAsMicroseconds::from_str("");
+
+        assert_eq!(true, time.is_none());
     }
 }
