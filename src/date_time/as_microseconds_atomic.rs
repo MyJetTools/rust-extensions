@@ -5,7 +5,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 
-use super::{DateTimeAsMicroseconds, DateTimeDuration};
+use super::{DateTimeAsMicroseconds, DateTimeDuration, DateTimeStruct};
 
 #[derive(Debug)]
 pub struct AtomicDateTimeAsMicroseconds {
@@ -16,6 +16,19 @@ impl AtomicDateTimeAsMicroseconds {
     pub fn new(unix_microseconds: i64) -> Self {
         Self {
             unix_microseconds: AtomicI64::new(unix_microseconds),
+        }
+    }
+
+    pub fn from_str(src: &str) -> Option<Self> {
+        if let Some(result) = DateTimeStruct::from_str(src) {
+            return Some(Self::new(result.to_unix_microseconds()?));
+        }
+
+        let value: Result<i64, _> = src.parse();
+
+        match value {
+            Ok(result) => return Some(Self::new(result)),
+            Err(_) => return None,
         }
     }
 
@@ -49,8 +62,8 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {
-        let result = super::utils::parse_iso_string(iso_string.as_bytes())?;
-        return Some(Self::new(result));
+        let dt = DateTimeStruct::parse_rfc3339_str(iso_string.as_bytes())?;
+        return Some(Self::new(dt.to_unix_microseconds()?));
     }
 
     pub fn to_chrono_utc(&self) -> DateTime<Utc> {
@@ -70,5 +83,10 @@ impl AtomicDateTimeAsMicroseconds {
     pub fn to_rfc3339(&self) -> String {
         let chrono = self.to_chrono_utc();
         return chrono.to_rfc3339();
+    }
+
+    pub fn to_rfc5322(&self) -> String {
+        let dt: DateTimeStruct = DateTimeAsMicroseconds::new(self.get_unix_microseconds()).into();
+        return dt.to_rfc5322();
     }
 }

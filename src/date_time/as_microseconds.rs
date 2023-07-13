@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use super::{ClientServerTimeDifference, DateTimeDuration};
+use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 
 const ONE_SECOND: i64 = 1_000_000;
 
@@ -56,28 +56,8 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn from_str(src: &str) -> Option<Self> {
-        let as_bytes = src.as_bytes();
-
-        if as_bytes.len() == 10 && as_bytes[4] == b'-' && as_bytes[7] == b'-' {
-            let result = super::utils::parse_iso_string(as_bytes)?;
-            return DateTimeAsMicroseconds::new(result).into();
-        }
-
-        if as_bytes.len() == 14 {
-            if src >= "19700101000000" && src <= "21501231235959" {
-                let result = super::utils::parse_compact_date_time(as_bytes)?;
-                return DateTimeAsMicroseconds::new(result).into();
-            }
-        }
-
-        if as_bytes[4] == b'-' && as_bytes.len() >= 19 {
-            if as_bytes[13] == b'%' {
-                let result = super::utils::parse_url_encoded_iso_string(as_bytes)?;
-                return DateTimeAsMicroseconds::new(result).into();
-            } else {
-                let result = super::utils::parse_iso_string(as_bytes)?;
-                return DateTimeAsMicroseconds::new(result).into();
-            }
+        if let Some(result) = DateTimeStruct::from_str(src) {
+            return result.to_date_time_as_microseconds();
         }
 
         let value: Result<i64, _> = src.parse();
@@ -89,8 +69,7 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {
-        let result = super::utils::parse_iso_string(iso_string.as_bytes())?;
-        return Some(Self::new(result));
+        DateTimeStruct::parse_rfc3339_str(iso_string.as_bytes())?.to_date_time_as_microseconds()
     }
 
     pub fn to_chrono_utc(&self) -> DateTime<Utc> {
@@ -133,6 +112,11 @@ impl DateTimeAsMicroseconds {
     pub fn to_rfc3339(&self) -> String {
         let chrono = self.to_chrono_utc();
         return chrono.to_rfc3339();
+    }
+
+    pub fn to_rfc5322(&self) -> String {
+        let dt: DateTimeStruct = self.into();
+        return dt.to_rfc5322();
     }
 
     pub fn get_client_server_time_difference(
