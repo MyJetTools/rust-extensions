@@ -1,6 +1,12 @@
 use super::DateTimeStruct;
 
 impl DateTimeStruct {
+    pub fn to_compact_date_time_string(&self) -> String {
+        format!(
+            "{:04}{:02}{:02}{:02}{:02}{:02}",
+            self.year, self.month, self.day, self.time.hour, self.time.min, self.time.sec
+        )
+    }
     pub fn parse_compact_date_time(src: &[u8]) -> Option<Self> {
         let year = super::utils::parse_four_digits(&src[0..4])?;
 

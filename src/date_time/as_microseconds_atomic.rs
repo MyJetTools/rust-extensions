@@ -93,4 +93,9 @@ impl AtomicDateTimeAsMicroseconds {
         let dt: DateTimeStruct = DateTimeAsMicroseconds::new(self.get_unix_microseconds()).into();
         return dt.to_rfc5322();
     }
+
+    pub fn to_compact_date_time_string(&self) -> String {
+        let dt: DateTimeStruct = DateTimeAsMicroseconds::new(self.get_unix_microseconds()).into();
+        return dt.to_compact_date_time_string();
+    }
 }

@@ -123,6 +123,11 @@ impl DateTimeAsMicroseconds {
         return dt.to_rfc5322();
     }
 
+    pub fn to_compact_date_time_string(&self) -> String {
+        let dt: DateTimeStruct = self.into();
+        return dt.to_compact_date_time_string();
+    }
+
     pub fn get_client_server_time_difference(
         &self,
         server_time: DateTimeAsMicroseconds,
