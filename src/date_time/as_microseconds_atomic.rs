@@ -20,6 +20,10 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn from_str(src: &str) -> Option<Self> {
+        if src == "" {
+            return None;
+        }
+
         if let Some(result) = DateTimeStruct::from_str(src) {
             return Some(Self::new(result.to_unix_microseconds()?));
         }
