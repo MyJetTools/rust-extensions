@@ -31,3 +31,5 @@ pub use binary_payload_builder::*;
 pub use logger::*;
 pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::*;
+#[cfg(feature = "base64")]
+pub mod base64;
