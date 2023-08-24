@@ -5,7 +5,7 @@ pub fn format_path<'s>(src: &'s str) -> StrOrString<'s> {
         return StrOrString::create_as_str(src);
     }
 
-    let path = std::env::var("Home");
+    let path = std::env::var("HOME");
 
     if path.is_err() {
         return StrOrString::create_as_str(src);
