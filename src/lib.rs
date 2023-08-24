@@ -33,3 +33,4 @@ pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::*;
 #[cfg(feature = "base64")]
 pub mod base64;
+pub mod file_utils;
