@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 #[derive(Debug, Clone)]
 pub struct StrOrString<'s> {
     data: StrOrStringData<'s>,

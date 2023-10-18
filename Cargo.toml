@@ -16,3 +16,4 @@ chrono = "*"
 async-trait = "*"
 signal-hook = "*"
 base64 = { version = "*", optional = true }
+serde = {version = "*", features = ["derive"]}

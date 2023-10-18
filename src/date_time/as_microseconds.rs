@@ -1,12 +1,13 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 
 use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 
 const ONE_SECOND: i64 = 1_000_000;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct DateTimeAsMicroseconds {
     pub unix_microseconds: i64,
 }
