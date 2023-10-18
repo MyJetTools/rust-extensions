@@ -8,6 +8,7 @@ use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 const ONE_SECOND: i64 = 1_000_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
 pub struct DateTimeAsMicroseconds {
     pub unix_microseconds: i64,
 }
@@ -379,5 +380,23 @@ mod tests {
         let time = DateTimeAsMicroseconds::from_str("");
 
         assert_eq!(true, time.is_none());
+    }
+
+    #[derive(Serialize)]
+    struct TestStruct {
+        a: DateTimeAsMicroseconds,
+    }
+
+    #[test]
+    fn check_serialize() {
+        let value = TestStruct {
+            a: DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap(),
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+
+        println!("{}", json);
+
+        //assert_eq!("{\"a\":\"2021-04-25T17:30:03.000000Z\"}", json.as_str());
     }
 }
