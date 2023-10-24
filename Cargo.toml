@@ -9,12 +9,13 @@ edition = "2021"
 default = []
 objects-pool = []
 base64 = ["dep:base64"]
+with-tokio = ["tokio", "signal-hook"]
 
 [dependencies]
-tokio = { version = "*", features = ["full"] }
+tokio = { version = "*", features = ["full"], optional = true }
 chrono = "*"
 async-trait = "*"
-signal-hook = "*"
+signal-hook = { version = "*", optional = true }
 base64 = { version = "*", optional = true }
 serde = { version = "*", features = ["derive"] }
 
