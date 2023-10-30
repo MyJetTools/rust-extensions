@@ -57,6 +57,10 @@ impl ShortString {
 
         unsafe { std::str::from_utf8_unchecked(&self.data[1..len + 1]) }
     }
+
+    pub fn set_len(&mut self, pos: u8) {
+        self.data[0] = pos;
+    }
 }
 
 impl Deref for ShortString {
@@ -109,5 +113,14 @@ mod test {
 
         println!("{}", my_str);
         println!("{:?}", my_str);
+    }
+
+    #[test]
+    fn test_set_len() {
+        let mut my_str = ShortString::from_str("Hello/");
+
+        my_str.set_len(my_str.len() as u8 - 1);
+
+        assert_eq!(my_str.as_str(), "Hello");
     }
 }
