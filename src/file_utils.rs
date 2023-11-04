@@ -1,16 +1,17 @@
 use crate::StrOrString;
 
-pub fn format_path<'s>(src: &'s str) -> StrOrString<'s> {
-    if !src.contains('~') {
-        return StrOrString::create_as_str(src);
+pub fn format_path<'s>(src: impl Into<StrOrString<'s>>) -> StrOrString<'s> {
+    let src: StrOrString<'s> = src.into();
+    if !src.as_str().contains('~') {
+        return src;
     }
 
     let path = std::env::var("HOME");
 
     if path.is_err() {
-        return StrOrString::create_as_str(src);
+        return src;
     }
 
-    let result = src.replace('~', path.unwrap().as_str());
+    let result = src.as_str().replace('~', path.unwrap().as_str());
     StrOrString::create_as_string(result)
 }
