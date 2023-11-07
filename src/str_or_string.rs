@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use crate::ShortString;
+
 #[derive(Debug, Clone)]
 pub struct StrOrString<'s> {
     data: StrOrStringData<'s>,
@@ -23,6 +25,14 @@ impl<'s> StrOrString<'s> {
             to: None,
         }
     }
+
+    pub fn create_as_short_string(s: ShortString) -> Self {
+        Self {
+            data: StrOrStringData::AsShortString(s),
+            from: None,
+            to: None,
+        }
+    }
     pub fn slice_it(&mut self, from: Option<usize>, to: Option<usize>) {
         self.from = from;
         self.to = to;
@@ -36,6 +46,7 @@ impl<'s> StrOrString<'s> {
         let result = match &self.data {
             StrOrStringData::AsStr(s) => s,
             StrOrStringData::AsString(s) => s.as_str(),
+            StrOrStringData::AsShortString(s) => s.as_str(),
         };
 
         cut_data(result, self.from, self.to)
@@ -51,6 +62,31 @@ impl<'s> StrOrString<'s> {
                 } else {
                     s
                 }
+            }
+            StrOrStringData::AsShortString(s) => s.as_str().to_string(),
+        }
+    }
+
+    pub fn into_short_string(self) -> ShortString {
+        let has_data_to_cut = self.has_data_to_cut();
+
+        if has_data_to_cut {
+            match self.data {
+                StrOrStringData::AsStr(s) => {
+                    ShortString::from_str(cut_data(s, self.from, self.to)).unwrap()
+                }
+                StrOrStringData::AsString(s) => {
+                    ShortString::from_str(cut_data(&s, self.from, self.to)).unwrap()
+                }
+                StrOrStringData::AsShortString(s) => {
+                    ShortString::from_str(cut_data(&s, self.from, self.to)).unwrap()
+                }
+            }
+        } else {
+            match self.data {
+                StrOrStringData::AsStr(s) => ShortString::from_str(s).unwrap(),
+                StrOrStringData::AsString(s) => ShortString::from_str(&s).unwrap(),
+                StrOrStringData::AsShortString(s) => s,
             }
         }
     }
@@ -92,6 +128,7 @@ impl<'s> Into<StrOrString<'s>> for String {
 pub enum StrOrStringData<'s> {
     AsStr(&'s str),
     AsString(String),
+    AsShortString(ShortString),
 }
 
 impl Into<String> for StrOrString<'_> {
