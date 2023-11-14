@@ -33,6 +33,20 @@ impl<'s> StrOrString<'s> {
             to: None,
         }
     }
+
+    pub fn create_as_short_string_or_string(s: &str) -> Self {
+        let data = if let Some(s) = ShortString::from_str(s) {
+            StrOrStringData::AsShortString(s)
+        } else {
+            StrOrStringData::AsString(s.to_string())
+        };
+
+        Self {
+            data,
+            from: None,
+            to: None,
+        }
+    }
     pub fn slice_it(&mut self, from: Option<usize>, to: Option<usize>) {
         self.from = from;
         self.to = to;
