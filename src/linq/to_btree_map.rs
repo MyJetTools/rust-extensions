@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-pub struct ToHashMapConverter<TSrcValue, TKey, TValue, TConvertor>
+pub struct ToBTreeMapConverter<TSrcValue, TKey, TValue, TConvertor>
 where
-    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TKey: Ord + std::cmp::Eq + core::hash::Hash + Clone,
     TConvertor: Fn(TSrcValue) -> Option<(TKey, TValue)>,
 {
     convertor: Option<TConvertor>,
@@ -10,9 +10,9 @@ where
 }
 
 impl<TSrcValue, TKey, TValue, TConvertor: Fn(TSrcValue) -> Option<(TKey, TValue)>>
-    ToHashMapConverter<TSrcValue, TKey, TValue, TConvertor>
+    ToBTreeMapConverter<TSrcValue, TKey, TValue, TConvertor>
 where
-    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TKey: Ord + std::cmp::Eq + core::hash::Hash + Clone,
     TConvertor: Fn(TSrcValue) -> Option<(TKey, TValue)>,
 {
     pub fn new(src: Vec<TSrcValue>, convertor: TConvertor) -> Self {
@@ -22,8 +22,8 @@ where
         }
     }
 
-    pub fn collect(mut self) -> HashMap<TKey, TValue> {
-        let mut result = HashMap::new();
+    pub fn collect(mut self) -> BTreeMap<TKey, TValue> {
+        let mut result = BTreeMap::new();
 
         let convertor = self.convertor.take().unwrap();
 
@@ -37,28 +37,28 @@ where
     }
 }
 
-pub trait ToHashMap<TSrcValue, TKey, TValue, TConvertor: Fn(TValue) -> Option<(TKey, TValue)>>
+pub trait ToBTreeMap<TSrcValue, TKey, TValue, TConvertor: Fn(TValue) -> Option<(TKey, TValue)>>
 where
-    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TKey: Ord + std::cmp::Eq + core::hash::Hash + Clone,
     TConvertor: Fn(TSrcValue) -> Option<(TKey, TValue)>,
 {
-    fn to_hash_map(
+    fn to_btree_map(
         self,
         convertor: TConvertor,
-    ) -> ToHashMapConverter<TSrcValue, TKey, TValue, TConvertor>;
+    ) -> ToBTreeMapConverter<TSrcValue, TKey, TValue, TConvertor>;
 }
 
 impl<TSrcValue, TKey, TValue, TConvertor: Fn(TValue) -> Option<(TKey, TValue)>>
-    ToHashMap<TSrcValue, TKey, TValue, TConvertor> for Vec<TSrcValue>
+    ToBTreeMap<TSrcValue, TKey, TValue, TConvertor> for Vec<TSrcValue>
 where
-    TKey: std::cmp::Eq + core::hash::Hash + Clone,
+    TKey: Ord + std::cmp::Eq + core::hash::Hash + Clone,
     TConvertor: Fn(TSrcValue) -> Option<(TKey, TValue)>,
 {
-    fn to_hash_map(
+    fn to_btree_map(
         self,
         convertor: TConvertor,
-    ) -> ToHashMapConverter<TSrcValue, TKey, TValue, TConvertor> {
-        ToHashMapConverter::new(self, convertor)
+    ) -> ToBTreeMapConverter<TSrcValue, TKey, TValue, TConvertor> {
+        ToBTreeMapConverter::new(self, convertor)
     }
 }
 
@@ -67,11 +67,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_to_hash_map() {
+    fn test_to_btree_map() {
         let items = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
         let result = items
-            .to_hash_map(|item: i32| Some((item.to_string(), item)))
+            .to_btree_map(|item: i32| Some((item.to_string(), item)))
             .collect();
 
         assert_eq!(result.len(), 10);
