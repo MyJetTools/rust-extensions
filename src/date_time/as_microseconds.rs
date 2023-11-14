@@ -79,8 +79,13 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn to_chrono_utc(&self) -> DateTime<Utc> {
-        let d = UNIX_EPOCH + Duration::from_micros(self.unix_microseconds as u64);
-        return DateTime::<Utc>::from(d);
+        if self.unix_microseconds > 0 {
+            let d = UNIX_EPOCH + Duration::from_micros(self.unix_microseconds as u64);
+            DateTime::<Utc>::from(d)
+        } else {
+            let d = UNIX_EPOCH - Duration::from_micros(-self.unix_microseconds as u64);
+            DateTime::<Utc>::from(d)
+        }
     }
 
     pub fn seconds_before(&self, before: DateTimeAsMicroseconds) -> i64 {
@@ -398,5 +403,11 @@ mod tests {
         println!("{}", json);
 
         //assert_eq!("{\"a\":\"2021-04-25T17:30:03.000000Z\"}", json.as_str());
+    }
+
+    #[test]
+    fn test_negative_date() {
+        let b = DateTimeAsMicroseconds::from_str("1969-01-01").unwrap();
+        assert_eq!("1969-01-01T00:00:00", &b.to_rfc3339()[..19]);
     }
 }
