@@ -59,6 +59,22 @@ impl ShortString {
         self.data[0] = new_len as u8;
     }
 
+    pub fn push(&mut self, c: char) {
+        let len = self.len();
+
+        let new_len = len + 1;
+
+        if new_len > 255 {
+            panic!(
+                "ShortString is too long. Len must be no more than 255. Now it is {}",
+                new_len
+            );
+        }
+
+        self.data[len + 1] = c as u8;
+        self.data[0] = new_len as u8;
+    }
+
     pub fn as_str(&self) -> &str {
         let len = self.len();
 
