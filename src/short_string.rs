@@ -27,6 +27,18 @@ impl ShortString {
         Some(result)
     }
 
+    pub fn from_str_convert_to_lower_case(src: &str) -> Option<Self> {
+        if src.len() > SHORT_STRING_MAX_LEN {
+            return None;
+        }
+
+        let mut result = Self::new_empty();
+        for c in src.chars() {
+            result.push(c.to_ascii_lowercase());
+        }
+        Some(result)
+    }
+
     pub fn update(&mut self, src: &str) {
         if src.len() > 255 {
             panic!(

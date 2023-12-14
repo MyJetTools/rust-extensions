@@ -105,6 +105,20 @@ impl<'s> StrOrString<'s> {
         }
     }
 
+    pub fn from_str_convert_to_lower_case(src: &str) -> Self {
+        let data = if let Some(s) = ShortString::from_str_convert_to_lower_case(src) {
+            StrOrStringData::AsShortString(s)
+        } else {
+            StrOrStringData::AsString(src.to_string())
+        };
+
+        Self {
+            data,
+            from: None,
+            to: None,
+        }
+    }
+
     pub fn compare_with_case_insensitive(&self, other: &str) -> bool {
         crate::str_utils::compare_strings_case_insensitive(self.as_str(), other)
     }
