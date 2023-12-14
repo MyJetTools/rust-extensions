@@ -85,6 +85,10 @@ impl ShortString {
         self.data[0] = pos;
     }
 
+    pub fn compare_with_case_insensitive(&self, other: &str) -> bool {
+        crate::str_utils::compare_strings_case_insensitive(self.as_str(), other)
+    }
+
     pub fn replace(&mut self, from: &str, to: &str) -> bool {
         let mut pos = 0;
 

@@ -40,3 +40,4 @@ pub use str_or_string::*;
 #[cfg(feature = "base64")]
 pub mod base64;
 pub mod file_utils;
+pub mod str_utils;

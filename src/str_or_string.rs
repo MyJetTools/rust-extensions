@@ -104,6 +104,10 @@ impl<'s> StrOrString<'s> {
             }
         }
     }
+
+    pub fn compare_with_case_insensitive(&self, other: &str) -> bool {
+        crate::str_utils::compare_strings_case_insensitive(self.as_str(), other)
+    }
 }
 
 fn cut_data(src: &str, src_from: Option<usize>, src_to: Option<usize>) -> &str {
