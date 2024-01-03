@@ -58,4 +58,12 @@ impl<T> VecAutoShrink<T> {
     pub fn capacity(&self) -> usize {
         self.inner.capacity()
     }
+
+    pub fn iter(&self) -> std::slice::Iter<T> {
+        self.inner.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<T> {
+        self.inner.iter_mut()
+    }
 }
