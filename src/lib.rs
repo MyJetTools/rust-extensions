@@ -37,6 +37,7 @@ pub use logger::*;
 #[cfg(feature = "with-tokio")]
 pub use my_timer::{MyTimer, MyTimerTick};
 pub use str_or_string::*;
+pub mod auto_shrink;
 #[cfg(feature = "base64")]
 pub mod base64;
 pub mod file_utils;
