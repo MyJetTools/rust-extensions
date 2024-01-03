@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct VecAutoShrink<T> {
     inner: Vec<T>,
     auto_shrink_capacity: usize,

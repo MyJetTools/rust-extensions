@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+#[derive(Debug)]
 pub struct VecDequeAutoShrink<T> {
     inner: VecDeque<T>,
     auto_shrink_capacity: usize,
