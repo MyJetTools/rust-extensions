@@ -18,7 +18,21 @@ impl<T> VecAutoShrink<T> {
             auto_shrink_capacity,
         };
 
-        result.push(element);
+        result.inner.push(element);
+
+        result
+    }
+
+    pub fn new_with_elements(
+        auto_shrink_capacity: usize,
+        elements: impl Iterator<Item = T>,
+    ) -> Self {
+        let mut result = Self {
+            inner: Vec::new(),
+            auto_shrink_capacity,
+        };
+
+        result.inner.extend(elements);
 
         result
     }
