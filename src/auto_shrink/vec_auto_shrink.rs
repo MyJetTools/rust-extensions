@@ -77,4 +77,9 @@ impl<T> VecAutoShrink<T> {
     pub fn iter_mut(&mut self) -> std::slice::IterMut<T> {
         self.inner.iter_mut()
     }
+
+    pub fn retain(&mut self, f: impl FnMut(&T) -> bool) {
+        self.inner.retain(f);
+        self.gc();
+    }
 }

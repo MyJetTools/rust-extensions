@@ -84,4 +84,9 @@ impl<T> VecDequeAutoShrink<T> {
     pub fn iter_mut(&mut self) -> std::collections::vec_deque::IterMut<'_, T> {
         self.inner.iter_mut()
     }
+
+    pub fn retain(&mut self, f: impl FnMut(&T) -> bool) {
+        self.inner.retain(f);
+        self.gc();
+    }
 }
