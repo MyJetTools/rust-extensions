@@ -16,6 +16,14 @@ impl DurationExtensions for Duration {
 }
 
 pub fn parse_duration(src: &str) -> Result<Duration, ParseDurationError> {
+    if src.ends_with("ms") {
+        let src = &src[..src.len() - 2];
+        match src.parse::<u64>() {
+            Ok(ms) => return Ok(Duration::from_millis(ms)),
+            Err(err) => return Err(ParseDurationError::ParseIntError(err)),
+        }
+    }
+
     let secs = parse_seconds(src);
 
     match secs {
@@ -161,5 +169,14 @@ mod tests {
         let duration = Duration::from_str(src).unwrap();
 
         assert_eq!("15d:00:00:00", duration_to_string(duration));
+    }
+
+    #[test]
+    fn test_parse_millis() {
+        let src = "150ms";
+
+        let duration = Duration::from_str(src).unwrap();
+
+        assert_eq!("150ms", duration_to_string(duration));
     }
 }
