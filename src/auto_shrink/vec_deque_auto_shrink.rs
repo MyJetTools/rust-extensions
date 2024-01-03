@@ -13,6 +13,16 @@ impl<T> VecDequeAutoShrink<T> {
         }
     }
 
+    pub fn new_with_element(auto_shrink_capacity: usize, element: T) -> Self {
+        let mut result = Self {
+            inner: VecDeque::new(),
+            auto_shrink_capacity,
+        };
+
+        result.push_back(element);
+
+        result
+    }
     fn gc(&mut self) {
         if self.inner.len() < self.auto_shrink_capacity {
             self.inner.shrink_to(self.auto_shrink_capacity);
