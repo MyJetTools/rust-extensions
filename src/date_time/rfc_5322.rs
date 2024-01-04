@@ -1,10 +1,4 @@
-use super::{DateTimeStruct, TimeStruct};
-
-static MONTHS: [&'static str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-static WEEKS: [&'static str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+use super::{DateTimeStruct, TimeStruct, MONTHS, WEEKS};
 
 fn is_month(src: &str) -> Option<u32> {
     let mut result = 1;
@@ -96,6 +90,7 @@ impl DateTimeStruct {
             month,
             day,
             time: time?,
+            dow: None,
         }
         .into()
     }

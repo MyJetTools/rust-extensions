@@ -25,6 +25,7 @@ impl DateTimeStruct {
             month,
             day,
             time,
+            dow: None,
         });
     }
 
@@ -46,6 +47,7 @@ impl DateTimeStruct {
             month,
             day,
             time,
+            dow: None,
         });
     }
 

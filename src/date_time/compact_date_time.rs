@@ -30,6 +30,7 @@ impl DateTimeStruct {
                 sec,
                 micros: 0,
             },
+            dow: None,
         })
     }
 }

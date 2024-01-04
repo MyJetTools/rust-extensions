@@ -1,4 +1,4 @@
-use chrono::Timelike;
+use chrono::{Timelike, Weekday};
 
 use super::{DateTimeAsMicroseconds, TimeStruct};
 
@@ -7,6 +7,7 @@ pub struct DateTimeStruct {
     pub month: u32,
     pub day: u32,
     pub time: TimeStruct,
+    pub dow: Option<Weekday>,
 }
 
 impl DateTimeStruct {
@@ -32,6 +33,28 @@ impl DateTimeStruct {
         }
 
         return DateTimeStruct::parse_rfc_5322(src);
+    }
+
+    pub fn get_day_of_week_as_str(&self) -> &str {
+        let dow = match self.dow {
+            Some(dow) => dow,
+            None => {
+                use chrono::Datelike;
+                let dt = self.to_date_time_as_microseconds().unwrap();
+                let date = dt.to_chrono_utc();
+                date.weekday()
+            }
+        };
+
+        match dow {
+            Weekday::Mon => "Mon",
+            Weekday::Tue => "Tue",
+            Weekday::Wed => "Wed",
+            Weekday::Thu => "Thu",
+            Weekday::Fri => "Fri",
+            Weekday::Sat => "Sat",
+            Weekday::Sun => "Sun",
+        }
     }
 }
 
@@ -67,6 +90,7 @@ impl Into<DateTimeStruct> for DateTimeAsMicroseconds {
             year: date.year(),
             month: date.month(),
             day: date.day(),
+            dow: Some(date.weekday()),
             time: TimeStruct {
                 hour: time.hour(),
                 min: time.minute(),
@@ -89,6 +113,7 @@ impl<'s> Into<DateTimeStruct> for &'s DateTimeAsMicroseconds {
             year: date.year(),
             month: date.month(),
             day: date.day(),
+            dow: Some(date.weekday()),
             time: TimeStruct {
                 hour: time.hour(),
                 min: time.minute(),
@@ -111,6 +136,7 @@ mod tests {
             year: 2015,
             month: 12,
             day: 23,
+            dow: None,
             time: TimeStruct {
                 hour: 13,
                 min: 11,
