@@ -93,7 +93,7 @@ impl<T> VecDequeAutoShrink<T> {
         result
     }
 
-    pub fn inter(&self) -> std::collections::vec_deque::Iter<'_, T> {
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, T> {
         self.inner.iter()
     }
 
