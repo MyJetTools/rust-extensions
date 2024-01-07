@@ -47,7 +47,7 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         }
     }
 
-    pub fn set_iteration_timeout(mut self, timeout: Duration) -> Send {
+    pub fn set_iteration_timeout(mut self, timeout: Duration) -> Self {
         self.iteration_timeout = timeout;
         self
     }
