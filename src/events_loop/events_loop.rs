@@ -131,10 +131,16 @@ async fn events_loop_reader<TModel: Send + Sync + 'static>(
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
+    let event_loop_tick_spawned = event_loop_tick.clone();
+    let _ = tokio::spawn(async move {
+        event_loop_tick_spawned.started().await;
+    })
+    .await;
+
     while !app_states.is_shutting_down() {
         if let Some(message) = tokio::sync::mpsc::UnboundedReceiver::recv(&mut receiver).await {
             if message.is_shutdown() {
-                return;
+                break;
             }
 
             let timer_tick = tokio::spawn(execute_timer(
@@ -161,6 +167,12 @@ async fn events_loop_reader<TModel: Send + Sync + 'static>(
             }
         }
     }
+
+    let event_loop_tick_spawned = event_loop_tick.clone();
+    let _ = tokio::spawn(async move {
+        event_loop_tick_spawned.finished().await;
+    })
+    .await;
 }
 
 async fn execute_timer<TModel: Send + Sync + 'static>(
