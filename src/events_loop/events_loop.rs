@@ -90,7 +90,7 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
             let mut write_access = self.event_loop.lock().await;
 
             let event_loop = write_access.take();
-            if write_access.is_none() {
+            if event_loop.is_none() {
                 panic!("Event Loop is not registered");
             }
 
