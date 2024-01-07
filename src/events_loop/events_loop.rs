@@ -47,8 +47,9 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         }
     }
 
-    pub fn set_iteration_timeout(&mut self, timeout: Duration) {
+    pub fn set_iteration_timeout(mut self, timeout: Duration) -> Send {
         self.iteration_timeout = timeout;
+        self
     }
 
     pub async fn register_event_loop(
