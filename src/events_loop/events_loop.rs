@@ -47,6 +47,10 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         }
     }
 
+    pub fn set_iteration_timeout(&mut self, timeout: Duration) {
+        self.iteration_timeout = timeout;
+    }
+
     pub async fn register_event_loop(
         &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
