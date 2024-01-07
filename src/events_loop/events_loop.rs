@@ -28,22 +28,24 @@ impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
 }
 
 pub struct EventsLoop<TModel: Send + Sync + 'static> {
-    tick: Mutex<Option<Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>>>,
+    event_loop: Mutex<Option<Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>>>,
     iteration_timeout: Duration,
     receiver: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
-    name: String,
+    name: Arc<String>,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, logger: Arc<dyn Logger + Send + Sync + 'static>) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         Self {
             iteration_timeout: Duration::from_secs(5),
             receiver: Mutex::new(Some(receiver)),
             sender,
-            tick: Mutex::new(None),
-            name,
+            event_loop: Mutex::new(None),
+            name: Arc::new(name),
+            logger,
         }
     }
 
@@ -56,13 +58,13 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     ) {
-        let mut write_access = self.tick.lock().await;
+        let mut write_access = self.event_loop.lock().await;
         *write_access = Some(event_loop);
     }
 
     pub fn send(&self, model: TModel) {
         if let Err(_) = self.sender.send(EventsLoopMessage::NewMessage(model)) {
-            println!("Can not send model to event loop {}", self.name);
+            println!("Can not send model to event loop {}", self.name.as_str());
         }
     }
 
@@ -81,41 +83,44 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         result.unwrap()
     }
 
-    pub async fn start(
-        &self,
-        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<dyn Logger + Send + Sync + 'static>,
-    ) {
+    pub async fn start(&self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
         let receiver = self.get_receiver().await;
 
         let event_loop = {
-            let read_access = self.tick.lock().await;
-            if read_access.is_none() {
+            let mut write_access = self.event_loop.lock().await;
+
+            let event_loop = write_access.take();
+            if write_access.is_none() {
                 panic!("Event Loop is not registered");
             }
 
-            read_access.as_ref().unwrap().clone()
+            event_loop.unwrap()
         };
 
+        let logger = self.logger.clone();
         tokio::spawn(events_loop_reader(
             self.name.clone(),
             event_loop,
             app_states,
-            logger.clone(),
+            logger,
             self.iteration_timeout,
             receiver,
         ));
     }
 
     pub fn stop(&self) {
-        if let Err(_) = self.sender.send(EventsLoopMessage::Shutdown) {
-            println!("Can not send shutdown message to event loop {}", self.name);
+        if let Err(err) = self.sender.send(EventsLoopMessage::Shutdown) {
+            self.logger.write_error(
+                format!("Stop EventLoop {}", self.name),
+                format!("Can not send shutdown message to event loop {:?}", err),
+                None.into(),
+            );
         }
     }
 }
 
 async fn events_loop_reader<TModel: Send + Sync + 'static>(
-    name: String,
+    name: Arc<String>,
     event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
@@ -138,22 +143,20 @@ async fn events_loop_reader<TModel: Send + Sync + 'static>(
             ));
             match tokio::time::timeout(iteration_timeout, timer_tick).await {
                 Ok(result) => {
-                    if let Err(err) = result {
-                        let message =
-                            format!("EventLoop {} is panicked. Err: {:?}", name.as_str(), err);
-
-                        let logger = logger.clone();
-
-                        let name = name.clone();
-
-                        tokio::spawn(async move {
-                            println!("{}", message);
-                            logger.write_error(name.into(), message.into(), None.into());
-                        });
+                    if let Err(_) = result {
+                        logger.write_error(
+                            format!("EventLoop {} iteration", name.as_str()),
+                            format!("Iteration is panicked"),
+                            None.into(),
+                        );
                     }
                 }
-                Err(err) => {
-                    println!("Timer {} is time outed with err: {:?}", name.as_str(), err);
+                Err(_) => {
+                    logger.write_error(
+                        format!("EventLoop {} iteration", name.as_str()),
+                        format!("Iteration is time outed"),
+                        None.into(),
+                    );
                 }
             }
         }
