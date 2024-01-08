@@ -1,10 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::sync::Mutex;
-
 use crate::{ApplicationStates, Logger};
 
-use super::EventsLoopTick;
+use super::{EventsLoopInner, EventsLoopTick};
 
 pub enum EventsLoopMessage<TModel: Send + Sync + 'static> {
     NewMessage(TModel),
@@ -28,22 +26,17 @@ impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
 }
 
 pub struct EventsLoop<TModel: Send + Sync + 'static> {
-    event_loop: Mutex<Option<Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>>>,
+    inner: EventsLoopInner<TModel>,
     iteration_timeout: Duration,
-    receiver: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
-    sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
     name: Arc<String>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     pub fn new(name: String, logger: Arc<dyn Logger + Send + Sync + 'static>) -> Self {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         Self {
             iteration_timeout: Duration::from_secs(5),
-            receiver: Mutex::new(Some(receiver)),
-            sender,
-            event_loop: Mutex::new(None),
+            inner: EventsLoopInner::new(),
             name: Arc::new(name),
             logger,
         }
@@ -54,48 +47,44 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         self
     }
 
-    pub async fn register_event_loop(
-        &self,
+    pub fn register_event_loop(
+        mut self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
-    ) {
-        let mut write_access = self.event_loop.lock().await;
-        *write_access = Some(event_loop);
+    ) -> Self {
+        if self.inner.events_loop_tick.is_some() {
+            panic!("Event Loop is already registered");
+        }
+        self.inner.events_loop_tick = Some(event_loop);
+        self
     }
 
     pub fn send(&self, model: TModel) {
-        if let Err(_) = self.sender.send(EventsLoopMessage::NewMessage(model)) {
-            println!("Can not send model to event loop {}", self.name.as_str());
+        if let Some(sender) = self.inner.sender.as_ref() {
+            if let Err(_) = sender.send(EventsLoopMessage::NewMessage(model)) {
+                println!("Can not send model to event loop {}", self.name.as_str());
+            }
         }
     }
 
-    async fn get_receiver(
-        &self,
-    ) -> tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>> {
-        let mut write_access = self.receiver.lock().await;
-
-        let mut result = None;
-        std::mem::swap(&mut *write_access, &mut result);
-
-        if result.is_none() {
+    fn get_receiver(&mut self) -> tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>> {
+        if self.inner.sender.is_some() {
             panic!("You can not start EventsLoop twice");
         }
 
-        result.unwrap()
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        self.inner.sender = Some(sender);
+        receiver
     }
 
-    pub async fn start(&self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
-        let receiver = self.get_receiver().await;
+    pub fn start(&mut self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
+        let receiver = self.get_receiver();
 
-        let event_loop = {
-            let mut write_access = self.event_loop.lock().await;
+        let event_loop = self.inner.events_loop_tick.take();
+        if event_loop.is_none() {
+            panic!("Event Loop is not registered");
+        }
 
-            let event_loop = write_access.take();
-            if event_loop.is_none() {
-                panic!("Event Loop is not registered");
-            }
-
-            event_loop.unwrap()
-        };
+        let event_loop = event_loop.unwrap();
 
         let logger = self.logger.clone();
         tokio::spawn(events_loop_reader(
@@ -109,12 +98,14 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     }
 
     pub fn stop(&self) {
-        if let Err(err) = self.sender.send(EventsLoopMessage::Shutdown) {
-            self.logger.write_error(
-                format!("Stop EventLoop {}", self.name),
-                format!("Can not send shutdown message to event loop {:?}", err),
-                None.into(),
-            );
+        if let Some(sender) = self.inner.sender.as_ref() {
+            if let Err(err) = sender.send(EventsLoopMessage::Shutdown) {
+                self.logger.write_error(
+                    format!("Stop EventLoop {}", self.name),
+                    format!("Can not send shutdown message to event loop {:?}", err),
+                    None.into(),
+                );
+            }
         }
     }
 }
