@@ -50,7 +50,7 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     pub fn register_event_loop(
         &mut self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
-    ) -> Self {
+    ) {
         if self.inner.events_loop_tick.is_some() {
             panic!("Event Loop is already registered");
         }
