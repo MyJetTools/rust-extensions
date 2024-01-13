@@ -44,3 +44,5 @@ pub mod file_utils;
 #[cfg(feature = "hex")]
 pub mod hex;
 pub mod str_utils;
+#[cfg(feature = "vec-maybe-stack")]
+pub mod vec_maybe_stack;
