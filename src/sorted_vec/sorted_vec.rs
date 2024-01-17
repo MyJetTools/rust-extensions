@@ -25,7 +25,8 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn insert_or_replace(&mut self, item: TValue) -> Option<TValue> {
+    // Returns the index of the inserted item and old item if it was replaced
+    pub fn insert_or_replace(&mut self, item: TValue) -> (usize, Option<TValue>) {
         let insert_index = self
             .items
             .binary_search_by(|itm| itm.get_key().cmp(item.get_key()));
@@ -33,11 +34,11 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         match insert_index {
             Ok(index) => {
                 let got = std::mem::replace(&mut self.items[index], item);
-                Some(got)
+                (index, Some(got))
             }
             Err(index) => {
                 self.items.insert(index, item);
-                None
+                (index, None)
             }
         }
     }
