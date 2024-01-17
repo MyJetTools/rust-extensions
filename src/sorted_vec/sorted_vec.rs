@@ -42,11 +42,16 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn find(&mut self, key: &TKey) -> Option<TValue> {
+    pub fn has_record(&self, key: &TKey) -> bool {
+        let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
+        result.is_ok()
+    }
+
+    pub fn find(&self, key: &TKey) -> Option<&TValue> {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
-            Ok(index) => Some(self.items.remove(index)),
+            Ok(index) => self.items.get(index),
             Err(_) => None,
         }
     }
