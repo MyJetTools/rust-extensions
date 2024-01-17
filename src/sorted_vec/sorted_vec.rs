@@ -42,6 +42,25 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
+    pub fn insert_or_if_not_exists(
+        &mut self,
+        key: &TKey,
+        new_item: impl Fn() -> TValue,
+    ) -> Option<&TValue> {
+        let insert_index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
+
+        match insert_index {
+            Ok(_) => {
+                return None;
+            }
+            Err(index) => {
+                let item = new_item();
+                self.items.insert(index, item);
+                return self.items.get(index);
+            }
+        }
+    }
+
     pub fn contains(&self, key: &TKey) -> bool {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
         result.is_ok()
