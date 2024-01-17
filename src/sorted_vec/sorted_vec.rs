@@ -66,16 +66,18 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         key: &TKey,
         new_item: impl Fn() -> TValue,
         update_item: impl Fn(&mut TValue),
-    ) {
+    ) -> usize {
         let insert_index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match insert_index {
             Ok(index) => {
                 update_item(&mut self.items[index]);
+                index
             }
             Err(index) => {
                 let item = new_item();
                 self.items.insert(index, item);
+                index
             }
         }
     }
@@ -85,13 +87,30 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         result.is_ok()
     }
 
-    pub fn find(&self, key: &TKey) -> Option<&TValue> {
+    pub fn get(&self, key: &TKey) -> Option<&TValue> {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
             Ok(index) => self.items.get(index),
             Err(_) => None,
         }
+    }
+
+    pub fn get_mut(&mut self, key: &TKey) -> Option<&mut TValue> {
+        let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
+
+        match result {
+            Ok(index) => self.items.get_mut(index),
+            Err(_) => None,
+        }
+    }
+
+    pub fn get_by_index(&self, index: usize) -> Option<&TValue> {
+        self.items.get(index)
+    }
+
+    pub fn get_by_index_mut(&mut self, index: usize) -> Option<&mut TValue> {
+        self.items.get_mut(index)
     }
 
     pub fn remove(&mut self, key: &TKey) -> Option<TValue> {
