@@ -59,6 +59,21 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
             Err(_) => None,
         }
     }
+    pub fn iter(&self) -> std::slice::Iter<TValue> {
+        self.items.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<TValue> {
+        self.items.iter_mut()
+    }
+
+    pub fn as_slice(&self) -> &[TValue] {
+        self.items.as_slice()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
 }
 
 #[cfg(test)]
