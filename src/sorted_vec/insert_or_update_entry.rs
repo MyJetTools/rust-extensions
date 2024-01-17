@@ -3,6 +3,11 @@ pub enum InsertOrUpdateEntry<'s, TValue> {
     Update(UpdateEntry<'s, TValue>),
 }
 
+pub enum GetMutOrCreateEntry<'s, TValue> {
+    GetMut(&'s mut TValue),
+    Create(InsertEntity<'s, TValue>),
+}
+
 pub struct InsertEntity<'s, TValue> {
     index: usize,
     items: &'s mut Vec<TValue>,

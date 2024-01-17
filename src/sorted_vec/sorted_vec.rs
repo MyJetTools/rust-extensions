@@ -1,4 +1,4 @@
-use crate::{EntityWithKey, InsertEntity, InsertOrUpdateEntry, UpdateEntry};
+use crate::{EntityWithKey, GetMutOrCreateEntry, InsertEntity, InsertOrUpdateEntry, UpdateEntry};
 
 pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey>> {
     items: Vec<TValue>,
@@ -54,6 +54,15 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
                 self.items.insert(index, item);
                 return self.items.get(index);
             }
+        }
+    }
+
+    pub fn get_mut_or_create<'s>(&'s mut self, key: &TKey) -> GetMutOrCreateEntry<'s, TValue> {
+        let index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
+
+        match index {
+            Ok(index) => GetMutOrCreateEntry::GetMut(&mut self.items[index]),
+            Err(index) => GetMutOrCreateEntry::Create(InsertEntity::new(index, &mut self.items)),
         }
     }
 
