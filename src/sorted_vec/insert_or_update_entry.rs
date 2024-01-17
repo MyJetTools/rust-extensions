@@ -18,9 +18,15 @@ impl<'s, TValue> InsertEntity<'s, TValue> {
         Self { index, items }
     }
 
-    pub fn insert(self, item: TValue) -> usize {
+    pub fn insert_and_get_index(self, item: TValue) -> usize {
         self.items.insert(self.index, item);
-        self.index
+        let index = self.index;
+        index
+    }
+
+    pub fn insert_and_get_value(self, item: TValue) -> &'s mut TValue {
+        self.items.insert(self.index, item);
+        &mut self.items[self.index]
     }
 }
 

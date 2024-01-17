@@ -191,7 +191,7 @@ mod tests {
         });
 
         let result = match vec.insert_or_update("5") {
-            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert(TestEntity {
+            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert_and_get_index(TestEntity {
                 key: "5".to_string(),
                 value: 5,
             }),
@@ -206,7 +206,7 @@ mod tests {
         println!("result: {:?}", vec.items);
 
         let result = match vec.insert_or_update("6") {
-            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert(TestEntity {
+            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert_and_get_index(TestEntity {
                 key: "6".to_string(),
                 value: 6,
             }),
