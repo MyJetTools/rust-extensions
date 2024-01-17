@@ -42,7 +42,7 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn has_record(&self, key: &TKey) -> bool {
+    pub fn has_item(&self, key: &TKey) -> bool {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
         result.is_ok()
     }
