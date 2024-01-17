@@ -1,22 +1,17 @@
-use crate::EntityWithKey;
+use crate::EntityWithStrKey;
 
-pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey>> {
+pub struct SortedVecWithStrKey<TValue: EntityWithStrKey> {
     items: Vec<TValue>,
-    itm: std::marker::PhantomData<TKey>,
 }
 
-impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
+impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
     pub fn new() -> Self {
-        Self {
-            items: Vec::new(),
-            itm: std::marker::PhantomData,
-        }
+        Self { items: Vec::new() }
     }
 
     pub fn new_with_capacity(capacity: usize) -> Self {
         Self {
             items: Vec::with_capacity(capacity),
-            itm: std::marker::PhantomData,
         }
     }
 
@@ -40,7 +35,7 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
 
     pub fn insert_or_if_not_exists(
         &mut self,
-        key: &TKey,
+        key: &str,
         new_item: impl Fn() -> TValue,
     ) -> Option<&TValue> {
         let insert_index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
@@ -59,7 +54,7 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
 
     pub fn insert_or_update(
         &mut self,
-        key: &TKey,
+        key: &str,
         new_item: impl Fn() -> TValue,
         update_item: impl Fn(&mut TValue),
     ) -> usize {
@@ -78,12 +73,12 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn contains(&self, key: &TKey) -> bool {
+    pub fn contains(&self, key: &str) -> bool {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
         result.is_ok()
     }
 
-    pub fn get(&self, key: &TKey) -> Option<&TValue> {
+    pub fn get(&self, key: &str) -> Option<&TValue> {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
@@ -92,7 +87,7 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn get_mut(&mut self, key: &TKey) -> Option<&mut TValue> {
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut TValue> {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
@@ -109,7 +104,7 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         self.items.get_mut(index)
     }
 
-    pub fn remove(&mut self, key: &TKey) -> Option<TValue> {
+    pub fn remove(&mut self, key: &str) -> Option<TValue> {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
@@ -137,16 +132,16 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
 #[cfg(test)]
 mod tests {
 
-    use crate::EntityWithKey;
+    use crate::EntityWithStrKey;
 
     #[derive(Debug)]
     pub struct TestEntity {
-        pub key: u8,
+        pub key: String,
         pub value: u8,
     }
 
-    impl EntityWithKey<u8> for TestEntity {
-        fn get_key(&self) -> &u8 {
+    impl EntityWithStrKey for TestEntity {
+        fn get_key(&self) -> &str {
             &self.key
         }
     }
@@ -162,37 +157,26 @@ mod tests {
 
     #[test]
     fn test_basic_inserts() {
-        let mut vec = super::SortedVec::new();
+        let mut vec = super::SortedVecWithStrKey::new();
 
-        vec.insert_or_replace(TestEntity { key: 5, value: 5 });
+        vec.insert_or_replace(TestEntity {
+            key: "5".to_string(),
+            value: 5,
+        });
 
-        vec.insert_or_replace(TestEntity { key: 4, value: 6 });
+        vec.insert_or_replace(TestEntity {
+            key: "4".to_string(),
+            value: 4,
+        });
 
-        vec.insert_or_replace(TestEntity { key: 9, value: 9 });
-
-        assert_eq!(
-            vec![4u8, 5u8, 9u8],
-            vec.items.iter().map(|x| x.key).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn test_insert_third_is_first() {
-        let mut vec = super::SortedVec::new();
-
-        vec.insert_or_replace(TestEntity { key: 5, value: 5 });
-
-        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
-
-        vec.insert_or_replace(TestEntity { key: 3, value: 3 });
-
-        vec.insert_or_replace(TestEntity { key: 1, value: 1 });
-
-        vec.insert_or_replace(TestEntity { key: 2, value: 2 });
+        vec.insert_or_replace(TestEntity {
+            key: "9".to_string(),
+            value: 9,
+        });
 
         assert_eq!(
-            vec![1u8, 2u8, 3u8, 4u8, 5u8],
-            vec.items.iter().map(|x| x.key).collect::<Vec<_>>()
+            vec!["4", "5", "9"],
+            vec.items.iter().map(|x| x.key.as_str()).collect::<Vec<_>>()
         );
     }
 }
