@@ -1,4 +1,4 @@
-use crate::EntityWithStrKey;
+use crate::{EntityWithStrKey, InsertEntity, InsertOrUpdateEntry, UpdateEntry};
 
 pub struct SortedVecWithStrKey<TValue: EntityWithStrKey> {
     items: Vec<TValue>,
@@ -52,24 +52,14 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         }
     }
 
-    pub fn insert_or_update(
-        &mut self,
-        key: &str,
-        new_item: impl Fn() -> TValue,
-        update_item: impl Fn(&mut TValue),
-    ) -> usize {
+    pub fn insert_or_update<'s>(&'s mut self, key: &str) -> InsertOrUpdateEntry<'s, TValue> {
         let insert_index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match insert_index {
             Ok(index) => {
-                update_item(&mut self.items[index]);
-                index
+                InsertOrUpdateEntry::Update(UpdateEntry::new(index, &mut self.items[index]))
             }
-            Err(index) => {
-                let item = new_item();
-                self.items.insert(index, item);
-                index
-            }
+            Err(index) => InsertOrUpdateEntry::Insert(InsertEntity::new(index, &mut self.items)),
         }
     }
 
@@ -178,5 +168,45 @@ mod tests {
             vec!["4", "5", "9"],
             vec.items.iter().map(|x| x.key.as_str()).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn debugging_insert_or_update() {
+        let mut vec = super::SortedVecWithStrKey::new();
+
+        vec.insert_or_replace(TestEntity {
+            key: "5".to_string(),
+            value: 5,
+        });
+
+        let result = match vec.insert_or_update("5") {
+            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert(TestEntity {
+                key: "5".to_string(),
+                value: 5,
+            }),
+            crate::InsertOrUpdateEntry::Update(update) => {
+                update.item.value = 7;
+                update.index
+            }
+        };
+
+        println!("index: {:?}", result);
+
+        println!("result: {:?}", vec.items);
+
+        let result = match vec.insert_or_update("6") {
+            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert(TestEntity {
+                key: "6".to_string(),
+                value: 6,
+            }),
+            crate::InsertOrUpdateEntry::Update(update) => {
+                update.item.value = 9;
+                update.index
+            }
+        };
+
+        println!("index: {:?}", result);
+
+        println!("result: {:?}", vec.items);
     }
 }
