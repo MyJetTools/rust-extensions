@@ -43,6 +43,8 @@ pub mod base64;
 pub mod file_utils;
 #[cfg(feature = "hex")]
 pub mod hex;
+mod sorted_vec;
 pub mod str_utils;
 #[cfg(feature = "vec-maybe-stack")]
 pub mod vec_maybe_stack;
+pub use sorted_vec::*;
