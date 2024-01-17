@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{EntityWithStrKey, GetOrCreateEntry, InsertEntity};
+use crate::sorted_vec::{EntityWithStrKey, GetOrCreateEntry, InsertEntity};
 
 pub struct SortedVecOfArcWithStrKey<TValue: EntityWithStrKey> {
     items: Vec<Arc<TValue>>,

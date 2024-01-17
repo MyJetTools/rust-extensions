@@ -1,4 +1,6 @@
-use crate::{EntityWithKey, GetMutOrCreateEntry, InsertEntity, InsertOrUpdateEntry, UpdateEntry};
+use crate::sorted_vec::{
+    EntityWithKey, GetMutOrCreateEntry, InsertEntity, InsertOrUpdateEntry, UpdateEntry,
+};
 
 pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey>> {
     items: Vec<TValue>,
@@ -136,7 +138,7 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
 #[cfg(test)]
 mod tests {
 
-    use crate::EntityWithKey;
+    use crate::sorted_vec::EntityWithKey;
 
     #[derive(Debug)]
     pub struct TestEntity {

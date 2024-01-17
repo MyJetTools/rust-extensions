@@ -1,4 +1,4 @@
-use crate::{
+use crate::sorted_vec::{
     EntityWithStrKey, GetMutOrCreateEntry, InsertEntity, InsertOrUpdateEntry, UpdateEntry,
 };
 
@@ -133,7 +133,7 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
 #[cfg(test)]
 mod tests {
 
-    use crate::EntityWithStrKey;
+    use crate::sorted_vec::EntityWithStrKey;
 
     #[derive(Debug)]
     pub struct TestEntity {
@@ -191,11 +191,13 @@ mod tests {
         });
 
         let result = match vec.insert_or_update("5") {
-            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert_and_get_index(TestEntity {
-                key: "5".to_string(),
-                value: 5,
-            }),
-            crate::InsertOrUpdateEntry::Update(update) => {
+            crate::sorted_vec::InsertOrUpdateEntry::Insert(insert) => {
+                insert.insert_and_get_index(TestEntity {
+                    key: "5".to_string(),
+                    value: 5,
+                })
+            }
+            crate::sorted_vec::InsertOrUpdateEntry::Update(update) => {
                 update.item.value = 7;
                 update.index
             }
@@ -206,11 +208,13 @@ mod tests {
         println!("result: {:?}", vec.items);
 
         let result = match vec.insert_or_update("6") {
-            crate::InsertOrUpdateEntry::Insert(insert) => insert.insert_and_get_index(TestEntity {
-                key: "6".to_string(),
-                value: 6,
-            }),
-            crate::InsertOrUpdateEntry::Update(update) => {
+            crate::sorted_vec::InsertOrUpdateEntry::Insert(insert) => {
+                insert.insert_and_get_index(TestEntity {
+                    key: "6".to_string(),
+                    value: 6,
+                })
+            }
+            crate::sorted_vec::InsertOrUpdateEntry::Update(update) => {
                 update.item.value = 9;
                 update.index
             }
