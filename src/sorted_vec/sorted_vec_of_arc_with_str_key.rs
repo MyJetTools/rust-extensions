@@ -80,6 +80,24 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         self.items.get(index)
     }
 
+    pub fn get_from_key_to_up(&self, key: &str) -> &[Arc<TValue>] {
+        let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
+
+        match result {
+            Ok(index) => &self.items[index..],
+            Err(index) => &self.items[index..],
+        }
+    }
+
+    pub fn get_from_bottom_to_key(&self, key: &str) -> &[Arc<TValue>] {
+        let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
+
+        match result {
+            Ok(index) => &self.items[..=index],
+            Err(index) => &self.items[..=index],
+        }
+    }
+
     pub fn remove(&mut self, key: &str) -> Option<Arc<TValue>> {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
