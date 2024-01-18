@@ -3,6 +3,11 @@ pub enum InsertOrUpdateEntry<'s, TValue> {
     Update(UpdateEntry<'s, TValue>),
 }
 
+pub enum InsertIfNotExists<'s, TValue> {
+    Insert(InsertEntity<'s, TValue>),
+    Exists(usize),
+}
+
 pub enum GetMutOrCreateEntry<'s, TValue> {
     GetMut(&'s mut TValue),
     Create(InsertEntity<'s, TValue>),
@@ -20,6 +25,10 @@ pub struct InsertEntity<'s, TValue> {
 impl<'s, TValue> InsertEntity<'s, TValue> {
     pub fn new(index: usize, items: &'s mut Vec<TValue>) -> Self {
         Self { index, items }
+    }
+
+    pub fn insert(self, item: TValue) {
+        self.items.insert(self.index, item);
     }
 
     pub fn insert_and_get_index(self, item: TValue) -> usize {

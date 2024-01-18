@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crate::sorted_vec::{EntityWithStrKey, GetOrCreateEntry, InsertEntity};
 
+use super::InsertIfNotExists;
+
 pub struct SortedVecOfArcWithStrKey<TValue: EntityWithStrKey> {
     items: Vec<Arc<TValue>>,
 }
@@ -35,21 +37,18 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         }
     }
 
-    pub fn insert_or_if_not_exists(
-        &mut self,
+    pub fn insert_or_if_not_exists<'s>(
+        &'s mut self,
         key: &str,
-        new_item: impl Fn() -> Arc<TValue>,
-    ) -> Option<&Arc<TValue>> {
+    ) -> InsertIfNotExists<'s, Arc<TValue>> {
         let insert_index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match insert_index {
-            Ok(_) => {
-                return None;
+            Ok(index) => {
+                return InsertIfNotExists::Exists(index);
             }
             Err(index) => {
-                let item = new_item();
-                self.items.insert(index, item);
-                return self.items.get(index);
+                return InsertIfNotExists::Insert(InsertEntity::new(index, &mut self.items));
             }
         }
     }

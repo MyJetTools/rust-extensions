@@ -2,6 +2,8 @@ use crate::sorted_vec::{
     EntityWithKey, GetMutOrCreateEntry, InsertEntity, InsertOrUpdateEntry, UpdateEntry,
 };
 
+use super::InsertIfNotExists;
+
 pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey>> {
     items: Vec<TValue>,
     itm: std::marker::PhantomData<TKey>,
@@ -40,21 +42,15 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn insert_or_if_not_exists(
-        &mut self,
-        key: &TKey,
-        new_item: impl Fn() -> TValue,
-    ) -> Option<&TValue> {
+    pub fn insert_or_if_not_exists<'s>(&'s mut self, key: &TKey) -> InsertIfNotExists<'s, TValue> {
         let insert_index = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match insert_index {
-            Ok(_) => {
-                return None;
+            Ok(index) => {
+                return InsertIfNotExists::Exists(index);
             }
             Err(index) => {
-                let item = new_item();
-                self.items.insert(index, item);
-                return self.items.get(index);
+                return InsertIfNotExists::Insert(InsertEntity::new(index, &mut self.items));
             }
         }
     }
