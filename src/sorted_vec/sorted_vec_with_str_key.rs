@@ -135,6 +135,10 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         self.items.iter_mut()
     }
 
+    pub fn into_vec(self) -> Vec<TValue> {
+        self.items
+    }
+
     pub fn as_slice(&self) -> &[TValue] {
         self.items.as_slice()
     }

@@ -132,6 +132,11 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
             Err(_) => None,
         }
     }
+
+    pub fn into_vec(self) -> Vec<TValue> {
+        self.items
+    }
+
     pub fn iter(&self) -> std::slice::Iter<TValue> {
         self.items.iter()
     }

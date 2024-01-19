@@ -114,6 +114,10 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         self.items.iter_mut()
     }
 
+    pub fn into_vec(self) -> Vec<Arc<TValue>> {
+        self.items
+    }
+
     pub fn as_slice(&self) -> &[Arc<TValue>] {
         self.items.as_slice()
     }
