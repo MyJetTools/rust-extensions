@@ -127,6 +127,15 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
             Err(_) => None,
         }
     }
+
+    pub fn clear(&mut self, max_capacity: Option<usize>) {
+        self.items.clear();
+
+        if let Some(max_capacity) = max_capacity {
+            self.items.reserve(max_capacity);
+        }
+    }
+
     pub fn iter(&self) -> std::slice::Iter<TValue> {
         self.items.iter()
     }

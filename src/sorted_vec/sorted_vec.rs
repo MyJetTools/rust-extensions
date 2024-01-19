@@ -133,6 +133,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
+    pub fn clear(&mut self, max_capacity: Option<usize>) {
+        self.items.clear();
+
+        if let Some(max_capacity) = max_capacity {
+            self.items.reserve(max_capacity);
+        }
+    }
+
     pub fn into_vec(self) -> Vec<TValue> {
         self.items
     }
