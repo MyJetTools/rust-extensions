@@ -38,13 +38,13 @@ impl AtomicDateTimeAsMicroseconds {
 
     pub fn get_unix_microseconds(&self) -> i64 {
         self.unix_microseconds
-            .load(std::sync::atomic::Ordering::SeqCst)
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn as_date_time(&self) -> DateTimeAsMicroseconds {
         let unix_microseconds = self
             .unix_microseconds
-            .load(std::sync::atomic::Ordering::SeqCst);
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         DateTimeAsMicroseconds::new(unix_microseconds)
     }
@@ -61,8 +61,10 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn update(&self, value: DateTimeAsMicroseconds) {
-        self.unix_microseconds
-            .store(value.unix_microseconds, std::sync::atomic::Ordering::SeqCst);
+        self.unix_microseconds.store(
+            value.unix_microseconds,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {
