@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 pub struct UnsafeValue<T: Copy + Clone> {
     value: T,
 }
@@ -16,6 +18,80 @@ impl<T: Copy + Clone> UnsafeValue<T> {
             let value = &self.value as *const T as *mut T;
             value.write(new_value);
         }
+    }
+}
+
+impl<T: Clone + Copy> Deref for UnsafeValue<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Into<UnsafeValue<bool>> for bool {
+    fn into(self) -> UnsafeValue<bool> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<u8>> for u8 {
+    fn into(self) -> UnsafeValue<u8> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<i8>> for i8 {
+    fn into(self) -> UnsafeValue<i8> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<u16>> for u16 {
+    fn into(self) -> UnsafeValue<u16> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<i16>> for i16 {
+    fn into(self) -> UnsafeValue<i16> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<u32>> for u32 {
+    fn into(self) -> UnsafeValue<u32> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<i32>> for i32 {
+    fn into(self) -> UnsafeValue<i32> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<u64>> for u64 {
+    fn into(self) -> UnsafeValue<u64> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<i64>> for i64 {
+    fn into(self) -> UnsafeValue<i64> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<usize>> for usize {
+    fn into(self) -> UnsafeValue<usize> {
+        UnsafeValue::new(self)
+    }
+}
+
+impl Into<UnsafeValue<isize>> for isize {
+    fn into(self) -> UnsafeValue<isize> {
+        UnsafeValue::new(self)
     }
 }
 
