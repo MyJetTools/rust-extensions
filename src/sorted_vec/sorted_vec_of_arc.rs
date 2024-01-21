@@ -112,6 +112,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         }
     }
 
+    pub fn first(&self) -> Option<&Arc<TValue>> {
+        self.items.first()
+    }
+
+    pub fn last(&self) -> Option<&Arc<TValue>> {
+        self.items.last()
+    }
+
     pub fn clear(&mut self, max_capacity: Option<usize>) {
         self.items.clear();
 

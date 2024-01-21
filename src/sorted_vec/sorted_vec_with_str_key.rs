@@ -136,6 +136,22 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         }
     }
 
+    pub fn first(&self) -> Option<&TValue> {
+        self.items.first()
+    }
+
+    pub fn first_mut(&mut self) -> Option<&mut TValue> {
+        self.items.first_mut()
+    }
+
+    pub fn last(&self) -> Option<&TValue> {
+        self.items.last()
+    }
+
+    pub fn last_mut(&mut self) -> Option<&mut TValue> {
+        self.items.last_mut()
+    }
+
     pub fn iter(&self) -> std::slice::Iter<TValue> {
         self.items.iter()
     }

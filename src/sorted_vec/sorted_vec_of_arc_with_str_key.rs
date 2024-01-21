@@ -115,6 +115,14 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         }
     }
 
+    pub fn first(&self) -> Option<&Arc<TValue>> {
+        self.items.first()
+    }
+
+    pub fn last(&self) -> Option<&Arc<TValue>> {
+        self.items.last()
+    }
+
     pub fn iter(&self) -> std::slice::Iter<Arc<TValue>> {
         self.items.iter()
     }
