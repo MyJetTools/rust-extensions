@@ -140,6 +140,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         self.items
     }
 
+    pub fn to_vec_cloned(&self) -> Vec<Arc<TValue>> {
+        self.items.clone()
+    }
+
     pub fn as_slice(&self) -> &[Arc<TValue>] {
         self.items.as_slice()
     }
