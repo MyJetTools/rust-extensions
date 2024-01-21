@@ -133,6 +133,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
+    pub fn remove_at(&mut self, index: usize) -> Option<TValue> {
+        if index >= self.items.len() {
+            return None;
+        }
+
+        Some(self.items.remove(index))
+    }
+
     pub fn clear(&mut self, max_capacity: Option<usize>) {
         self.items.clear();
 

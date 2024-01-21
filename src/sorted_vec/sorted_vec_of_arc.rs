@@ -112,6 +112,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         }
     }
 
+    pub fn remove_at(&mut self, index: usize) -> Option<Arc<TValue>> {
+        if index >= self.items.len() {
+            return None;
+        }
+
+        Some(self.items.remove(index))
+    }
+
     pub fn first(&self) -> Option<&Arc<TValue>> {
         self.items.first()
     }
