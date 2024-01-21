@@ -4,11 +4,12 @@ use crate::sorted_vec::{
 
 use super::InsertIfNotExists;
 
-pub struct SortedVecWithStrKey<TValue: EntityWithStrKey> {
+#[derive(Clone)]
+pub struct SortedVecWithStrKey<TValue: EntityWithStrKey + Clone> {
     items: Vec<TValue>,
 }
 
-impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
+impl<TValue: EntityWithStrKey + Clone> SortedVecWithStrKey<TValue> {
     pub fn new() -> Self {
         Self { items: Vec::new() }
     }
@@ -186,7 +187,7 @@ mod tests {
 
     use crate::sorted_vec::EntityWithStrKey;
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct TestEntity {
         pub key: String,
         pub value: u8,
