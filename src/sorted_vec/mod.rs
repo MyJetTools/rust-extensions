@@ -8,3 +8,5 @@ mod insert_or_update_entry;
 pub use insert_or_update_entry::*;
 mod sorted_vec_of_arc_with_str_key;
 pub use sorted_vec_of_arc_with_str_key::*;
+mod sorted_vec_of_arc;
+pub use sorted_vec_of_arc::*;
