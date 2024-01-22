@@ -4,12 +4,12 @@ use crate::sorted_vec::{
 
 use super::InsertIfNotExists;
 
-pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey> + Clone> {
+pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey>> {
     items: Vec<TValue>,
     itm: std::marker::PhantomData<TKey>,
 }
 
-impl<TKey: Ord, TValue: EntityWithKey<TKey> + Clone> SortedVec<TKey, TValue> {
+impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
