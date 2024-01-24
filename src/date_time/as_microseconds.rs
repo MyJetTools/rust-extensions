@@ -114,8 +114,10 @@ impl DateTimeAsMicroseconds {
         }
     }
 
-    pub fn sub(&mut self, duration: Duration) {
-        self.unix_microseconds -= duration.as_micros() as i64;
+    pub fn sub(&self, duration: Duration) -> Self {
+        Self {
+            unix_microseconds: self.unix_microseconds - duration.as_micros() as i64,
+        }
     }
 
     pub fn duration_since(&self, before: DateTimeAsMicroseconds) -> DateTimeDuration {
@@ -331,18 +333,20 @@ mod tests {
     fn test_add_duration() {
         let dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.001Z").unwrap();
 
-        dt.add(Duration::from_secs(1));
-
-        assert_eq!("2021-04-25T17:30:04.001", &dt.to_rfc3339()[0..23]);
+        assert_eq!(
+            "2021-04-25T17:30:04.001",
+            &dt.add(Duration::from_secs(1)).to_rfc3339()[0..23]
+        );
     }
 
     #[test]
     fn test_sub_duration() {
-        let mut dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.001Z").unwrap();
+        let dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.001Z").unwrap();
 
-        dt.sub(Duration::from_secs(1));
-
-        assert_eq!("2021-04-25T17:30:02.001", &dt.to_rfc3339()[0..23]);
+        assert_eq!(
+            "2021-04-25T17:30:02.001",
+            &dt.sub(Duration::from_secs(1)).to_rfc3339()[0..23]
+        );
     }
 
     #[test]
