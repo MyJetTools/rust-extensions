@@ -7,7 +7,7 @@ use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 
 const ONE_SECOND: i64 = 1_000_000;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct DateTimeAsMicroseconds {
     pub unix_microseconds: i64,
@@ -108,8 +108,10 @@ impl DateTimeAsMicroseconds {
         self.add_hours(24 * days);
     }
 
-    pub fn add(&mut self, duration: Duration) {
-        self.unix_microseconds += duration.as_micros() as i64;
+    pub fn add(&self, duration: Duration) -> Self {
+        Self {
+            unix_microseconds: self.unix_microseconds + duration.as_micros() as i64,
+        }
     }
 
     pub fn sub(&mut self, duration: Duration) {
@@ -327,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_add_duration() {
-        let mut dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.001Z").unwrap();
+        let dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.001Z").unwrap();
 
         dt.add(Duration::from_secs(1));
 
@@ -413,5 +415,21 @@ mod tests {
     fn test_negative_date() {
         let b = DateTimeAsMicroseconds::from_str("1969-01-01").unwrap();
         assert_eq!("1969-01-01T00:00:00", &b.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_add() {
+        let b = DateTimeAsMicroseconds::from_str("1969-01-01").unwrap();
+        let b = b.add(Duration::from_secs(1));
+
+        assert_eq!("1969-01-01T00:00:01", &b.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_greater() {
+        let a = DateTimeAsMicroseconds::from_str("1969-01-01").unwrap();
+        let b = DateTimeAsMicroseconds::from_str("1969-01-02").unwrap();
+
+        assert!(a < b);
     }
 }
