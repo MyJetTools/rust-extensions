@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::ShortString;
+use crate::{AsSliceOrVec, ShortString};
 
 #[derive(Debug, Clone)]
 pub struct StrOrString<'s> {
@@ -156,6 +156,20 @@ impl<'s> Into<StrOrString<'s>> for String {
         StrOrString::create_as_string(self)
     }
 }
+
+impl<'s> Into<StrOrString<'s>> for AsSliceOrVec<'s, u8> {
+    fn into(self) -> StrOrString<'s> {
+        match self {
+            AsSliceOrVec::AsSlice(slice) => {
+                StrOrString::create_as_str(std::str::from_utf8(slice).unwrap())
+            }
+            AsSliceOrVec::AsVec(vec) => {
+                StrOrString::create_as_string(String::from_utf8(vec).unwrap())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum StrOrStringData<'s> {
     AsStr(&'s str),

@@ -18,6 +18,20 @@ impl<'s, T: Clone> AsSliceOrVec<'s, T> {
         }
     }
 
+    pub fn is_slice(&self) -> bool {
+        match self {
+            AsSliceOrVec::AsSlice(_) => true,
+            AsSliceOrVec::AsVec(_) => false,
+        }
+    }
+
+    pub fn is_vec(&self) -> bool {
+        match self {
+            AsSliceOrVec::AsSlice(_) => false,
+            AsSliceOrVec::AsVec(_) => true,
+        }
+    }
+
     pub fn into_vec(self) -> Vec<T> {
         match self {
             AsSliceOrVec::AsSlice(slice) => slice.to_vec(),
