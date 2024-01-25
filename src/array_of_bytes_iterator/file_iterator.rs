@@ -102,7 +102,7 @@ impl FileIterator {
 }
 
 #[async_trait::async_trait]
-impl ArrayOfBytesIteratorAsync for JsonFileIterator {
+impl ArrayOfBytesIteratorAsync for FileIterator {
     fn peek_value(&self) -> Option<NextValue> {
         if self.pos >= self.file_size {
             return None;
