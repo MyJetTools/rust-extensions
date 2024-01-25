@@ -27,14 +27,14 @@ impl Buffer {
     }
 }
 
-pub struct JsonFileIterator {
+pub struct FileIterator {
     pos: usize,
     file: Mutex<tokio::fs::File>,
     buffer: Buffer,
     file_size: usize,
 }
 
-impl JsonFileIterator {
+impl FileIterator {
     pub async fn new(file_name: &str) -> std::io::Result<Self> {
         let mut buffer = Buffer {
             buffer: [0; BUFFER_SIZE],
