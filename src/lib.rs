@@ -49,3 +49,4 @@ mod unsafe_value;
 #[cfg(feature = "vec-maybe-stack")]
 pub mod vec_maybe_stack;
 pub use unsafe_value::*;
+pub mod array_of_bytes_iterator;
