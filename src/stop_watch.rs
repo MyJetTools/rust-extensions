@@ -17,6 +17,11 @@ impl StopWatch {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.start_time = SystemTime::now();
+        self.stop_time = self.start_time;
+    }
+
     pub fn start(&mut self) {
         self.start_time = SystemTime::now()
     }
