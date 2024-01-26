@@ -4,10 +4,10 @@ use tokio::{
 };
 
 use super::{ArrayOfBytesIteratorAsync, NextValue};
-const BUFFER_SIZE: usize = 1024;
 pub struct Buffer {
-    pub buffer: [u8; BUFFER_SIZE],
+    pub buffer: Vec<u8>,
     pub offset: usize,
+    pub buffer_size: usize,
 }
 
 impl Buffer {
@@ -17,7 +17,7 @@ impl Buffer {
     }
 
     pub fn beyond_buffer(&self, file_offset: usize) -> bool {
-        file_offset >= self.offset + BUFFER_SIZE
+        file_offset >= self.offset + self.buffer_size
     }
 
     pub fn get_slice(&self, file_from: usize, file_to: usize) -> &[u8] {
@@ -35,15 +35,19 @@ pub struct FileIterator {
 }
 
 impl FileIterator {
-    pub async fn new(file_name: &str) -> std::io::Result<Self> {
+    pub async fn new(file_name: &str, buffer_size: usize) -> std::io::Result<Self> {
+        let mut buffer = Vec::with_capacity(buffer_size);
+        unsafe { buffer.set_len(buffer_size) }
+
         let mut buffer = Buffer {
-            buffer: [0; BUFFER_SIZE],
+            buffer,
             offset: 0,
+            buffer_size,
         };
         let file_size = tokio::fs::metadata(file_name).await?.len() as usize;
 
         let mut file = tokio::fs::File::open(file_name).await?;
-        if file_size <= BUFFER_SIZE {
+        if file_size <= buffer_size {
             file.read_exact(&mut buffer.buffer[..file_size]).await?;
         } else {
             file.read_exact(&mut buffer.buffer).await?;
@@ -76,7 +80,7 @@ impl FileIterator {
     }
 
     async fn load_next_chunk(&mut self) -> std::io::Result<()> {
-        let next_offset = self.buffer.offset + BUFFER_SIZE;
+        let next_offset = self.buffer.offset + self.buffer.buffer_size;
 
         let remaining_to_load = self.file_size - next_offset;
 
@@ -88,7 +92,7 @@ impl FileIterator {
         file.seek(std::io::SeekFrom::Start(next_offset as u64))
             .await?;
 
-        if remaining_to_load <= BUFFER_SIZE {
+        if remaining_to_load <= self.buffer.buffer_size {
             file.read_exact(&mut self.buffer.buffer[..remaining_to_load])
                 .await?;
         } else {
