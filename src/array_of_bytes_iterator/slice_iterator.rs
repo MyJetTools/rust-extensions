@@ -18,6 +18,10 @@ impl<'s> SliceIterator<'s> {
     }
 }
 impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
+    fn get_src_slice(&self) -> &[u8] {
+        self.slice
+    }
+
     fn peek_value(&self) -> Option<NextValue> {
         if self.pos < self.slice.len() {
             let result = NextValue {

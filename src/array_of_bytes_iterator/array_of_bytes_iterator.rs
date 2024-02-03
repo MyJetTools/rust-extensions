@@ -12,4 +12,6 @@ pub trait ArrayOfBytesIterator {
     fn get_slice_to_end(&self, from_pos: usize) -> &[u8];
 
     fn advance(&mut self, amount: usize) -> Option<&[u8]>;
+
+    fn get_src_slice(&self) -> &[u8];
 }
