@@ -3,7 +3,7 @@ pub struct NextValue {
     pub pos: usize,
 }
 
-pub trait ArrayOfBytesIterator {
+pub trait ArrayOfBytesIterator<'s> {
     fn peek_value(&self) -> Option<NextValue>;
     fn get_next(&mut self) -> Option<NextValue>;
     fn get_pos(&self) -> usize;
@@ -14,4 +14,6 @@ pub trait ArrayOfBytesIterator {
     fn advance(&mut self, amount: usize) -> Option<&[u8]>;
 
     fn get_src_slice(&self) -> &[u8];
+
+    fn peek_sequence(&'s self, size: usize, sub_seq: impl Fn(&'s [u8]) -> bool) -> bool;
 }

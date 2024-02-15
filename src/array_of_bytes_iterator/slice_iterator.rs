@@ -17,7 +17,7 @@ impl<'s> SliceIterator<'s> {
         }
     }
 }
-impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
+impl<'s> ArrayOfBytesIterator<'s> for SliceIterator<'s> {
     fn get_src_slice(&self) -> &[u8] {
         self.slice
     }
@@ -69,5 +69,13 @@ impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
             self.pos = pos_after;
             Some(result)
         }
+    }
+
+    fn peek_sequence(&'s self, size: usize, sub_seq: impl Fn(&'s [u8]) -> bool) -> bool {
+        if self.pos + size > self.slice.len() {
+            return false;
+        }
+
+        sub_seq(&self.slice[self.pos..(self.pos + size)])
     }
 }
