@@ -59,7 +59,7 @@ impl<'s> ArrayOfBytesIterator<'s> for SliceIterator<'s> {
         &self.slice[from_pos..]
     }
 
-    fn advance(&'s mut self, amount: usize) -> Option<&'s [u8]> {
+    fn advance(&mut self, amount: usize) -> Option<&[u8]> {
         let pos_after = amount + self.pos;
 
         if pos_after >= self.slice.len() {
