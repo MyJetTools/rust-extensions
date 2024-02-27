@@ -55,36 +55,75 @@ impl ShortString {
         self.data[0] as usize
     }
 
-    pub fn push_str(&mut self, src: &str) {
+    pub fn try_push_utf_8_char(&mut self, c: char) -> bool {
+        let char_len = c.len_utf8();
+
+        let len = self.len();
+
+        let new_len = len + char_len;
+
+        if new_len > 255 {
+            return false;
+        }
+
+        let dst = &mut self.data[len + 1..len + char_len + 1];
+        c.encode_utf8(dst);
+
+        self.data[0] = new_len as u8;
+
+        true
+    }
+
+    pub fn try_push_str(&mut self, src: &str) -> bool {
         let len = self.len();
 
         let new_len = len + src.len();
 
         if new_len > 255 {
-            panic!(
-                "ShortString is too long. Len must be no more than 255. Now it is {}",
-                new_len
-            );
+            return false;
         }
 
         self.data[len + 1..len + src.len() + 1].copy_from_slice(src.as_bytes());
         self.data[0] = new_len as u8;
+
+        true
+    }
+
+    pub fn push_str(&mut self, src: &str) {
+        if !self.try_push_str(src) {
+            panic!(
+                "ShortString is too long. Len must be no more than 255. Before push len is {}. After push len would be {}",
+                self.len(),
+                self.len()+src.len()
+            );
+        }
+    }
+
+    pub fn try_push(&mut self, c: char) -> bool {
+        if c.len_utf8() == 1 {
+            let len = self.len();
+
+            let new_len = len + 1;
+
+            if new_len > 255 {
+                return false;
+            }
+
+            self.data[len + 1] = c as u8;
+            self.data[0] = new_len as u8;
+            return true;
+        }
+
+        self.try_push_utf_8_char(c)
     }
 
     pub fn push(&mut self, c: char) {
-        let len = self.len();
-
-        let new_len = len + 1;
-
-        if new_len > 255 {
+        if !self.try_push(c) {
             panic!(
                 "ShortString is too long. Len must be no more than 255. Now it is {}",
-                new_len
+                self.len()
             );
         }
-
-        self.data[len + 1] = c as u8;
-        self.data[0] = new_len as u8;
     }
 
     pub fn as_str(&self) -> &str {
@@ -267,5 +306,27 @@ mod test {
         my_str.replace("beautiful", "my");
 
         assert_eq!(my_str.as_str(), "Hello my world my");
+    }
+
+    #[test]
+    fn test_utf8_two_symbols() {
+        let src = 'Á';
+
+        let mut dest = ShortString::new_empty();
+
+        dest.push(src);
+
+        assert_eq!(dest.as_str(), src.to_string());
+    }
+
+    #[test]
+    fn test_utf8_which_has_two_symbols_char() {
+        let src = "AÁB";
+
+        let mut dest = ShortString::new_empty();
+
+        dest.push_str(src);
+
+        assert_eq!(dest.as_str(), src);
     }
 }
