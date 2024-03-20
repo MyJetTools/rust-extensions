@@ -12,6 +12,7 @@ base64 = ["dep:base64"]
 hex = ["dep:hex"]
 with-tokio = ["tokio", "signal-hook"]
 vec-maybe-stack = []
+placeholders = []
 
 [dependencies]
 tokio = { version = "*", features = ["full"], optional = true }
