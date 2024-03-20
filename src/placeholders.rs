@@ -86,8 +86,9 @@ impl<'s> Iterator for PlaceholdersIterator<'s> {
 
         let key_end = key_end.unwrap();
 
-        let text = std::str::from_utf8(&self.content[self.i + 2..key_end]).unwrap();
-        self.i = key_end + 1;
+        let text =
+            std::str::from_utf8(&self.content[self.i + self.open_token.len()..key_end]).unwrap();
+        self.i = key_end + self.close_token.len();
         self.reading_key = false;
         Some(ContentToken::Placeholder(text))
     }
