@@ -22,20 +22,22 @@ impl<'s> ContentToken<'s> {
     }
 }
 
-const KEY_START: &str = "${";
-
 pub struct PlaceholdersIterator<'s> {
     content: &'s [u8],
     i: usize,
     reading_key: bool,
+    open_token: &'static str,
+    close_token: &'static str,
 }
 
 impl<'s> PlaceholdersIterator<'s> {
-    pub fn new(content: &'s str) -> Self {
+    pub fn new(content: &'s str, open_token: &'static str, close_token: &'static str) -> Self {
         Self {
             content: content.as_bytes(),
             i: 0,
             reading_key: false,
+            open_token,
+            close_token,
         }
     }
 }
@@ -49,7 +51,9 @@ impl<'s> Iterator for PlaceholdersIterator<'s> {
         }
 
         if !self.reading_key {
-            let key_start = self.content.find_sequence_pos(KEY_START.as_bytes(), self.i);
+            let key_start = self
+                .content
+                .find_sequence_pos(self.open_token.as_bytes(), self.i);
 
             if key_start.is_none() {
                 let text = std::str::from_utf8(&self.content[self.i..]).unwrap();
@@ -70,7 +74,9 @@ impl<'s> Iterator for PlaceholdersIterator<'s> {
             }
         }
 
-        let key_end = self.content.find_byte_pos(b'}', self.i);
+        let key_end = self
+            .content
+            .find_sequence_pos(self.close_token.as_bytes(), self.i);
 
         if key_end.is_none() {
             let text = std::str::from_utf8(&self.content[self.i..]).unwrap();
@@ -87,8 +93,13 @@ impl<'s> Iterator for PlaceholdersIterator<'s> {
     }
 }
 
-pub fn has_placeholder(src: &str, place_holder: &str) -> bool {
-    for token in PlaceholdersIterator::new(src) {
+pub fn has_placeholder(
+    src: &str,
+    place_holder: &str,
+    open_token: &'static str,
+    close_token: &'static str,
+) -> bool {
+    for token in PlaceholdersIterator::new(src, open_token, close_token) {
         if let ContentToken::Placeholder(value) = token {
             if value == place_holder {
                 return true;
@@ -107,7 +118,7 @@ mod test {
     fn get_tokens_with_placeholders() {
         let src = "my secret is ${secret1} and ${secret2} is my secret";
 
-        let tokens: Vec<_> = PlaceholdersIterator::new(src).collect();
+        let tokens: Vec<_> = PlaceholdersIterator::new(src, "${", "}").collect();
 
         assert_eq!(tokens.len(), 5);
 
@@ -122,7 +133,7 @@ mod test {
     fn get_tokens_with_placeholder_at_the_end() {
         let src = "my secret is ${secret1} and ${secret2}";
 
-        let tokens: Vec<_> = PlaceholdersIterator::new(src).collect();
+        let tokens: Vec<_> = PlaceholdersIterator::new(src, "${", "}").collect();
 
         assert_eq!(tokens.len(), 4);
 
@@ -136,7 +147,7 @@ mod test {
     fn get_tokens_with_placeholders_with_placeholder_at_beginning() {
         let src = "${secret1} and ${secret2} is my secret";
 
-        let tokens: Vec<_> = PlaceholdersIterator::new(src).collect();
+        let tokens: Vec<_> = PlaceholdersIterator::new(src, "${", "}").collect();
 
         assert_eq!(tokens.len(), 4);
 
