@@ -8,3 +8,5 @@ mod events_loop_publisher;
 pub use events_loop_publisher::*;
 mod events_loop_mode;
 pub use events_loop_mode::*;
+mod events_loop_mutex_wrapped;
+pub use events_loop_mutex_wrapped::*;
