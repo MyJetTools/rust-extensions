@@ -46,7 +46,7 @@ impl<TModel: Send + Sync + 'static> EventsLoopMutexWrapped<TModel> {
     }
 
     pub async fn register_event_loop(
-        &mut self,
+        &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     ) {
         let mut item = self.get_registration_item();
