@@ -4,87 +4,111 @@ use tokio::sync::Mutex;
 
 use crate::{ApplicationStates, Logger, StrOrString};
 
-use super::{EventsLoop, EventsLoopPublisher, EventsLoopTick};
+use super::{events_loop::EventsLoopMessage, EventsLoopTick};
+
+struct EventsLoopInner<TModel: Send + Sync + 'static> {
+    event_loop_tick: Option<Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>>,
+    receiver: Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>,
+}
+
+impl<TModel: Send + Sync + 'static> EventsLoopInner<TModel> {
+    pub fn new(receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>) -> Self {
+        Self {
+            event_loop_tick: None,
+            receiver: Some(receiver),
+        }
+    }
+}
 
 pub struct EventsLoopMutexWrapped<TModel: Send + Sync + 'static> {
-    registration_mode: Option<EventsLoop<TModel>>,
-    inner: Mutex<Option<EventsLoop<TModel>>>,
-    publisher: EventsLoopPublisher<TModel>,
-    name: String,
+    inner: Mutex<EventsLoopInner<TModel>>,
+    sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
+    name: Arc<String>,
+    iteration_timeout: Duration,
 }
 
 impl<TModel: Send + Sync + 'static> EventsLoopMutexWrapped<TModel> {
-    pub fn new(
-        name: impl Into<StrOrString<'static>>,
-        logger: Arc<dyn Logger + Send + Sync + 'static>,
-    ) -> Self {
+    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         let name: String = name.into().to_string();
 
-        let mut events_loop = EventsLoop::new(name.clone(), logger);
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
-        let publisher = events_loop.get_publisher();
         Self {
-            name: name.to_string(),
-            registration_mode: events_loop.into(),
-            inner: Mutex::new(None),
-            publisher,
+            name: Arc::new(name),
+            sender,
+            iteration_timeout: Duration::from_secs(30),
+            inner: Mutex::new(EventsLoopInner::new(receiver)),
         }
     }
 
-    fn get_registration_item(&mut self) -> EventsLoop<TModel> {
-        let item = self.registration_mode.take();
-
-        if item.is_none() {
-            panic!("Event loop is not on registration mode. Looks like it's already engaged to be working");
-        }
-
-        item.unwrap()
-    }
-
-    pub fn set_iteration_timeout(mut self, timeout: Duration) {
-        let mut item = self.get_registration_item();
-
-        item = item.set_iteration_timeout(timeout);
-
-        self.registration_mode = Some(item);
+    pub fn set_iteration_timeout(mut self, timeout: Duration) -> Self {
+        self.iteration_timeout = timeout;
+        self
     }
 
     pub async fn register_event_loop(
         &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     ) {
-        todo!("Implement this")
-        /*
-        item.register_event_loop(event_loop);
-
         let mut write_access = self.inner.lock().await;
-        *write_access = Some(item);
 
-         */
+        if write_access.event_loop_tick.is_some() {
+            panic!(
+                "Event loop tick is already registered for this event loop {}",
+                self.name
+            );
+        }
+
+        write_access.event_loop_tick = Some(event_loop);
     }
 
-    pub async fn start(&self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
+    pub async fn start(
+        &self,
+        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) {
         let mut write_access = self.inner.lock().await;
 
-        if write_access.is_none() {
-            panic!("Please register EventLoopTick Before start EventLoop");
+        let receiver = write_access.receiver.take();
+
+        if receiver.is_none() {
+            panic!("Event Loop {} is already started.", self.name);
         }
-        write_access.as_mut().unwrap().start(app_states);
+
+        let event_loop_tick = write_access.event_loop_tick.take();
+
+        if event_loop_tick.is_none() {
+            panic!(
+                "Please register EventLoopTick Before start EventLoop {}",
+                self.name
+            );
+        }
+
+        tokio::spawn(super::event_loop_reader::events_loop_reader(
+            self.name.clone(),
+            event_loop_tick.unwrap(),
+            app_states,
+            logger,
+            self.iteration_timeout,
+            receiver.unwrap(),
+        ));
     }
 
     pub fn send(&self, model: TModel) {
-        /*
-        match self.publisher.as_ref() {
-            Some(sender) => {
-                sender.send(model);
-            }
-            None => {
-                panic!(
-                    "Sending event to event_loop {} without registering handle ",
-                    self.name
-                )
-            }
+        if let Err(err) = self.sender.send(EventsLoopMessage::NewMessage(model)) {
+            panic!(
+                "Error while sending message to event loop {}. Err: {}",
+                self.name, err
+            );
         }
-         */
+    }
+
+    pub fn stop(&self) {
+        if let Err(err) = self.sender.send(EventsLoopMessage::Shutdown) {
+            panic!(
+                "Error while sending message to event loop {}. Err: {}",
+                self.name, err
+            );
+        }
     }
 }
