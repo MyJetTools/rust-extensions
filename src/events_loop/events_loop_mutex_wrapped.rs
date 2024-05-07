@@ -9,7 +9,7 @@ use super::{EventsLoop, EventsLoopPublisher, EventsLoopTick};
 pub struct EventsLoopMutexWrapped<TModel: Send + Sync + 'static> {
     registration_mode: Option<EventsLoop<TModel>>,
     inner: Mutex<Option<EventsLoop<TModel>>>,
-    publisher: Option<EventsLoopPublisher<TModel>>,
+    publisher: EventsLoopPublisher<TModel>,
     name: String,
 }
 
@@ -19,11 +19,15 @@ impl<TModel: Send + Sync + 'static> EventsLoopMutexWrapped<TModel> {
         logger: Arc<dyn Logger + Send + Sync + 'static>,
     ) -> Self {
         let name: String = name.into().to_string();
+
+        let mut events_loop = EventsLoop::new(name.clone(), logger);
+
+        let publisher = events_loop.get_publisher();
         Self {
             name: name.to_string(),
-            registration_mode: EventsLoop::new(name, logger).into(),
+            registration_mode: events_loop.into(),
             inner: Mutex::new(None),
-            publisher: None,
+            publisher,
         }
     }
 
@@ -49,15 +53,14 @@ impl<TModel: Send + Sync + 'static> EventsLoopMutexWrapped<TModel> {
         &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     ) {
-        let mut item = self.get_registration_item();
+        todo!("Implement this")
+        /*
         item.register_event_loop(event_loop);
-
-        let publisher = item.get_publisher();
-
-        self.publisher = Some(publisher);
 
         let mut write_access = self.inner.lock().await;
         *write_access = Some(item);
+
+         */
     }
 
     pub async fn start(&self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
@@ -70,6 +73,7 @@ impl<TModel: Send + Sync + 'static> EventsLoopMutexWrapped<TModel> {
     }
 
     pub fn send(&self, model: TModel) {
+        /*
         match self.publisher.as_ref() {
             Some(sender) => {
                 sender.send(model);
@@ -81,5 +85,6 @@ impl<TModel: Send + Sync + 'static> EventsLoopMutexWrapped<TModel> {
                 )
             }
         }
+         */
     }
 }
