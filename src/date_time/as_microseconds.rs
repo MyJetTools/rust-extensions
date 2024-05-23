@@ -41,7 +41,7 @@ impl DateTimeAsMicroseconds {
             ));
         /* cSpell:enable */
 
-        let result = date_time.timestamp_millis() * 1000;
+        let result = date_time.and_utc().timestamp_millis() * 1000;
 
         Self {
             unix_microseconds: result + microsecond,

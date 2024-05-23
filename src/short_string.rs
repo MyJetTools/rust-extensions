@@ -51,6 +51,36 @@ impl ShortString {
         self.data[0] = src.len() as u8;
     }
 
+    pub fn insert(&mut self, index: usize, str: &str) -> Result<(), String> {
+        let to_insert = str.as_bytes();
+
+        if to_insert.len() + self.len() > SHORT_STRING_MAX_LEN {
+            return Err(format!(
+                "ShortString is too long. Len must be no more than 255. Now it is {}",
+                self.len()
+            ));
+        }
+
+        if index == self.data.len() {
+            self.push_str(str);
+            return Ok(());
+        }
+
+        let mut result = ShortString::new_empty();
+        if index == 0 {
+            result.push_str(str);
+            result.push_str(self.as_str());
+        } else {
+            result.push_str(self.as_str()[..index].as_ref());
+            result.push_str(str);
+            result.push_str(self.as_str()[index..].as_ref());
+        }
+
+        self.data.copy_from_slice(result.data.as_ref());
+
+        Ok(())
+    }
+
     pub fn len(&self) -> usize {
         self.data[0] as usize
     }
@@ -328,5 +358,35 @@ mod test {
         dest.push_str(src);
 
         assert_eq!(dest.as_str(), src);
+    }
+
+    #[test]
+    fn test_insert_at_start() {
+        let src = "DEFG";
+
+        let mut dest = ShortString::from_str(src).unwrap();
+        dest.insert(0, "ABC").unwrap();
+
+        assert_eq!(dest.as_str(), "ABCDEFG");
+    }
+
+    #[test]
+    fn test_insert_in_the_middle() {
+        let src = "ABCG";
+
+        let mut dest = ShortString::from_str(src).unwrap();
+        dest.insert(3, "DEF").unwrap();
+
+        assert_eq!(dest.as_str(), "ABCDEFG");
+    }
+
+    #[test]
+    fn test_insert_in_the_end() {
+        let src = "ABC";
+
+        let mut dest = ShortString::from_str(src).unwrap();
+        dest.insert(3, "DEFG").unwrap();
+
+        assert_eq!(dest.as_str(), "ABCDEFG");
     }
 }

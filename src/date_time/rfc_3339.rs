@@ -62,7 +62,7 @@ impl DateTimeStruct {
             )?;
         /* cSpell:enable */
 
-        Some(date_time.timestamp_micros())
+        Some(date_time.and_utc().timestamp_micros())
     }
 
     pub fn to_date_time_as_microseconds(&self) -> Option<DateTimeAsMicroseconds> {
