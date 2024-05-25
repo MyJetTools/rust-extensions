@@ -8,6 +8,7 @@ pub struct MyTimer {
     interval: Duration,
     timers: Vec<(String, Arc<dyn MyTimerTick + Send + Sync + 'static>)>,
     iteration_timeout: Duration,
+    delay_before_first_tick: bool,
 }
 
 impl MyTimer {
@@ -16,6 +17,7 @@ impl MyTimer {
             interval,
             timers: Vec::new(),
             iteration_timeout: Duration::from_secs(60),
+            delay_before_first_tick: true,
         }
     }
 
@@ -24,7 +26,13 @@ impl MyTimer {
             interval,
             timers: Vec::new(),
             iteration_timeout,
+            delay_before_first_tick: true,
         }
+    }
+
+    pub fn set_first_tick_before_delay(mut self) -> Self {
+        self.delay_before_first_tick = false;
+        self
     }
 
     pub fn register_timer(
@@ -53,6 +61,7 @@ impl MyTimer {
             app_states,
             logger,
             self.iteration_timeout,
+            self.delay_before_first_tick,
         ));
     }
 
@@ -76,6 +85,7 @@ async fn timer_loop(
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
     iteration_timeout: Duration,
+    delay_before_first_tick: bool,
 ) {
     while !app_states.is_initialized() {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -91,9 +101,11 @@ async fn timer_loop(
         logger.write_info(timer_id.to_string().into(), message.into(), None.into());
     }
 
-    while !app_states.is_shutting_down() {
+    if delay_before_first_tick {
         tokio::time::sleep(interval).await;
+    }
 
+    while !app_states.is_shutting_down() {
         let mut timer_handles = HashMap::new();
         for (timer_id, timer) in &timers {
             let handle = tokio::spawn(execute_timer(timer.clone()));
@@ -119,6 +131,8 @@ async fn timer_loop(
                 }
             }
         }
+
+        tokio::time::sleep(interval).await;
     }
 }
 
