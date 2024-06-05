@@ -55,4 +55,11 @@ impl MaybeShortString {
             MaybeShortString::AsString(value) => StrOrString::create_as_string(value),
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            MaybeShortString::AsShortString(value) => value.as_str(),
+            MaybeShortString::AsString(value) => value.as_str(),
+        }
+    }
 }
