@@ -10,6 +10,14 @@ impl MaybeShortString {
         MaybeShortString::AsShortString(ShortString::new_empty())
     }
 
+    pub fn from_str(value: &str) -> Self {
+        if value.as_bytes().len() <= crate::SHORT_STRING_MAX_LEN {
+            MaybeShortString::AsShortString(ShortString::from_str(value).unwrap())
+        } else {
+            MaybeShortString::AsString(value.to_string())
+        }
+    }
+
     pub fn push(&mut self, c: char) {
         match self {
             MaybeShortString::AsShortString(value) => {
