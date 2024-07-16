@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rust_extensions::sorted_vec::{EntityWithStrKey, SortedVecWithStrKey};
 use uuid::Uuid;
 
@@ -132,13 +132,13 @@ pub fn inset_bench(c: &mut Criterion) {
 
 fn iterate_all_elements_vec(src: &SortedVecWithStrKey<TestStruct>) {
     for item in src.iter() {
-        let a = item.id.clone();
+        let _ = item.id.clone();
     }
 }
 
 fn iterate_all_elements_hash_map(src: &HashMap<String, TestStruct>) {
     for (_, strc) in src.iter() {
-        let a = strc.id.clone();
+        let _ = strc.id.clone();
     }
 }
 
