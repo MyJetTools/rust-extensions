@@ -54,3 +54,5 @@ mod maybe_short_string;
 pub use maybe_short_string::*;
 #[cfg(feature = "placeholders")]
 pub mod placeholders;
+
+pub extern crate chrono;

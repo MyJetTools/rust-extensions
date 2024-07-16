@@ -1,3 +1,5 @@
+use chrono::Weekday;
+
 #[derive(Default)]
 pub struct TimeStruct {
     pub hour: u32,
@@ -7,6 +9,39 @@ pub struct TimeStruct {
 }
 
 impl TimeStruct {
+    pub fn to_micro_seconds(&self) -> u64 {
+        self.micros as u64
+            + self.sec as u64 * 1_000_000
+            + self.min as u64 * 60 * 1_000_000
+            + self.hour as u64 * 60 * 60 * 1_000_000
+    }
+
+    pub fn to_micro_second_withing_week(&self, week_day: Weekday) -> u64 {
+        let wd = week_day as u64 * 24 * 60 * 60 * 1_000_000;
+        let micros = self.to_micro_seconds();
+        micros + wd
+    }
+
+    pub fn is_grater_then(&self, other: &Self) -> bool {
+        self.to_micro_seconds() > other.to_micro_seconds()
+    }
+
+    pub fn is_grater_or_eq_then(&self, other: &Self) -> bool {
+        self.to_micro_seconds() >= other.to_micro_seconds()
+    }
+
+    pub fn is_equal_to(&self, other: &Self) -> bool {
+        self.to_micro_seconds() == other.to_micro_seconds()
+    }
+
+    pub fn is_less_then(&self, other: &Self) -> bool {
+        self.to_micro_seconds() < other.to_micro_seconds()
+    }
+
+    pub fn is_less_or_eq_then(&self, other: &Self) -> bool {
+        self.to_micro_seconds() <= other.to_micro_seconds()
+    }
+
     pub fn push_time_no_micros_to_str(&self, dest: &mut String) {
         if self.hour < 10 {
             dest.push('0');
@@ -189,6 +224,7 @@ pub fn parse_microseconds(src: &[u8]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -346,5 +382,53 @@ mod tests {
         let result = parse_microseconds(src.as_bytes());
 
         assert_eq!(605243, result);
+    }
+    #[test]
+    pub fn test_greater() {
+        let time1 = TimeStruct {
+            hour: 12,
+            min: 5,
+            sec: 9,
+            micros: 123456,
+        };
+
+        let time2 = TimeStruct {
+            hour: 12,
+            min: 5,
+            sec: 9,
+            micros: 123455,
+        };
+
+        println!(
+            "time1:{} time2:{}",
+            time1.to_micro_seconds(),
+            time2.to_micro_seconds()
+        );
+
+        assert!(time1.is_grater_then(&time2));
+    }
+
+    #[test]
+    pub fn test_greater_next_day() {
+        let time1 = TimeStruct {
+            hour: 0,
+            min: 0,
+            sec: 0,
+            micros: 0,
+        };
+
+        let time2 = TimeStruct {
+            hour: 23,
+            min: 59,
+            sec: 59,
+            micros: 999999,
+        };
+
+        let ms1 = time1.to_micro_second_withing_week(Weekday::Tue);
+        let ms2 = time2.to_micro_second_withing_week(Weekday::Mon);
+
+        println!("time1:{} time2:{}", ms1, ms2);
+
+        assert!(ms2 < ms1);
     }
 }
