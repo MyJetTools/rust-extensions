@@ -1,3 +1,88 @@
+pub trait StrUtils {
+    fn to_str(&self) -> &str;
+
+    fn eq_case_insensitive(&self, dst: &str) -> bool {
+        compare_strings_case_insensitive(self.to_str(), dst)
+    }
+
+    fn starts_with_case_insensitive(&self, start_with_str: &str) -> bool {
+        starts_with_case_insensitive(self.to_str(), start_with_str)
+    }
+
+    fn split_exact_to_2_lines(&self, slipt_line: &str) -> Option<(&str, &str)> {
+        let mut first = None;
+        let mut second = None;
+
+        for line in self.to_str().split(slipt_line) {
+            if first.is_none() {
+                first = Some(line);
+                continue;
+            }
+
+            if second.is_none() {
+                second = Some(line);
+                continue;
+            }
+
+            return None;
+        }
+
+        let first = first?;
+        let second = second?;
+
+        Some((first, second))
+    }
+
+    fn split_exact_to_3_lines(&self, slipt_line: &str) -> Option<(&str, &str, &str)> {
+        let mut first = None;
+        let mut second = None;
+        let mut third = None;
+
+        for line in self.to_str().split(slipt_line) {
+            if first.is_none() {
+                first = Some(line);
+                continue;
+            }
+
+            if second.is_none() {
+                second = Some(line);
+                continue;
+            }
+
+            if third.is_none() {
+                third = Some(line);
+                continue;
+            }
+
+            return None;
+        }
+
+        let first = first?;
+        let second = second?;
+        let third = third?;
+
+        Some((first, second, third))
+    }
+}
+
+impl<'s> StrUtils for &'s str {
+    fn to_str(&self) -> &str {
+        self
+    }
+}
+
+impl<'s> StrUtils for &'s String {
+    fn to_str(&self) -> &str {
+        self
+    }
+}
+
+impl StrUtils for String {
+    fn to_str(&self) -> &str {
+        self
+    }
+}
+
 pub fn compare_strings_case_insensitive(src: &str, dst: &str) -> bool {
     if src.len() != dst.len() {
         return false;
