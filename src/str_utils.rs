@@ -1,15 +1,15 @@
-pub trait StrUtils {
-    fn to_str(&self) -> &str;
+pub trait StrUtils<'s> {
+    fn to_str(&'s self) -> &str;
 
-    fn eq_case_insensitive(&self, dst: &str) -> bool {
+    fn eq_case_insensitive(&'s self, dst: &str) -> bool {
         compare_strings_case_insensitive(self.to_str(), dst)
     }
 
-    fn starts_with_case_insensitive(&self, start_with_str: &str) -> bool {
+    fn starts_with_case_insensitive(&'s self, start_with_str: &str) -> bool {
         starts_with_case_insensitive(self.to_str(), start_with_str)
     }
 
-    fn split_exact_to_2_lines<'s>(&'s self, slipt_line: &str) -> Option<(&'s str, &'s str)> {
+    fn split_exact_to_2_lines(&'s self, slipt_line: &str) -> Option<(&'s str, &'s str)> {
         let mut first = None;
         let mut second = None;
 
@@ -33,10 +33,7 @@ pub trait StrUtils {
         Some((first, second))
     }
 
-    fn split_exact_to_3_lines<'s>(
-        &'s self,
-        slipt_line: &str,
-    ) -> Option<(&'s str, &'s str, &'s str)> {
+    fn split_exact_to_3_lines(&'s self, slipt_line: &str) -> Option<(&'s str, &'s str, &'s str)> {
         let mut first = None;
         let mut second = None;
         let mut third = None;
@@ -68,20 +65,20 @@ pub trait StrUtils {
     }
 }
 
-impl<'s> StrUtils for &'s str {
-    fn to_str(&self) -> &'s str {
+impl<'s> StrUtils<'s> for &'s str {
+    fn to_str(&'s self) -> &'s str {
         self
     }
 }
 
-impl<'s> StrUtils for &'s String {
-    fn to_str(&self) -> &'s str {
+impl<'s> StrUtils<'s> for &'s String {
+    fn to_str(&'s self) -> &'s str {
         self
     }
 }
 
-impl StrUtils for String {
-    fn to_str(&self) -> &str {
+impl<'s> StrUtils<'s> for String {
+    fn to_str(&'s self) -> &str {
         self
     }
 }
