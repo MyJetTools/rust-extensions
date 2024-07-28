@@ -86,6 +86,39 @@ pub trait StrUtils<'s> {
 
         Some((first, second, third))
     }
+
+    fn split_2_or_3_lines(
+        &'s self,
+        slipt_line: &str,
+    ) -> Option<(&'s str, &'s str, Option<&'s str>)> {
+        let mut first = None;
+        let mut second = None;
+        let mut third = None;
+
+        for line in self.to_str().split(slipt_line) {
+            if first.is_none() {
+                first = Some(line);
+                continue;
+            }
+
+            if second.is_none() {
+                second = Some(line);
+                continue;
+            }
+
+            if third.is_none() {
+                third = Some(line);
+                continue;
+            }
+
+            return None;
+        }
+
+        let first = first?;
+        let second = second?;
+
+        Some((first, second, third))
+    }
 }
 
 impl<'s> StrUtils<'s> for &'s str {
