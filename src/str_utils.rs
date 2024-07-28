@@ -9,6 +9,29 @@ pub trait StrUtils<'s> {
         starts_with_case_insensitive(self.to_str(), start_with_str)
     }
 
+    fn split_up_to_2_lines(&'s self, slipt_line: &str) -> Option<(&'s str, Option<&'s str>)> {
+        let mut first = None;
+        let mut second = None;
+
+        for line in self.to_str().split(slipt_line) {
+            if first.is_none() {
+                first = Some(line);
+                continue;
+            }
+
+            if second.is_none() {
+                second = Some(line);
+                continue;
+            }
+
+            return None;
+        }
+
+        let first = first?;
+
+        Some((first, second))
+    }
+
     fn split_exact_to_2_lines(&'s self, slipt_line: &str) -> Option<(&'s str, &'s str)> {
         let mut first = None;
         let mut second = None;
