@@ -79,11 +79,15 @@ impl<'s> HostEndpoint<'s> {
             match scheme {
                 "https" => return 443,
                 "ssh" => return 22,
+                "http" => return 80,
                 _ => {}
             }
         }
 
-        80
+        panic!(
+            "Unknown scheme {:?}. Can not assigned default port",
+            self.scheme
+        );
     }
 }
 
