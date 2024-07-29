@@ -1,5 +1,6 @@
 use crate::{str_utils::StrUtils, ShortString};
 
+#[derive(Debug, Clone, Copy)]
 pub struct HostEndpoint<'s> {
     pub scheme: Option<&'s str>,
     pub host: &'s str,
