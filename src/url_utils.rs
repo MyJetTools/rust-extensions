@@ -75,6 +75,10 @@ impl<'s> HostEndpoint<'s> {
     }
 
     pub fn get_standard_port(&self) -> u16 {
+        if let Some(port) = self.port {
+            return port;
+        }
+
         if let Some(scheme) = self.scheme {
             match scheme {
                 "https" => return 443,
