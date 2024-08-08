@@ -1,6 +1,6 @@
 use chrono::Weekday;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct TimeStruct {
     pub hour: u32,
     pub min: u32,

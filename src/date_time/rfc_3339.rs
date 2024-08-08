@@ -82,17 +82,6 @@ impl<'s> TryInto<DateTimeAsMicroseconds> for &'s DateTimeStruct {
     }
 }
 
-impl TryInto<DateTimeAsMicroseconds> for DateTimeStruct {
-    type Error = ();
-
-    fn try_into(self) -> Result<DateTimeAsMicroseconds, Self::Error> {
-        match self.to_date_time_as_microseconds() {
-            Some(result) => Ok(result),
-            None => Err(()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::date_time::DateTimeAsMicroseconds;

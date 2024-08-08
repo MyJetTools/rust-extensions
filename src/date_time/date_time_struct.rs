@@ -2,6 +2,7 @@ use chrono::{Timelike, Weekday};
 
 use super::{DateTimeAsMicroseconds, TimeStruct};
 
+#[derive(Debug, Clone)]
 pub struct DateTimeStruct {
     pub year: i32,
     pub month: u32,
@@ -58,6 +59,15 @@ impl DateTimeStruct {
     }
 }
 
+impl TryInto<DateTimeAsMicroseconds> for DateTimeStruct {
+    type Error = String;
+    fn try_into(self) -> Result<DateTimeAsMicroseconds, Self::Error> {
+        match self.to_unix_microseconds() {
+            Some(result) => Ok(DateTimeAsMicroseconds::new(result)),
+            None => Err(format!("Can not parse from date time struct: {:?}", self)),
+        }
+    }
+}
 #[cfg(test)]
 mod test {
     use super::*;
