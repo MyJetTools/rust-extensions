@@ -211,6 +211,23 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+
+    pub fn get_highest_and_below_amount(&self, highest_key: &TKey, amount: usize) -> &[TValue] {
+        let index_to = self
+            .items
+            .binary_search_by(|itm| itm.get_key().cmp(highest_key));
+
+        let index_to = match index_to {
+            Ok(index_to) => index_to,
+            Err(index_to) => index_to,
+        };
+
+        if amount >= index_to {
+            return &self.items[..=index_to];
+        }
+
+        &self.items[index_to - amount + 1..=index_to]
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +350,49 @@ mod tests {
         assert_eq!(4, result.len());
         assert_eq!(
             vec![3u8, 4u8, 6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+    }
+
+    #[test]
+    fn test_get_highest_and_amount() {
+        let mut vec = super::SortedVec::new();
+
+        vec.insert_or_replace(TestEntity { key: 1, value: 1 });
+
+        vec.insert_or_replace(TestEntity { key: 3, value: 3 });
+
+        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
+
+        vec.insert_or_replace(TestEntity { key: 6, value: 6 });
+
+        vec.insert_or_replace(TestEntity { key: 7, value: 7 });
+
+        let result = vec.get_highest_and_below_amount(&6, 2);
+
+        assert_eq!(
+            vec![4u8, 6u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.get_highest_and_below_amount(&7, 2);
+
+        assert_eq!(
+            vec![6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.get_highest_and_below_amount(&7, 3);
+
+        assert_eq!(
+            vec![4u8, 6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.get_highest_and_below_amount(&6, 5);
+
+        assert_eq!(
+            vec![1u8, 3u8, 4u8, 6u8],
             result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
     }

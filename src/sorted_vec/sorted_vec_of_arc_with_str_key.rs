@@ -159,4 +159,26 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+
+    pub fn range(&self, range: std::ops::Range<&str>) -> &[Arc<TValue>] {
+        let index_from = self
+            .items
+            .binary_search_by(|itm| itm.get_key().cmp(&range.start));
+
+        let index_from = match index_from {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+
+        let index_to = self
+            .items
+            .binary_search_by(|itm| itm.get_key().cmp(&range.end));
+
+        match index_to {
+            Ok(index_to) => {
+                return &self.items[index_from..=index_to];
+            }
+            Err(index_to) => &self.items[index_from..index_to],
+        }
+    }
 }
