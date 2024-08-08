@@ -107,6 +107,28 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         self.items.get_mut(index)
     }
 
+    pub fn range(&self, range: std::ops::Range<TKey>) -> &[TValue] {
+        let index_from = self
+            .items
+            .binary_search_by(|itm| itm.get_key().cmp(&range.start));
+
+        let index_from = match index_from {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+
+        let index_to = self
+            .items
+            .binary_search_by(|itm| itm.get_key().cmp(&range.end));
+
+        match index_to {
+            Ok(index_to) => {
+                return &self.items[index_from..=index_to];
+            }
+            Err(index_to) => &self.items[index_from..index_to],
+        }
+    }
+
     pub fn get_from_key_to_up(&self, key: &TKey) -> &[TValue] {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
@@ -250,6 +272,68 @@ mod tests {
         assert_eq!(
             vec![1u8, 2u8, 3u8, 4u8, 5u8],
             vec.items.iter().map(|x| x.key).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_range_at_exact_items() {
+        let mut vec = super::SortedVec::new();
+
+        vec.insert_or_replace(TestEntity { key: 1, value: 1 });
+
+        vec.insert_or_replace(TestEntity { key: 2, value: 2 });
+
+        vec.insert_or_replace(TestEntity { key: 3, value: 3 });
+
+        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
+
+        vec.insert_or_replace(TestEntity { key: 5, value: 5 });
+
+        let result = vec.range(2..4);
+
+        assert_eq!(3, result.len());
+        assert_eq!(
+            vec![2u8, 3u8, 4u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+    }
+
+    #[test]
+    fn test_range_at_not_exact() {
+        let mut vec = super::SortedVec::new();
+
+        vec.insert_or_replace(TestEntity { key: 1, value: 1 });
+
+        vec.insert_or_replace(TestEntity { key: 3, value: 3 });
+
+        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
+
+        vec.insert_or_replace(TestEntity { key: 6, value: 6 });
+
+        vec.insert_or_replace(TestEntity { key: 7, value: 7 });
+
+        let result = vec.range(2..5);
+
+        assert_eq!(2, result.len());
+        assert_eq!(
+            vec![3u8, 4u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.range(1..10);
+
+        assert_eq!(5, result.len());
+        assert_eq!(
+            vec![1u8, 3u8, 4u8, 6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.range(2..7);
+
+        assert_eq!(4, result.len());
+        assert_eq!(
+            vec![3u8, 4u8, 6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
     }
 }
