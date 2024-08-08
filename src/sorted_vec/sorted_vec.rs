@@ -217,10 +217,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
             .items
             .binary_search_by(|itm| itm.get_key().cmp(highest_key));
 
-        let index_to = match index_to {
+        let mut index_to = match index_to {
             Ok(index_to) => index_to,
             Err(index_to) => index_to,
         };
+
+        if index_to >= self.items.len() {
+            index_to = self.items.len() - 1;
+        }
 
         if amount >= index_to {
             return &self.items[..=index_to];
@@ -393,6 +397,13 @@ mod tests {
 
         assert_eq!(
             vec![1u8, 3u8, 4u8, 6u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.get_highest_and_below_amount(&8, 5);
+
+        assert_eq!(
+            vec![1u8, 3u8, 4u8, 6u8, 7u8],
             result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
     }
