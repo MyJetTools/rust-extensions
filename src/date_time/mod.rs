@@ -24,3 +24,8 @@ static MONTHS: [&'static str; 12] = [
 ];
 
 static WEEKS: [&'static str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+pub const MICRO_SECONDS_IN_ONE_SECOND: i64 = 1_000_000;
+pub const MICRO_SECONDS_IN_ONE_MINUTE: i64 = 60 * MICRO_SECONDS_IN_ONE_SECOND;
+pub const MICRO_SECONDS_IN_ONE_HOUR: i64 = 60 * MICRO_SECONDS_IN_ONE_MINUTE;
+pub const MICRO_SECONDS_IN_ONE_DAY: i64 = 24 * MICRO_SECONDS_IN_ONE_HOUR;

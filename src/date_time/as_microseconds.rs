@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 
-const ONE_SECOND: i64 = 1_000_000;
-
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct DateTimeAsMicroseconds {
@@ -89,23 +87,23 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn seconds_before(&self, before: DateTimeAsMicroseconds) -> i64 {
-        (self.unix_microseconds - before.unix_microseconds) / ONE_SECOND
+        (self.unix_microseconds - before.unix_microseconds) / super::MICRO_SECONDS_IN_ONE_SECOND
     }
 
     pub fn add_seconds(&mut self, seconds: i64) {
-        self.unix_microseconds += seconds * ONE_SECOND;
+        self.unix_microseconds += seconds * super::MICRO_SECONDS_IN_ONE_SECOND;
     }
 
     pub fn add_minutes(&mut self, minutes: i64) {
-        self.add_seconds(60 * minutes);
+        self.unix_microseconds += minutes * super::MICRO_SECONDS_IN_ONE_MINUTE;
     }
 
-    pub fn add_hours(&mut self, hours: i64) {
-        self.add_minutes(60 * hours);
+    pub fn add_hours(&mut self, hour: i64) {
+        self.unix_microseconds += hour * super::MICRO_SECONDS_IN_ONE_HOUR;
     }
 
     pub fn add_days(&mut self, days: i64) {
-        self.add_hours(24 * days);
+        self.unix_microseconds += days * super::MICRO_SECONDS_IN_ONE_DAY;
     }
 
     pub fn add(&self, duration: Duration) -> Self {
