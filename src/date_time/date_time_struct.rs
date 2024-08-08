@@ -12,6 +12,14 @@ pub struct DateTimeStruct {
 }
 
 impl DateTimeStruct {
+    pub fn inc_month(&mut self) {
+        self.month += 1;
+        if self.month > 12 {
+            self.month = 1;
+            self.year += 1;
+        }
+    }
+
     pub fn from_str(src: &str) -> Option<Self> {
         let as_bytes = src.as_bytes();
 
