@@ -226,11 +226,20 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
             index_to = self.items.len() - 1;
         }
 
-        if amount >= index_to {
-            return &self.items[..=index_to];
+        let index_to_key = self.items[index_to].get_key();
+        if index_to_key <= highest_key {
+            if amount >= index_to {
+                return &self.items[..=index_to];
+            }
+
+            return &self.items[index_to - amount + 1..=index_to];
         }
 
-        &self.items[index_to - amount + 1..=index_to]
+        if amount >= index_to {
+            return &self.items[..index_to];
+        }
+
+        &self.items[index_to - amount + 1..index_to]
     }
 }
 
@@ -404,6 +413,20 @@ mod tests {
 
         assert_eq!(
             vec![1u8, 3u8, 4u8, 6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.get_highest_and_below_amount(&8, 6);
+
+        assert_eq!(
+            vec![1u8, 3u8, 4u8, 6u8, 7u8],
+            result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let result = vec.get_highest_and_below_amount(&0, 5);
+
+        assert_eq!(
+            Vec::<u8>::new(),
             result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
     }
