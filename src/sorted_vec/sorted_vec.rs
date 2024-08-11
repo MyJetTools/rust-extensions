@@ -18,6 +18,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
+    pub fn capacity(&self) -> usize {
+        self.items.capacity()
+    }
+
     pub fn new_with_capacity(capacity: usize) -> Self {
         Self {
             items: Vec::with_capacity(capacity),
