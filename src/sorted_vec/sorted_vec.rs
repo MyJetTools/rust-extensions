@@ -22,6 +22,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         self.items.capacity()
     }
 
+    pub fn reserve(&mut self, capacity: usize) {
+        self.items.reserve(capacity);
+    }
+
+    pub fn reserve_exact(&mut self, capacity: usize) {
+        self.items.reserve_exact(capacity);
+    }
+
     pub fn new_with_capacity(capacity: usize) -> Self {
         Self {
             items: Vec::with_capacity(capacity),

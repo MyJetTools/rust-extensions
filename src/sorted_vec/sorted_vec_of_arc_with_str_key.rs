@@ -24,6 +24,14 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         self.items.capacity()
     }
 
+    pub fn reserve(&mut self, capacity: usize) {
+        self.items.reserve(capacity);
+    }
+
+    pub fn reserve_exact(&mut self, capacity: usize) {
+        self.items.reserve_exact(capacity);
+    }
+
     // Returns the index of the inserted item and old item if it was replaced
     pub fn insert_or_replace(&mut self, item: Arc<TValue>) -> (usize, Option<Arc<TValue>>) {
         let insert_index = self
