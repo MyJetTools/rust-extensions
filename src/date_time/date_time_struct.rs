@@ -20,6 +20,14 @@ impl DateTimeStruct {
         }
     }
 
+    pub fn dec_month(&mut self) {
+        self.month -= 1;
+        if self.month == 0 {
+            self.month = 12;
+            self.year -= 1;
+        }
+    }
+
     pub fn from_str(src: &str) -> Option<Self> {
         let as_bytes = src.as_bytes();
 
@@ -44,8 +52,8 @@ impl DateTimeStruct {
         return DateTimeStruct::parse_rfc_5322(src);
     }
 
-    pub fn get_day_of_week_as_str(&self) -> &str {
-        let dow = match self.dow {
+    pub fn get_day_of_week(&self) -> Weekday {
+        match self.dow {
             Some(dow) => dow,
             None => {
                 use chrono::Datelike;
@@ -53,8 +61,11 @@ impl DateTimeStruct {
                 let date = dt.to_chrono_utc();
                 date.weekday()
             }
-        };
+        }
+    }
 
+    pub fn get_day_of_week_as_str(&self) -> &str {
+        let dow = self.get_day_of_week();
         match dow {
             Weekday::Mon => "Mon",
             Weekday::Tue => "Tue",
