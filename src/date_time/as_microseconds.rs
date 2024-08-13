@@ -169,6 +169,14 @@ impl DateTimeAsMicroseconds {
     }
 }
 
+impl std::ops::Sub<DateTimeAsMicroseconds> for DateTimeAsMicroseconds {
+    type Output = DateTimeDuration;
+
+    fn sub(self, before: DateTimeAsMicroseconds) -> DateTimeDuration {
+        self.duration_since(before)
+    }
+}
+
 impl From<i64> for DateTimeAsMicroseconds {
     fn from(src: i64) -> Self {
         //Seconds946677600000

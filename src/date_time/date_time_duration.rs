@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
 use super::DateTimeAsMicroseconds;
 
@@ -47,6 +47,28 @@ impl DateTimeDuration {
                 format!("-{}", crate::duration_utils::duration_to_string(*duration))
             }
             Self::Zero => String::from("0"),
+        }
+    }
+}
+
+impl Debug for DateTimeDuration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Positive(duration) => {
+                write!(
+                    f,
+                    "+{}",
+                    crate::duration_utils::duration_to_string(*duration)
+                )
+            }
+            Self::Negative(duration) => {
+                write!(
+                    f,
+                    "-{}",
+                    crate::duration_utils::duration_to_string(*duration)
+                )
+            }
+            Self::Zero => write!(f, "0"),
         }
     }
 }
