@@ -356,6 +356,13 @@ mod tests {
     }
 
     #[test]
+    fn test_from_date() {
+        let dt = DateTimeAsMicroseconds::from_str("2021-04-25").unwrap();
+
+        assert_eq!("2021-04-25T00:00:00", &dt.to_rfc3339()[0..19]);
+    }
+
+    #[test]
     fn test_is_later_than() {
         let now = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
         let later = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:04.000Z").unwrap();

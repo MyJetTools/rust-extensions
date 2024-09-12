@@ -1,10 +1,16 @@
-use std::ops::Deref;
+use std::{fmt::Debug, ops::Deref};
 
-pub struct UnsafeValue<T: Copy + Clone> {
+pub struct UnsafeValue<T: Copy + Clone + Debug> {
     value: T,
 }
 
-impl<T: Copy + Clone> UnsafeValue<T> {
+impl<T: Copy + Clone + Debug> Debug for UnsafeValue<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl<T: Copy + Clone + Debug> UnsafeValue<T> {
     pub fn new(value: T) -> Self {
         Self { value }
     }
@@ -21,7 +27,7 @@ impl<T: Copy + Clone> UnsafeValue<T> {
     }
 }
 
-impl<T: Clone + Copy> Deref for UnsafeValue<T> {
+impl<T: Clone + Copy + Debug> Deref for UnsafeValue<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

@@ -160,6 +160,19 @@ mod tests {
     use super::DateTimeStruct;
 
     #[test]
+    fn test_from_date() {
+        let src = DateTimeStruct::from_str("2024-01-02").unwrap();
+        assert_eq!(2024, src.year);
+        assert_eq!(1, src.month);
+        assert_eq!(2, src.day);
+
+        assert_eq!(0, src.time.min);
+        assert_eq!(0, src.time.hour);
+        assert_eq!(0, src.time.sec);
+        assert_eq!(0, src.time.micros);
+    }
+
+    #[test]
     fn test() {
         let src = DateTimeStruct {
             year: 2015,
