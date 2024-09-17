@@ -154,6 +154,16 @@ impl TimeStruct {
 
         let min = super::utils::parse_two_digits(&src[3..5])?;
 
+        if src.len() < 6 {
+            return Self {
+                hour,
+                min,
+                sec: 0,
+                micros: 0,
+            }
+            .into();
+        }
+
         let sec = super::utils::parse_two_digits(&src[6..8])?;
 
         let mut micros = 0;
