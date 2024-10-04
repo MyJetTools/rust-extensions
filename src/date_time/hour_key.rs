@@ -10,7 +10,7 @@ impl HourKey {
         HourKey(value)
     }
 
-    pub fn get_value(&self) -> u32 {
+    pub fn to_u32(&self) -> u32 {
         self.0
     }
 }
@@ -55,6 +55,12 @@ impl TryInto<DateTimeAsMicroseconds> for HourKey {
             Some(value) => Ok(value),
             None => Err(format!("{} is not a hour key", self.0)),
         }
+    }
+}
+
+impl Into<u32> for HourKey {
+    fn into(self) -> u32 {
+        self.0
     }
 }
 
