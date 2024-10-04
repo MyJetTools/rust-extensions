@@ -253,6 +253,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
 
         &self.items[index_to - amount + 1..index_to]
     }
+
+    pub fn drain_into_vec(&mut self) -> Vec<TValue> {
+        let mut result = Vec::with_capacity(self.items.len());
+        while let Some(item) = self.items.pop() {
+            result.push(item);
+        }
+        result
+    }
 }
 
 #[cfg(test)]

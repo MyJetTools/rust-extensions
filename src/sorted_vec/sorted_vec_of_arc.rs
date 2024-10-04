@@ -177,6 +177,14 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         self.items.is_empty()
     }
 
+    pub fn drain_into_vec(&mut self) -> Vec<Arc<TValue>> {
+        let mut result = Vec::with_capacity(self.items.len());
+        while let Some(item) = self.items.pop() {
+            result.push(item);
+        }
+        result
+    }
+
     pub fn range(&self, range: std::ops::Range<TKey>) -> &[Arc<TValue>] {
         let index_from = self
             .items

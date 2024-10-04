@@ -193,4 +193,12 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
             Err(index_to) => &self.items[index_from..index_to],
         }
     }
+
+    pub fn drain_into_vec(&mut self) -> Vec<Arc<TValue>> {
+        let mut result = Vec::with_capacity(self.items.len());
+        while let Some(item) = self.items.pop() {
+            result.push(item);
+        }
+        result
+    }
 }

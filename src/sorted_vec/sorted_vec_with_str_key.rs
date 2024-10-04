@@ -32,6 +32,14 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         self.items.reserve_exact(capacity);
     }
 
+    pub fn drain_into_vec(&mut self) -> Vec<TValue> {
+        let mut result = Vec::with_capacity(self.items.len());
+        while let Some(item) = self.items.pop() {
+            result.push(item);
+        }
+        result
+    }
+
     // Returns the index of the inserted item and old item if it was replaced
     pub fn insert_or_replace(&mut self, item: TValue) -> (usize, Option<TValue>) {
         let insert_index = self
