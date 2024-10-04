@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::DateTimeAsMicroseconds;
 
 // Hour key formatted YYYYMMDDHH
@@ -12,6 +14,18 @@ impl HourKey {
 
     pub fn to_u32(&self) -> u32 {
         self.0
+    }
+
+    pub fn add(&self, duration: Duration) -> Self {
+        let dt: DateTimeAsMicroseconds = (*self).try_into().unwrap();
+        let dt = dt.add(duration);
+        dt.into()
+    }
+
+    pub fn sub(&self, duration: Duration) -> Self {
+        let dt: DateTimeAsMicroseconds = (*self).try_into().unwrap();
+        let dt = dt.add(duration);
+        dt.into()
     }
 }
 
