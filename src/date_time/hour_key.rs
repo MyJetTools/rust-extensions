@@ -5,6 +5,16 @@ use super::DateTimeAsMicroseconds;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HourKey(u32);
 
+impl HourKey {
+    pub fn new(value: u32) -> Self {
+        HourKey(value)
+    }
+
+    pub fn get_value(&self) -> u32 {
+        self.0
+    }
+}
+
 impl Into<HourKey> for DateTimeAsMicroseconds {
     fn into(self) -> HourKey {
         let date_time_struct: super::DateTimeStruct = self.into();
