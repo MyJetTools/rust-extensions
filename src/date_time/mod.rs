@@ -3,7 +3,7 @@ mod as_microseconds_atomic;
 pub mod compact_date_time;
 mod date_time_duration;
 mod date_time_struct;
-mod hour_key;
+mod interval_key;
 pub mod rfc_3339;
 pub mod rfc_5322;
 mod time_difference;
@@ -19,7 +19,7 @@ pub use time_difference::*;
 pub use time_struct::*;
 pub use utils::*;
 pub mod rfc_7231;
-pub use hour_key::*;
+pub use interval_key::*;
 
 static MONTHS: [&'static str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

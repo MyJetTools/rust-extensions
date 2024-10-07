@@ -2,18 +2,33 @@ use std::time::Duration;
 
 use super::DateTimeAsMicroseconds;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub trait IntervalKeyOption {
+    fn to_date_time(&self) -> DateTimeAsMicroseconds;
+}
+
 // Hour key formatted YYYYMMDDHH
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HourKey(u32);
+pub enum IntervalKey {
+    Month(u32),
+    Day(u32),
+    Hour(u32),
+    Min(u32),
+}
 
-impl HourKey {
-    pub fn new(value: u32) -> Self {
-        HourKey(value)
+impl IntervalKey {
+    pub fn as_hour(value: u32) -> Self {
+        Self::Hour(value)
     }
 
     pub fn to_u32(&self) -> u32 {
-        self.0
+        match self {
+            Self::Month(value) => *value,
+            Self::Day(value) => *value,
+            Self::Hour(value) => *value,
+            Self::Min(value) => *value,
+        }
     }
 
     pub fn add(&self, duration: Duration) -> Self {
@@ -26,19 +41,6 @@ impl HourKey {
         let dt: DateTimeAsMicroseconds = (*self).try_into().unwrap();
         let dt = dt.add(duration);
         dt.into()
-    }
-}
-
-impl Into<HourKey> for DateTimeAsMicroseconds {
-    fn into(self) -> HourKey {
-        let date_time_struct: super::DateTimeStruct = self.into();
-
-        let result = (date_time_struct.year as u32) * 1000000
-            + date_time_struct.month * 10000
-            + date_time_struct.day * 100
-            + date_time_struct.time.hour;
-
-        result.into()
     }
 }
 
