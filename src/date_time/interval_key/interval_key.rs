@@ -6,10 +6,18 @@ use super::{IntervalKeyOption, *};
 
 // Hour key formatted YYYYMMDDHH
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IntervalKey<TOption: IntervalKeyOption> {
     value: i64,
     _phantom: std::marker::PhantomData<TOption>,
+}
+
+impl<TOption: IntervalKeyOption> std::fmt::Debug for IntervalKey<TOption> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IntervalKey")
+            .field("value", &self.value)
+            .finish()
+    }
 }
 
 impl<TOption: IntervalKeyOption> IntervalKey<TOption> {
