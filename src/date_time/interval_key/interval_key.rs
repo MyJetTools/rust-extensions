@@ -41,6 +41,10 @@ impl<TOption: IntervalKeyOption> IntervalKey<TOption> {
         self.value
     }
 
+    pub fn as_i64_ref(&self) -> &i64 {
+        &self.value
+    }
+
     pub fn add(&self, duration: Duration) -> Self {
         let dt: DateTimeAsMicroseconds = TOption::to_date_time(self.value).unwrap();
         let dt = dt.add(duration);
