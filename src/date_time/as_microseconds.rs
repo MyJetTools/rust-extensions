@@ -1,11 +1,14 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    fmt::Display,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct DateTimeAsMicroseconds {
     pub unix_microseconds: i64,
@@ -169,6 +172,17 @@ impl DateTimeAsMicroseconds {
     }
 }
 
+impl std::fmt::Debug for DateTimeAsMicroseconds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}'", self.to_rfc3339())
+    }
+}
+
+impl Display for DateTimeAsMicroseconds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.unix_microseconds)
+    }
+}
 impl std::ops::Sub<DateTimeAsMicroseconds> for DateTimeAsMicroseconds {
     type Output = DateTimeDuration;
 
