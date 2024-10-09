@@ -18,7 +18,7 @@ pub enum GetOrCreateEntry<'s, TValue> {
     Create(InsertEntity<'s, TValue>),
 }
 pub struct InsertEntity<'s, TValue> {
-    index: usize,
+    pub(crate) index: usize,
     items: &'s mut Vec<TValue>,
 }
 

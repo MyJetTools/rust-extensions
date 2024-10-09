@@ -6,7 +6,7 @@ use super::InsertIfNotExists;
 
 #[derive(Clone, Debug)]
 pub struct SortedVecWithStrKey<TValue: EntityWithStrKey> {
-    items: Vec<TValue>,
+    pub(crate) items: Vec<TValue>,
 }
 
 impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
@@ -225,6 +225,10 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
             }
             Err(index_to) => &self.items[index_from..index_to],
         }
+    }
+
+    pub fn pop(&mut self) -> Option<TValue> {
+        self.items.pop()
     }
 }
 
