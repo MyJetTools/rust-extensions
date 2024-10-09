@@ -308,6 +308,18 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
             Err(_) => None,
         }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &TValue> {
+        self.partitions
+            .iter()
+            .flat_map(|partition| partition.iter())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut TValue> {
+        self.partitions
+            .iter_mut()
+            .flat_map(|partition| partition.iter_mut())
+    }
 }
 
 #[cfg(test)]
