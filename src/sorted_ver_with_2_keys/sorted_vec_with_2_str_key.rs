@@ -372,7 +372,7 @@ mod tests {
         let item_to_insert = TestEntity {
             primary_key: "pk".to_string(),
             secondary_key: "key2".to_string(),
-            value: 1,
+            value: 2,
         };
 
         match items.insert_or_if_not_exists(
@@ -396,5 +396,9 @@ mod tests {
             }
             InsertIfNotExists2Keys::Exists => {}
         }
+
+        let item = items.get("pk", "key2").unwrap();
+
+        assert_eq!(item.value, 2)
     }
 }
