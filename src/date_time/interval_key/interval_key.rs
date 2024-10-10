@@ -28,6 +28,13 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
         }
     }
 
+    pub fn from_i64(value: i64) -> Self {
+        Self {
+            value,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
     pub fn to_i64(&self) -> i64 {
         self.value
     }
@@ -52,6 +59,66 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
             value: TOption::to_value(dt),
             _phantom: std::marker::PhantomData,
         }
+    }
+}
+
+impl Into<IntervalKey<YearKey>> for i64 {
+    fn into(self) -> IntervalKey<YearKey> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl Into<IntervalKey<YearKey>> for &'_ i64 {
+    fn into(self) -> IntervalKey<YearKey> {
+        IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<MonthKey>> for i64 {
+    fn into(self) -> IntervalKey<MonthKey> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl Into<IntervalKey<MonthKey>> for &'_ i64 {
+    fn into(self) -> IntervalKey<MonthKey> {
+        IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<DayKey>> for i64 {
+    fn into(self) -> IntervalKey<DayKey> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl Into<IntervalKey<DayKey>> for &'_ i64 {
+    fn into(self) -> IntervalKey<DayKey> {
+        IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<HourKey>> for i64 {
+    fn into(self) -> IntervalKey<HourKey> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl Into<IntervalKey<HourKey>> for &'_ i64 {
+    fn into(self) -> IntervalKey<HourKey> {
+        IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<MinuteKey>> for i64 {
+    fn into(self) -> IntervalKey<MinuteKey> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl Into<IntervalKey<MinuteKey>> for &'_ i64 {
+    fn into(self) -> IntervalKey<MinuteKey> {
+        IntervalKey::from_i64(*self)
     }
 }
 
