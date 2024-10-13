@@ -49,6 +49,54 @@ impl DateTimeDuration {
             Self::Zero => String::from("0"),
         }
     }
+
+    pub fn get_full_micros(&self) -> i64 {
+        match self {
+            Self::Positive(duration) => duration.as_micros() as i64,
+            Self::Negative(duration) => -(duration.as_micros() as i64),
+            Self::Zero => 0,
+        }
+    }
+
+    pub fn get_full_millis(&self) -> i64 {
+        match self {
+            Self::Positive(duration) => duration.as_millis() as i64,
+            Self::Negative(duration) => -(duration.as_millis() as i64),
+            Self::Zero => 0,
+        }
+    }
+
+    pub fn get_full_seconds(&self) -> i64 {
+        match self {
+            Self::Positive(duration) => duration.as_secs() as i64,
+            Self::Negative(duration) => -(duration.as_secs() as i64),
+            Self::Zero => 0,
+        }
+    }
+
+    pub fn get_full_minutes(&self) -> i64 {
+        match self {
+            Self::Positive(duration) => duration.as_secs() as i64 / 60,
+            Self::Negative(duration) => -(duration.as_secs() as i64 / 60),
+            Self::Zero => 0,
+        }
+    }
+
+    pub fn get_full_hours(&self) -> i64 {
+        match self {
+            Self::Positive(duration) => duration.as_secs() as i64 / 3600,
+            Self::Negative(duration) => -(duration.as_secs() as i64 / 3600),
+            Self::Zero => 0,
+        }
+    }
+
+    pub fn get_full_days(&self) -> i64 {
+        match self {
+            Self::Positive(duration) => duration.as_secs() as i64 / (3600 * 24),
+            Self::Negative(duration) => -(duration.as_secs() as i64 / (3600 * 24)),
+            Self::Zero => 0,
+        }
+    }
 }
 
 impl Debug for DateTimeDuration {
@@ -137,5 +185,45 @@ mod tests {
                 println!("Zero");
             }
         }
+    }
+
+    #[test]
+    fn test_get_full_seconds() {
+        let after = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32").unwrap();
+
+        let before = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:31").unwrap();
+
+        let duration = after - before;
+
+        assert_eq!(duration.get_full_seconds(), 1);
+
+        let duration = before - after;
+
+        assert_eq!(duration.get_full_seconds(), -1);
+    }
+
+    #[test]
+    fn test_get_full_minutes() {
+        let after = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32").unwrap();
+
+        let before = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:31").unwrap();
+
+        let duration = after - before;
+
+        assert_eq!(duration.get_full_minutes(), 0);
+
+        let duration = before - after;
+
+        assert_eq!(duration.get_full_minutes(), 0);
+
+        let before = DateTimeAsMicroseconds::from_str("2021-03-05T01:11:32").unwrap();
+
+        let duration = after - before;
+
+        assert_eq!(duration.get_full_minutes(), 1);
+
+        let duration = before - after;
+
+        assert_eq!(duration.get_full_minutes(), -1);
     }
 }
