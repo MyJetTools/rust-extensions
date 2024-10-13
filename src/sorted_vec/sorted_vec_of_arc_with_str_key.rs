@@ -201,4 +201,8 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         }
         result
     }
+
+    pub fn pop(&mut self) -> Option<Arc<TValue>> {
+        self.items.pop()
+    }
 }

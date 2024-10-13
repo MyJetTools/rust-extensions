@@ -206,4 +206,8 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
             Err(index_to) => &self.items[index_from..index_to],
         }
     }
+
+    pub fn pop(&mut self) -> Option<Arc<TValue>> {
+        self.items.pop()
+    }
 }

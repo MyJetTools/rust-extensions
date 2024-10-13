@@ -261,6 +261,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
         result
     }
+
+    pub fn pop(&mut self) -> Option<TValue> {
+        self.items.pop()
+    }
 }
 
 #[cfg(test)]
