@@ -60,6 +60,10 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
             _phantom: std::marker::PhantomData,
         }
     }
+
+    pub fn try_to_date_time(&self) -> Result<DateTimeAsMicroseconds, String> {
+        TOption::to_date_time(self.value)
+    }
 }
 
 impl Into<IntervalKey<YearKey>> for i64 {
