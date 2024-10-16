@@ -197,4 +197,7 @@ impl<TValue: EntityWith2StrKey> Partition<TValue> {
             Err(index_to) => &self.rows[index_from..index_to],
         }
     }
+    pub fn get_capacity(&self) -> usize {
+        self.rows.capacity()
+    }
 }
