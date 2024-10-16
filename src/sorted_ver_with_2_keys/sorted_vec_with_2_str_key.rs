@@ -344,8 +344,16 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
             .flat_map(|partition| partition.iter_mut())
     }
 
-    pub fn get_capacity(&self) -> usize {
-        self.partitions.iter().map(|x| x.get_capacity()).sum()
+    pub fn get_len_and_capacity(&self) -> (usize, usize) {
+        let mut len = 0;
+        let mut capacity = 0;
+
+        for itm in self.partitions.iter() {
+            len += itm.len();
+            capacity += itm.get_capacity();
+        }
+
+        (len, capacity)
     }
 }
 
