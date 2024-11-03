@@ -4,6 +4,7 @@ use crate::{str_utils::StrUtils, ShortString};
 pub enum Scheme {
     Http,
     Https,
+    UnixSocket,
 }
 
 impl Scheme {
@@ -11,6 +12,8 @@ impl Scheme {
         if src.starts_with_case_insensitive("http") {
             Some(Self::Http)
         } else if src.starts_with_case_insensitive("https") {
+            Some(Self::Https)
+        } else if src.starts_with_case_insensitive("http+unix") {
             Some(Self::Https)
         } else {
             None
