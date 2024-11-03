@@ -1,14 +1,14 @@
 use crate::str_utils::StrUtils;
 
-pub struct SshRemoteEndpoint<'s> {
-    pub src: &'s str,
-    pub user_start: usize,
-    pub user_separator: usize,
-    pub port_separator: Option<usize>,
+#[derive(Debug, Clone, Copy)]
+pub struct SshRemoteEndpointInner {
+    user_start: usize,
+    user_separator: usize,
+    port_separator: Option<usize>,
 }
 
-impl<'s> SshRemoteEndpoint<'s> {
-    pub fn try_parse(src: &'s str) -> Result<Self, String> {
+impl SshRemoteEndpointInner {
+    pub fn try_parse(src: &str) -> Result<Self, String> {
         let mut user_separator = None;
         let mut first_separator = None;
         let mut second_separator = None;
@@ -46,7 +46,6 @@ impl<'s> SshRemoteEndpoint<'s> {
                     match second_separator {
                         Some(second_separator) => {
                             return Ok(Self {
-                                src,
                                 user_start: first_separator + 1,
                                 user_separator: user_separator.unwrap(),
                                 port_separator: Some(second_separator),
@@ -54,7 +53,6 @@ impl<'s> SshRemoteEndpoint<'s> {
                         }
                         None => {
                             return Ok(Self {
-                                src,
                                 user_start: first_separator + 1,
                                 user_separator: user_separator.unwrap(),
                                 port_separator: None,
@@ -68,7 +66,6 @@ impl<'s> SshRemoteEndpoint<'s> {
                         }
                         None => {
                             return Ok(Self {
-                                src,
                                 user_start: 0,
                                 user_separator: user_separator.unwrap(),
                                 port_separator: Some(first_separator + 1),
@@ -79,7 +76,6 @@ impl<'s> SshRemoteEndpoint<'s> {
             }
             None => {
                 return Ok(Self {
-                    src,
                     user_start: 0,
                     user_separator: user_separator.unwrap(),
                     port_separator: None,
@@ -88,8 +84,8 @@ impl<'s> SshRemoteEndpoint<'s> {
         }
     }
 
-    pub fn get_user(&self) -> &str {
-        let result = &self.src[self.user_start..self.user_separator];
+    pub fn get_user<'s>(&self, src: &'s str) -> &'s str {
+        let result = &src[self.user_start..self.user_separator];
 
         if result.starts_with("//") {
             &result[2..]
@@ -98,28 +94,106 @@ impl<'s> SshRemoteEndpoint<'s> {
         }
     }
 
-    pub fn get_host(&self) -> &str {
+    pub fn get_host<'s>(&self, src: &'s str) -> &'s str {
         if let Some(port_separator) = self.port_separator {
-            &self.src[self.user_separator + 1..port_separator]
+            &src[self.user_separator + 1..port_separator]
         } else {
-            &self.src[self.user_separator + 1..]
+            &src[self.user_separator + 1..]
         }
     }
 
-    pub fn get_port(&self) -> Option<&str> {
+    pub fn get_port<'s>(&self, src: &'s str) -> Option<&'s str> {
         let port_separator = self.port_separator?;
-        Some(&self.src[port_separator + 1..])
+        Some(&src[port_separator + 1..])
     }
 
-    pub fn get_host_port(&self) -> (&str, u16) {
-        if let Some(port) = self.get_port() {
+    pub fn get_host_port<'s>(&self, src: &'s str) -> (&'s str, u16) {
+        if let Some(port) = self.get_port(src) {
             match port.parse::<u16>() {
-                Ok(port) => (self.get_host(), port),
+                Ok(port) => (self.get_host(src), port),
                 Err(_) => panic!("Invalid port {port}"),
             }
         } else {
-            (self.get_host(), 22)
+            (self.get_host(src), 22)
         }
+    }
+}
+
+pub struct SshRemoteEndpoint<'s> {
+    src: &'s str,
+    inner: SshRemoteEndpointInner,
+}
+
+impl<'s> SshRemoteEndpoint<'s> {
+    pub fn try_parse(src: &'s str) -> Result<Self, String> {
+        let inner = SshRemoteEndpointInner::try_parse(src)?;
+        Ok(Self { src, inner })
+    }
+
+    pub fn to_owned(&self) -> SshRemoteEndpointOwned {
+        SshRemoteEndpointOwned {
+            src: self.src.to_string(),
+            inner: self.inner,
+        }
+    }
+
+    pub fn get_user(&self) -> &str {
+        self.inner.get_user(self.src)
+    }
+
+    pub fn get_host(&self) -> &str {
+        self.inner.get_host(self.src)
+    }
+
+    pub fn get_port(&self) -> Option<&str> {
+        self.inner.get_port(self.src)
+    }
+
+    pub fn get_host_port(&self) -> (&str, u16) {
+        self.inner.get_host_port(self.src)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.src
+    }
+}
+
+pub struct SshRemoteEndpointOwned {
+    src: String,
+    inner: SshRemoteEndpointInner,
+}
+
+impl SshRemoteEndpointOwned {
+    pub fn try_parse(src: String) -> Result<Self, String> {
+        let inner = SshRemoteEndpointInner::try_parse(src.as_str())?;
+        Ok(Self { src, inner })
+    }
+
+    pub fn to_ref(&self) -> SshRemoteEndpoint {
+        SshRemoteEndpoint {
+            src: self.src.as_str(),
+            inner: self.inner,
+        }
+    }
+
+    pub fn get_user(&self) -> &str {
+        self.inner.get_user(&self.src)
+    }
+
+    pub fn get_host(&self) -> &str {
+        self.inner.get_host(&self.src)
+    }
+
+    pub fn get_port(&self) -> Option<&str> {
+        self.inner.get_port(&self.src)
+    }
+
+    pub fn get_host_port(&self) -> (&str, u16) {
+        self.inner.get_host_port(&self.src)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.src
     }
 }
 

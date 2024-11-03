@@ -30,15 +30,14 @@ impl Scheme {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct RemoteEndpoint<'s> {
-    pub scheme: Option<Scheme>,
-    pub host_str: &'s str,
-    pub host_position: usize,
-    pub port_position: Option<usize>,
+pub struct RemoteEndpointInner {
+    scheme: Option<Scheme>,
+    host_position: usize,
+    port_position: Option<usize>,
 }
 
-impl<'s> RemoteEndpoint<'s> {
-    pub fn try_parse(src: &'s str) -> Result<Self, String> {
+impl RemoteEndpointInner {
+    pub fn try_parse(src: &str) -> Result<Self, String> {
         let mut first_separator = None;
         let mut second_separator = None;
 
@@ -61,7 +60,6 @@ impl<'s> RemoteEndpoint<'s> {
         if first_separator.is_none() {
             return Ok(Self {
                 scheme: None,
-                host_str: src,
                 host_position: 0,
                 port_position: None,
             });
@@ -76,7 +74,6 @@ impl<'s> RemoteEndpoint<'s> {
                 Some(second_separator) => {
                     return Ok(Self {
                         scheme: Some(scheme),
-                        host_str: src,
                         host_position,
                         port_position: Some(second_separator),
                     });
@@ -84,7 +81,6 @@ impl<'s> RemoteEndpoint<'s> {
                 None => {
                     return Ok(Self {
                         scheme: Some(scheme),
-                        host_str: src,
                         host_position,
                         port_position: None,
                     });
@@ -96,7 +92,6 @@ impl<'s> RemoteEndpoint<'s> {
                 None => {
                     return Ok(Self {
                         scheme: None,
-                        host_str: src,
                         host_position: 0,
                         port_position: Some(first_separator),
                     });
@@ -105,24 +100,24 @@ impl<'s> RemoteEndpoint<'s> {
         }
     }
 
-    pub fn get_host(&self) -> &str {
+    pub fn get_host<'s>(&self, src: &'s str) -> &'s str {
         if let Some(port_position) = self.port_position {
-            &self.host_str[self.host_position..port_position]
+            &src[self.host_position..port_position]
         } else {
-            &self.host_str[self.host_position..]
+            &src[self.host_position..]
         }
     }
 
-    pub fn get_port_str(&self) -> Option<&str> {
+    pub fn get_port_str<'s>(&self, src: &'s str) -> Option<&'s str> {
         if let Some(port_position) = self.port_position {
-            Some(&self.host_str[port_position + 1..])
+            Some(&src[port_position + 1..])
         } else {
             None
         }
     }
 
-    pub fn get_port(&self) -> Option<u16> {
-        let port_str = self.get_port_str()?;
+    pub fn get_port(&self, src: &str) -> Option<u16> {
+        let port_str = self.get_port_str(src)?;
 
         match port_str.parse() {
             Ok(port) => Some(port),
@@ -130,10 +125,10 @@ impl<'s> RemoteEndpoint<'s> {
         }
     }
 
-    pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
+    pub fn get_host_port(&self, src: &str, default_port: Option<u64>) -> ShortString {
         let mut result = ShortString::new_empty();
 
-        result.push_str(&self.host_str[self.host_position..]);
+        result.push_str(&src[self.host_position..]);
 
         if self.port_position.is_some() {
             return result;
@@ -145,9 +140,99 @@ impl<'s> RemoteEndpoint<'s> {
         }
         result
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RemoteEndpoint<'s> {
+    host_str: &'s str,
+    inner: RemoteEndpointInner,
+}
+
+impl<'s> RemoteEndpoint<'s> {
+    pub fn try_parse(src: &'s str) -> Result<Self, String> {
+        let inner = RemoteEndpointInner::try_parse(src)?;
+        Ok(Self {
+            host_str: src,
+            inner,
+        })
+    }
+
+    pub fn to_owned(&self) -> RemoteEndpointOwned {
+        RemoteEndpointOwned {
+            host_str: self.host_str.to_string(),
+            inner: self.inner,
+        }
+    }
+
+    pub fn get_scheme(&self) -> Option<Scheme> {
+        self.inner.scheme
+    }
+
+    pub fn get_host(&self) -> &str {
+        self.inner.get_host(self.host_str)
+    }
+
+    pub fn get_port_str(&self) -> Option<&str> {
+        self.inner.get_port_str(self.host_str)
+    }
+
+    pub fn get_port(&self) -> Option<u16> {
+        self.inner.get_port(self.host_str)
+    }
+
+    pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
+        self.inner.get_host_port(self.host_str, default_port)
+    }
 
     pub fn as_str(&self) -> &str {
         self.host_str
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteEndpointOwned {
+    host_str: String,
+    inner: RemoteEndpointInner,
+}
+
+impl RemoteEndpointOwned {
+    pub fn try_parse(src: String) -> Result<Self, String> {
+        let inner = RemoteEndpointInner::try_parse(&src)?;
+        Ok(Self {
+            host_str: src,
+            inner,
+        })
+    }
+
+    pub fn to_ref(&self) -> RemoteEndpoint {
+        RemoteEndpoint {
+            host_str: self.host_str.as_str(),
+            inner: self.inner,
+        }
+    }
+
+    pub fn get_scheme(&self) -> Option<Scheme> {
+        self.inner.scheme
+    }
+
+    pub fn get_host(&self) -> &str {
+        self.inner.get_host(&self.host_str)
+    }
+
+    pub fn get_port_str(&self) -> Option<&str> {
+        self.inner.get_port_str(&self.host_str)
+    }
+
+    pub fn get_port(&self) -> Option<u16> {
+        self.inner.get_port(&self.host_str)
+    }
+
+    pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
+        self.inner.get_host_port(&self.host_str, default_port)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.host_str
     }
 }
 
@@ -159,7 +244,7 @@ mod test {
     fn test_http_with_port() {
         let result = RemoteEndpoint::try_parse("http://localhost:8000").unwrap();
 
-        assert!(result.scheme.unwrap().is_http());
+        assert!(result.get_scheme().unwrap().is_http());
         assert_eq!(result.get_host(), "localhost");
         assert_eq!(result.get_port_str(), Some("8000"));
     }
@@ -168,7 +253,7 @@ mod test {
     fn test_http_with_no_port() {
         let result = RemoteEndpoint::try_parse("http://localhost").unwrap();
 
-        assert!(result.scheme.unwrap().is_http());
+        assert!(result.get_scheme().unwrap().is_http());
         assert_eq!(result.get_host(), "localhost");
         assert_eq!(result.get_port_str(), None);
     }
@@ -177,7 +262,7 @@ mod test {
     fn test_no_scheme_but_has_port() {
         let result = RemoteEndpoint::try_parse("localhost:8888").unwrap();
 
-        assert!(result.scheme.is_none());
+        assert!(result.get_scheme().is_none());
         assert_eq!(result.get_host(), "localhost");
         assert_eq!(result.get_port_str(), Some("8888"));
     }
@@ -186,7 +271,7 @@ mod test {
     fn test_no_scheme_and_no_port() {
         let result = RemoteEndpoint::try_parse("localhost").unwrap();
 
-        assert!(result.scheme.is_none());
+        assert!(result.get_scheme().is_none());
         assert_eq!(result.get_host(), "localhost");
         assert_eq!(result.get_port_str(), None);
     }
