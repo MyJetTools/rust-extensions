@@ -64,12 +64,15 @@ impl<'s> HostEndpoint<'s> {
         })
     }
 
-    pub fn get_host_port(&self) -> ShortString {
+    pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
         let mut result = ShortString::new_empty();
         result.push_str(self.host);
         if let Some(port) = self.port {
             result.push_str(":");
             result.push_str(port.to_string().as_str());
+        } else if let Some(default_port) = default_port {
+            result.push_str(":");
+            result.push_str(default_port.to_string().as_str());
         }
         result
     }
@@ -133,5 +136,14 @@ mod test {
         assert_eq!(result.scheme, None);
         assert_eq!(result.host, "localhost");
         assert_eq!(result.port, None);
+    }
+
+    #[test]
+    fn test_get_host_port_with_default_port() {
+        let result = HostEndpoint::new("localhost").unwrap();
+
+        let host_port = result.get_host_port(Some(80));
+
+        assert_eq!(host_port.as_str(), "localhost:80");
     }
 }
