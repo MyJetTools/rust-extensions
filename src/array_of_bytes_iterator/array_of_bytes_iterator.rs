@@ -5,13 +5,13 @@ pub struct NextValue {
 
 pub trait ArrayOfBytesIterator {
     fn peek_value(&self) -> Option<NextValue>;
-    fn get_next(&mut self) -> Option<NextValue>;
+    fn get_next(&self) -> Option<NextValue>;
     fn get_pos(&self) -> usize;
 
     fn get_slice_to_current_pos(&self, from_pos: usize) -> &[u8];
     fn get_slice_to_end(&self, from_pos: usize) -> &[u8];
 
-    fn advance(&mut self, amount: usize) -> Option<&[u8]>;
+    fn advance(&self, amount: usize) -> Option<&[u8]>;
 
     fn get_src_slice(&self) -> &[u8];
 
