@@ -1,24 +1,24 @@
-use crate::UnsafeValue;
+use std::cell::Cell;
 
 use super::*;
 
 pub struct SliceIterator<'s> {
     slice: &'s [u8],
-    pos: UnsafeValue<usize>,
+    pos: Cell<usize>,
 }
 
 impl<'s> SliceIterator<'s> {
     pub fn new(slice: &'s [u8]) -> Self {
         Self {
             slice,
-            pos: UnsafeValue::new(0),
+            pos: Cell::new(0),
         }
     }
 
     pub fn from_str(src: &'s str) -> Self {
         Self {
             slice: src.as_bytes(),
-            pos: UnsafeValue::new(0),
+            pos: Cell::new(0),
         }
     }
 }
@@ -28,7 +28,7 @@ impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
     }
 
     fn peek_value(&self) -> Option<NextValue> {
-        let pos = self.pos.get_value();
+        let pos = self.pos.get();
         if pos < self.slice.len() {
             let result = NextValue {
                 pos: pos,
@@ -41,13 +41,13 @@ impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
     }
 
     fn get_next(&self) -> Option<NextValue> {
-        let pos = self.pos.get_value();
+        let pos = self.pos.get();
         if pos < self.slice.len() {
             let result = NextValue {
                 pos,
                 value: self.slice[pos],
             };
-            self.pos.set_value(pos + 1);
+            self.pos.set(pos + 1);
             Some(result)
         } else {
             None
@@ -55,11 +55,11 @@ impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
     }
 
     fn get_pos(&self) -> usize {
-        self.pos.get_value()
+        self.pos.get()
     }
 
     fn get_slice_to_current_pos(&self, from_pos: usize) -> &[u8] {
-        let pos = self.pos.get_value();
+        let pos = self.pos.get();
         &self.slice[from_pos..pos]
     }
 
@@ -68,20 +68,20 @@ impl<'s> ArrayOfBytesIterator for SliceIterator<'s> {
     }
 
     fn advance(&self, amount: usize) -> Option<&[u8]> {
-        let pos = self.pos.get_value();
+        let pos = self.pos.get();
         let pos_after = amount + pos;
 
         if pos_after >= self.slice.len() {
             None
         } else {
             let result = &self.slice[pos..pos_after];
-            self.pos.set_value(pos_after);
+            self.pos.set(pos_after);
             Some(result)
         }
     }
 
     fn peek_sequence(&self, size: usize, sub_seq: impl Fn(&[u8]) -> bool) -> bool {
-        let pos = self.pos.get_value();
+        let pos = self.pos.get();
         if pos + size > self.slice.len() {
             return false;
         }
