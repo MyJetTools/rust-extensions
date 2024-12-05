@@ -30,9 +30,8 @@ impl MyTimer {
         }
     }
 
-    pub fn set_first_tick_before_delay(mut self) -> Self {
+    pub fn set_first_tick_before_delay(&mut self) {
         self.delay_before_first_tick = false;
-        self
     }
 
     pub fn register_timer(
