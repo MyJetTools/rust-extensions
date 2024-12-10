@@ -14,7 +14,7 @@ impl Scheme {
         } else if src.starts_with_case_insensitive("https") {
             Some(Self::Https)
         } else if src.starts_with_case_insensitive("http+unix") {
-            Some(Self::Https)
+            Some(Self::UnixSocket)
         } else {
             None
         }
