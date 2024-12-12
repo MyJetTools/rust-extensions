@@ -34,27 +34,31 @@ pub struct RemoteEndpointInner {
     scheme: Option<Scheme>,
     host_position: usize,
     port_position: Option<usize>,
+    http_path_and_query_position: Option<usize>,
 }
 
 impl RemoteEndpointInner {
     pub fn try_parse(src: &str) -> Result<Self, String> {
         let mut first_separator = None;
         let mut second_separator = None;
+        let mut http_path_and_query_position = None;
 
         let mut pos = 0;
         for c in src.chars() {
-            if c != ':' {
-                pos += 1;
-                continue;
+            if first_separator.is_none() {
+                if c == ':' {
+                    first_separator = Some(pos);
+                }
+            } else if second_separator.is_none() {
+                if c == ':' {
+                    second_separator = Some(pos);
+                }
+            } else if c == '/' {
+                http_path_and_query_position = Some(pos);
+                break;
             }
 
-            if first_separator.is_none() {
-                first_separator = Some(pos);
-                pos += 1;
-                continue;
-            }
-            second_separator = Some(pos);
-            break;
+            pos += 1;
         }
 
         if first_separator.is_none() {
@@ -62,6 +66,7 @@ impl RemoteEndpointInner {
                 scheme: None,
                 host_position: 0,
                 port_position: None,
+                http_path_and_query_position,
             });
         }
 
@@ -76,6 +81,7 @@ impl RemoteEndpointInner {
                         scheme: Some(scheme),
                         host_position,
                         port_position: Some(second_separator),
+                        http_path_and_query_position,
                     });
                 }
                 None => {
@@ -83,6 +89,7 @@ impl RemoteEndpointInner {
                         scheme: Some(scheme),
                         host_position,
                         port_position: None,
+                        http_path_and_query_position,
                     });
                 }
             }
@@ -94,6 +101,7 @@ impl RemoteEndpointInner {
                         scheme: None,
                         host_position: 0,
                         port_position: Some(first_separator),
+                        http_path_and_query_position,
                     });
                 }
             }
@@ -110,7 +118,11 @@ impl RemoteEndpointInner {
 
     pub fn get_port_str<'s>(&self, src: &'s str) -> Option<&'s str> {
         if let Some(port_position) = self.port_position {
-            Some(&src[port_position + 1..])
+            if let Some(path_and_query_position) = self.http_path_and_query_position {
+                Some(&src[port_position + 1..path_and_query_position])
+            } else {
+                Some(&src[port_position + 1..])
+            }
         } else {
             None
         }
@@ -182,6 +194,11 @@ impl<'s> RemoteEndpoint<'s> {
 
     pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
         self.inner.get_host_port(self.host_str, default_port)
+    }
+
+    pub fn get_http_path_and_query(&self) -> Option<&str> {
+        let pos = self.inner.http_path_and_query_position?;
+        Some(&self.host_str[pos..])
     }
 
     pub fn as_str(&self) -> &str {
@@ -282,5 +299,15 @@ mod test {
 
         let host_port = result.get_host_port(Some(80));
         assert_eq!(host_port.as_str(), "localhost:80");
+    }
+
+    #[test]
+    fn test_http_endpoint_with_path_and_query() {
+        let result = RemoteEndpoint::try_parse("http://localhost:4343/test").unwrap();
+
+        assert!(result.get_scheme().unwrap().is_http());
+        assert_eq!(result.get_host(), "localhost");
+        assert_eq!(result.get_port_str(), Some("4343"));
+        assert_eq!(result.get_http_path_and_query(), Some("/test"));
     }
 }
