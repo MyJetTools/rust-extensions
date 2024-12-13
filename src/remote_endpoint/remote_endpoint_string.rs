@@ -4,6 +4,8 @@ use crate::{str_utils::StrUtils, ShortString};
 pub enum Scheme {
     Http,
     Https,
+    Ws,
+    Wss,
     UnixSocket,
 }
 
@@ -13,6 +15,10 @@ impl Scheme {
             Some(Self::Http)
         } else if src.starts_with_case_insensitive("https") {
             Some(Self::Https)
+        } else if src.starts_with_case_insensitive("ws") {
+            Some(Self::Ws)
+        } else if src.starts_with_case_insensitive("wss") {
+            Some(Self::Wss)
         } else if src.starts_with_case_insensitive("http+unix") {
             Some(Self::UnixSocket)
         } else {
@@ -26,6 +32,14 @@ impl Scheme {
 
     pub fn is_https(&self) -> bool {
         matches!(self, Self::Https)
+    }
+
+    pub fn is_ws(&self) -> bool {
+        matches!(self, Self::Ws)
+    }
+
+    pub fn is_wss(&self) -> bool {
+        matches!(self, Self::Wss)
     }
 }
 
@@ -306,6 +320,26 @@ mod test {
         let result = RemoteEndpoint::try_parse("http://localhost:4343/test").unwrap();
 
         assert!(result.get_scheme().unwrap().is_http());
+        assert_eq!(result.get_host(), "localhost");
+        assert_eq!(result.get_port_str(), Some("4343"));
+        assert_eq!(result.get_http_path_and_query(), Some("/test"));
+    }
+
+    #[test]
+    fn test_ws_endpoint_with_path_and_query() {
+        let result = RemoteEndpoint::try_parse("ws://localhost:4343/test").unwrap();
+
+        assert!(result.get_scheme().unwrap().is_ws());
+        assert_eq!(result.get_host(), "localhost");
+        assert_eq!(result.get_port_str(), Some("4343"));
+        assert_eq!(result.get_http_path_and_query(), Some("/test"));
+    }
+
+    #[test]
+    fn test_wss_endpoint_with_path_and_query() {
+        let result = RemoteEndpoint::try_parse("wss://localhost:4343/test").unwrap();
+
+        assert!(result.get_scheme().unwrap().is_wss());
         assert_eq!(result.get_host(), "localhost");
         assert_eq!(result.get_port_str(), Some("4343"));
         assert_eq!(result.get_http_path_and_query(), Some("/test"));
