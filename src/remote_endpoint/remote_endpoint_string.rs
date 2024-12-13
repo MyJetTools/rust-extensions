@@ -265,6 +265,11 @@ impl RemoteEndpointOwned {
     pub fn as_str(&self) -> &str {
         &self.host_str
     }
+
+    pub fn get_http_path_and_query(&self) -> Option<&str> {
+        let pos = self.inner.http_path_and_query_position?;
+        Some(&self.host_str[pos..])
+    }
 }
 
 #[cfg(test)]
