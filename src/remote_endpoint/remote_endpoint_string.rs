@@ -1,4 +1,4 @@
-use crate::{str_utils::StrUtils, ShortString};
+use crate::ShortString;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Scheme {
@@ -11,15 +11,15 @@ pub enum Scheme {
 
 impl Scheme {
     pub fn try_parse(src: &str) -> Option<Self> {
-        if src.starts_with_case_insensitive("http:") {
-            Some(Self::Http)
-        } else if src.starts_with_case_insensitive("https:") {
+        if src.eq_ignore_ascii_case("https") {
             Some(Self::Https)
-        } else if src.starts_with_case_insensitive("ws:") {
+        } else if src.eq_ignore_ascii_case("http") {
+            Some(Self::Http)
+        } else if src.eq_ignore_ascii_case("ws") {
             Some(Self::Ws)
-        } else if src.starts_with_case_insensitive("wss") {
+        } else if src.eq_ignore_ascii_case("wss") {
             Some(Self::Wss)
-        } else if src.starts_with_case_insensitive("http+unix") {
+        } else if src.eq_ignore_ascii_case("http+unix") {
             Some(Self::UnixSocket)
         } else {
             None
