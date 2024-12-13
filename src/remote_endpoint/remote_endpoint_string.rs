@@ -11,11 +11,11 @@ pub enum Scheme {
 
 impl Scheme {
     pub fn try_parse(src: &str) -> Option<Self> {
-        if src.starts_with_case_insensitive("http") {
+        if src.starts_with_case_insensitive("http:") {
             Some(Self::Http)
-        } else if src.starts_with_case_insensitive("https") {
+        } else if src.starts_with_case_insensitive("https:") {
             Some(Self::Https)
-        } else if src.starts_with_case_insensitive("ws") {
+        } else if src.starts_with_case_insensitive("ws:") {
             Some(Self::Ws)
         } else if src.starts_with_case_insensitive("wss") {
             Some(Self::Wss)
