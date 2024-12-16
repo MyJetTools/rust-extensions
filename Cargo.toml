@@ -9,7 +9,7 @@ edition = "2021"
 default = []
 objects-pool = []
 base64 = ["dep:base64"]
-hex = ["dep:hex"]
+hex = []
 with-tokio = ["tokio", "signal-hook"]
 vec-maybe-stack = []
 placeholders = []
@@ -21,7 +21,7 @@ async-trait = "*"
 signal-hook = { version = "*", optional = true }
 base64 = { version = "*", optional = true }
 serde = { version = "*", features = ["derive"] }
-hex = { version = "*", optional = true }
+
 
 [dev-dependencies]
 serde_json = "*"
