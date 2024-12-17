@@ -22,12 +22,6 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
         }
     }
 
-    fn get_sender(&mut self) -> Option<Sender<CompletionEvent<OkResult, ErrorResult>>> {
-        let mut new_result = None;
-        std::mem::swap(&mut new_result, &mut self.sender);
-        new_result
-    }
-
     fn get_receiver(&mut self) -> Option<Receiver<CompletionEvent<OkResult, ErrorResult>>> {
         let mut new_result = None;
         std::mem::swap(&mut new_result, &mut self.receiver);
@@ -35,9 +29,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
     }
 
     pub fn set_ok(&mut self, result: OkResult) {
-        let sender = self.get_sender();
-
-        match sender {
+        match self.sender.take() {
             Some(sender) => match sender.send(CompletionEvent::Ok(result)) {
                 Ok(_) => {
                     return;
@@ -53,9 +45,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
     }
 
     pub fn try_set_ok(&mut self, result: OkResult) -> Result<(), TaskCompletionError> {
-        let sender = self.get_sender();
-
-        match sender {
+        match self.sender.take() {
             Some(sender) => match sender.send(CompletionEvent::Ok(result)) {
                 Ok(_) => {
                     return Ok(());
@@ -75,9 +65,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
     }
 
     pub fn set_error(&mut self, result: ErrorResult) {
-        let sender = self.get_sender();
-
-        match sender {
+        match self.sender.take() {
             Some(sender) => {
                 let result = sender.send(CompletionEvent::Error(result));
                 if let Err(_) = result {
@@ -91,9 +79,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
     }
 
     pub fn set_panic(&mut self, message: String) {
-        let sender = self.get_sender();
-
-        match sender {
+        match self.sender.take() {
             Some(sender) => {
                 let result = sender.send(CompletionEvent::Panic(message));
                 if let Err(_) = result {
@@ -107,9 +93,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
     }
 
     pub fn try_set_panic(&mut self, message: String) -> Result<(), TaskCompletionError> {
-        let sender = self.get_sender();
-
-        match sender {
+        match self.sender.take() {
             Some(sender) => {
                 let result = sender.send(CompletionEvent::Panic(message));
                 if let Err(_) = result {
@@ -129,9 +113,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
     }
 
     pub fn try_set_error(&mut self, result: ErrorResult) -> Result<(), TaskCompletionError> {
-        let sender = self.get_sender();
-
-        match sender {
+        match self.sender.take() {
             Some(sender) => {
                 let result = sender.send(CompletionEvent::Error(result));
                 if let Err(_) = result {
@@ -160,6 +142,14 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
             None => {
                 panic!("You are trying to get awaiter for the second time");
             }
+        }
+    }
+}
+
+impl<OkResult, ErrorResult> Drop for TaskCompletion<OkResult, ErrorResult> {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sender.take() {
+            let _ = sender.send(CompletionEvent::Panic("Task is dropped".to_string()));
         }
     }
 }
