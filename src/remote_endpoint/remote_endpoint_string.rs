@@ -41,6 +41,13 @@ impl Scheme {
     pub fn is_wss(&self) -> bool {
         matches!(self, Self::Wss)
     }
+
+    pub fn is_unix_socket(&self) -> bool {
+        match self {
+            Scheme::UnixSocket => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
