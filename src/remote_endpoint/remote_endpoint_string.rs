@@ -172,10 +172,13 @@ impl RemoteEndpointInner {
 
     pub fn get_host<'s>(&self, src: &'s str) -> &'s str {
         if let Some(port_position) = self.port_position {
-            &src[self.host_position..port_position]
-        } else {
-            &src[self.host_position..]
+            return &src[self.host_position..port_position];
         }
+
+        if let Some(path_and_query_position) = self.http_path_and_query_position {
+            return &src[self.host_position..path_and_query_position];
+        }
+        &src[self.host_position..]
     }
 
     pub fn get_port_str<'s>(&self, src: &'s str) -> Option<&'s str> {
@@ -408,5 +411,7 @@ mod test {
             result.get_host_port(Some(443)).as_str(),
             "api-dev.tradelocker.com:443"
         );
+
+        assert_eq!(result.get_host(), "api-dev.tradelocker.com");
     }
 }
