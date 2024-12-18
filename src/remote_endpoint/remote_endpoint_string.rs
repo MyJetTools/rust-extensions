@@ -414,4 +414,19 @@ mod test {
 
         assert_eq!(result.get_host(), "api-dev.tradelocker.com");
     }
+
+    #[test]
+    fn test_with_ip() {
+        let result = RemoteEndpoint::try_parse("http://127.0.0.1:9191/first/next/other").unwrap();
+
+        assert!(result.get_scheme().unwrap().is_http());
+        assert_eq!(result.get_host_port(Some(80)).as_str(), "127.0.0.1:9191");
+
+        assert_eq!(result.get_host(), "127.0.0.1");
+
+        assert_eq!(
+            result.get_http_path_and_query().unwrap(),
+            "/first/next/other"
+        );
+    }
 }
