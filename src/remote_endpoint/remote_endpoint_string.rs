@@ -55,6 +55,16 @@ impl Scheme {
             _ => 3,
         }
     }
+
+    pub fn get_default_port(&self) -> Option<u16> {
+        match self {
+            Scheme::Http => Some(80),
+            Scheme::Https => Some(443),
+            Scheme::Ws => Some(80),
+            Scheme::Wss => Some(443),
+            Scheme::UnixSocket => None,
+        }
+    }
 }
 
 enum ReadingEndpointMode {
