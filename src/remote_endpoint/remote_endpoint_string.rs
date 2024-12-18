@@ -48,85 +48,126 @@ impl Scheme {
             _ => false,
         }
     }
+
+    pub fn host_postfix_len(&self) -> usize {
+        match self {
+            Scheme::UnixSocket => 2,
+            _ => 3,
+        }
+    }
+}
+
+enum ReadingEndpointMode {
+    LookingForSchemeEnd,
+    NextSymbolAfterSchemeEnd,
+    ReadingSchemeLastSymbols,
+    LookingForEndOfHost,
+    ReadingPort,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct RemoteEndpointInner {
     scheme: Option<Scheme>,
     host_position: usize,
+    host_end_position: usize,
     port_position: Option<usize>,
     http_path_and_query_position: Option<usize>,
 }
 
 impl RemoteEndpointInner {
     pub fn try_parse(src: &str) -> Result<Self, String> {
-        let mut first_separator = None;
-        let mut second_separator = None;
+        let mut scheme_name_end_position = None;
+
+        let mut host_end_position = None;
         let mut http_path_and_query_position = None;
 
-        let mut pos = 0;
-        for c in src.chars() {
-            if first_separator.is_none() {
-                if c == ':' {
-                    first_separator = Some(pos);
-                }
-            } else if second_separator.is_none() {
-                if c == ':' {
-                    second_separator = Some(pos);
-                }
-            } else if c == '/' {
-                http_path_and_query_position = Some(pos);
-                break;
-            }
+        let mut port_position = None;
 
-            pos += 1;
+        let mut reading_mode = ReadingEndpointMode::LookingForSchemeEnd;
+
+        for (pos, c) in src.chars().enumerate() {
+            match reading_mode {
+                ReadingEndpointMode::LookingForSchemeEnd => {
+                    if c == ':' {
+                        reading_mode = ReadingEndpointMode::NextSymbolAfterSchemeEnd;
+                    }
+                }
+                ReadingEndpointMode::NextSymbolAfterSchemeEnd => {
+                    if c.is_ascii_digit() {
+                        reading_mode = ReadingEndpointMode::ReadingPort;
+                        port_position = Some(pos - 1);
+                        host_end_position = port_position;
+                        continue;
+                    }
+
+                    if c == '/' {
+                        scheme_name_end_position = Some(pos - 1);
+                        reading_mode = ReadingEndpointMode::ReadingSchemeLastSymbols;
+                        continue;
+                    }
+
+                    host_end_position = scheme_name_end_position;
+                    scheme_name_end_position = None;
+                    reading_mode = ReadingEndpointMode::LookingForEndOfHost
+                }
+
+                ReadingEndpointMode::ReadingSchemeLastSymbols => {
+                    if c != '/' {
+                        reading_mode = ReadingEndpointMode::LookingForEndOfHost;
+                    }
+                }
+
+                ReadingEndpointMode::LookingForEndOfHost => match c {
+                    ':' => {
+                        host_end_position = Some(pos);
+                        port_position = Some(pos);
+                    }
+
+                    '/' => {
+                        host_end_position = Some(pos);
+                        http_path_and_query_position = Some(pos);
+                        break;
+                    }
+                    _ => {}
+                },
+                ReadingEndpointMode::ReadingPort => {
+                    if !c.is_ascii_digit() {
+                        http_path_and_query_position = Some(pos);
+                        break;
+                    }
+                }
+            }
         }
 
-        if first_separator.is_none() {
+        if host_end_position.is_none() {
+            host_end_position = Some(src.len());
+        }
+
+        if scheme_name_end_position.is_none() {
             return Ok(Self {
                 scheme: None,
                 host_position: 0,
-                port_position: None,
+                host_end_position: host_end_position.unwrap(),
+                port_position,
                 http_path_and_query_position,
             });
         }
 
-        let first_separator = first_separator.unwrap();
+        let scheme_name_end_position = scheme_name_end_position.unwrap();
 
-        let host_position = first_separator + 3;
+        let scheme = &src[..scheme_name_end_position];
 
-        if let Some(scheme) = Scheme::try_parse(&src[..first_separator]) {
-            match second_separator {
-                Some(second_separator) => {
-                    return Ok(Self {
-                        scheme: Some(scheme),
-                        host_position,
-                        port_position: Some(second_separator),
-                        http_path_and_query_position,
-                    });
-                }
-                None => {
-                    return Ok(Self {
-                        scheme: Some(scheme),
-                        host_position,
-                        port_position: None,
-                        http_path_and_query_position,
-                    });
-                }
-            }
-        } else {
-            match second_separator {
-                Some(_) => return Err(format!("Invalid remote_host endpoint string {src}")),
-                None => {
-                    return Ok(Self {
-                        scheme: None,
-                        host_position: 0,
-                        port_position: Some(first_separator),
-                        http_path_and_query_position,
-                    });
-                }
-            }
+        if let Some(scheme) = Scheme::try_parse(scheme) {
+            return Ok(Self {
+                scheme: Some(scheme),
+                host_position: scheme_name_end_position + scheme.host_postfix_len(),
+                host_end_position: host_end_position.unwrap(),
+                port_position,
+                http_path_and_query_position,
+            });
         }
+
+        panic!("Invalid scheme name {}", scheme);
     }
 
     pub fn get_host<'s>(&self, src: &'s str) -> &'s str {
@@ -161,7 +202,7 @@ impl RemoteEndpointInner {
     pub fn get_host_port(&self, src: &str, default_port: Option<u64>) -> ShortString {
         let mut result = ShortString::new_empty();
 
-        result.push_str(&src[self.host_position..]);
+        result.push_str(&src[self.host_position..self.host_end_position]);
 
         if self.port_position.is_some() {
             return result;
@@ -355,5 +396,17 @@ mod test {
         assert_eq!(result.get_host(), "localhost");
         assert_eq!(result.get_port_str(), Some("4343"));
         assert_eq!(result.get_http_path_and_query(), Some("/test"));
+    }
+
+    #[test]
+    fn test_wss_from_real_life() {
+        let result =
+            RemoteEndpoint::try_parse("wss://api-dev.tradelocker.com/brand-api/socket.io").unwrap();
+
+        assert!(result.get_scheme().unwrap().is_wss());
+        assert_eq!(
+            result.get_host_port(Some(443)).as_str(),
+            "api-dev.tradelocker.com:443"
+        );
     }
 }
