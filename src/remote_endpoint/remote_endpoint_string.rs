@@ -69,16 +69,15 @@ enum ReadingEndpointMode {
 pub struct RemoteEndpointInner {
     scheme: Option<Scheme>,
     host_position: usize,
-    host_end_position: usize,
     port_position: Option<usize>,
-    http_path_and_query_position: Option<usize>,
+    http_path_and_query_position: usize,
+    default_port: Option<u16>,
 }
 
 impl RemoteEndpointInner {
     pub fn try_parse(src: &str) -> Result<Self, String> {
         let mut scheme_name_end_position = None;
 
-        let mut host_end_position = None;
         let mut http_path_and_query_position = None;
 
         let mut port_position = None;
@@ -96,7 +95,6 @@ impl RemoteEndpointInner {
                     if c.is_ascii_digit() {
                         reading_mode = ReadingEndpointMode::ReadingPort;
                         port_position = Some(pos - 1);
-                        host_end_position = port_position;
                         continue;
                     }
 
@@ -106,7 +104,6 @@ impl RemoteEndpointInner {
                         continue;
                     }
 
-                    host_end_position = scheme_name_end_position;
                     scheme_name_end_position = None;
                     reading_mode = ReadingEndpointMode::LookingForEndOfHost
                 }
@@ -119,12 +116,10 @@ impl RemoteEndpointInner {
 
                 ReadingEndpointMode::LookingForEndOfHost => match c {
                     ':' => {
-                        host_end_position = Some(pos);
                         port_position = Some(pos);
                     }
 
                     '/' => {
-                        host_end_position = Some(pos);
                         http_path_and_query_position = Some(pos);
                         break;
                     }
@@ -139,17 +134,18 @@ impl RemoteEndpointInner {
             }
         }
 
-        if host_end_position.is_none() {
-            host_end_position = Some(src.len());
-        }
+        let http_path_and_query_position = match http_path_and_query_position {
+            Some(pos) => pos,
+            None => src.len(),
+        };
 
         if scheme_name_end_position.is_none() {
             return Ok(Self {
                 scheme: None,
                 host_position: 0,
-                host_end_position: host_end_position.unwrap(),
                 port_position,
                 http_path_and_query_position,
+                default_port: None,
             });
         }
 
@@ -161,9 +157,9 @@ impl RemoteEndpointInner {
             return Ok(Self {
                 scheme: Some(scheme),
                 host_position: scheme_name_end_position + scheme.host_postfix_len(),
-                host_end_position: host_end_position.unwrap(),
                 port_position,
                 http_path_and_query_position,
+                default_port: None,
             });
         }
 
@@ -175,19 +171,12 @@ impl RemoteEndpointInner {
             return &src[self.host_position..port_position];
         }
 
-        if let Some(path_and_query_position) = self.http_path_and_query_position {
-            return &src[self.host_position..path_and_query_position];
-        }
-        &src[self.host_position..]
+        return &src[self.host_position..self.http_path_and_query_position];
     }
 
     pub fn get_port_str<'s>(&self, src: &'s str) -> Option<&'s str> {
         if let Some(port_position) = self.port_position {
-            if let Some(path_and_query_position) = self.http_path_and_query_position {
-                Some(&src[port_position + 1..path_and_query_position])
-            } else {
-                Some(&src[port_position + 1..])
-            }
+            Some(&src[port_position + 1..self.http_path_and_query_position])
         } else {
             None
         }
@@ -202,16 +191,14 @@ impl RemoteEndpointInner {
         }
     }
 
-    pub fn get_host_port(&self, src: &str, default_port: Option<u64>) -> ShortString {
+    pub fn get_host_port(&self, src: &str) -> ShortString {
         let mut result = ShortString::new_empty();
-
-        result.push_str(&src[self.host_position..self.host_end_position]);
-
+        result.push_str(&src[self.host_position..self.http_path_and_query_position]);
         if self.port_position.is_some() {
             return result;
         }
 
-        if let Some(default_port) = default_port {
+        if let Some(default_port) = self.default_port {
             result.push_str(":");
             result.push_str(default_port.to_string().as_str());
         }
@@ -232,6 +219,10 @@ impl<'s> RemoteEndpoint<'s> {
             host_str: src,
             inner,
         })
+    }
+
+    pub fn set_default_port(&mut self, default_port: u16) {
+        self.inner.default_port = Some(default_port);
     }
 
     pub fn to_owned(&self) -> RemoteEndpointOwned {
@@ -257,13 +248,15 @@ impl<'s> RemoteEndpoint<'s> {
         self.inner.get_port(self.host_str)
     }
 
-    pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
-        self.inner.get_host_port(self.host_str, default_port)
+    pub fn get_host_port(&self) -> ShortString {
+        self.inner.get_host_port(self.host_str)
     }
 
     pub fn get_http_path_and_query(&self) -> Option<&str> {
-        let pos = self.inner.http_path_and_query_position?;
-        Some(&self.host_str[pos..])
+        if self.inner.http_path_and_query_position == self.host_str.len() {
+            return None;
+        }
+        Some(&self.host_str[self.inner.http_path_and_query_position..])
     }
 
     pub fn as_str(&self) -> &str {
@@ -293,6 +286,10 @@ impl RemoteEndpointOwned {
         }
     }
 
+    pub fn set_default_port(&mut self, default_port: u16) {
+        self.inner.default_port = default_port.into();
+    }
+
     pub fn get_scheme(&self) -> Option<Scheme> {
         self.inner.scheme
     }
@@ -309,8 +306,8 @@ impl RemoteEndpointOwned {
         self.inner.get_port(&self.host_str)
     }
 
-    pub fn get_host_port(&self, default_port: Option<u64>) -> ShortString {
-        self.inner.get_host_port(&self.host_str, default_port)
+    pub fn get_host_port(&self) -> ShortString {
+        self.inner.get_host_port(&self.host_str)
     }
 
     pub fn as_str(&self) -> &str {
@@ -318,8 +315,10 @@ impl RemoteEndpointOwned {
     }
 
     pub fn get_http_path_and_query(&self) -> Option<&str> {
-        let pos = self.inner.http_path_and_query_position?;
-        Some(&self.host_str[pos..])
+        if self.inner.http_path_and_query_position == self.host_str.len() {
+            return None;
+        }
+        Some(&self.host_str[self.inner.http_path_and_query_position..])
     }
 }
 
@@ -365,9 +364,10 @@ mod test {
 
     #[test]
     fn test_get_host_port_with_default_port() {
-        let result = RemoteEndpoint::try_parse("localhost").unwrap();
+        let mut result = RemoteEndpoint::try_parse("localhost").unwrap();
+        result.set_default_port(80);
 
-        let host_port = result.get_host_port(Some(80));
+        let host_port = result.get_host_port();
         assert_eq!(host_port.as_str(), "localhost:80");
     }
 
@@ -403,12 +403,14 @@ mod test {
 
     #[test]
     fn test_wss_from_real_life() {
-        let result =
+        let mut result =
             RemoteEndpoint::try_parse("wss://api-dev.tradelocker.com/brand-api/socket.io").unwrap();
+
+        result.set_default_port(443);
 
         assert!(result.get_scheme().unwrap().is_wss());
         assert_eq!(
-            result.get_host_port(Some(443)).as_str(),
+            result.get_host_port().as_str(),
             "api-dev.tradelocker.com:443"
         );
 
@@ -417,10 +419,13 @@ mod test {
 
     #[test]
     fn test_with_ip() {
-        let result = RemoteEndpoint::try_parse("http://127.0.0.1:9191/first/next/other").unwrap();
+        let mut result =
+            RemoteEndpoint::try_parse("http://127.0.0.1:9191/first/next/other").unwrap();
+
+        result.set_default_port(80);
 
         assert!(result.get_scheme().unwrap().is_http());
-        assert_eq!(result.get_host_port(Some(80)).as_str(), "127.0.0.1:9191");
+        assert_eq!(result.get_host_port().as_str(), "127.0.0.1:9191");
 
         assert_eq!(result.get_host(), "127.0.0.1");
 
@@ -428,5 +433,18 @@ mod test {
             result.get_http_path_and_query().unwrap(),
             "/first/next/other"
         );
+    }
+
+    #[test]
+    fn test_with_ip_without_scheme_and_path_and_query() {
+        let mut result = RemoteEndpoint::try_parse("127.0.0.1:9191").unwrap();
+        result.set_default_port(80);
+
+        assert!(result.get_scheme().is_none());
+        assert_eq!(result.get_host_port().as_str(), "127.0.0.1:9191");
+
+        assert_eq!(result.get_host(), "127.0.0.1");
+
+        assert!(result.get_http_path_and_query().is_none());
     }
 }
