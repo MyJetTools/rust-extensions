@@ -208,6 +208,15 @@ impl RemoteEndpointInner {
             return result;
         }
 
+        if let Some(scheme) = self.scheme {
+            if let Some(default_port) = scheme.get_default_port() {
+                result.push_str(":");
+                result.push_str(default_port.to_string().as_str());
+            }
+
+            return result;
+        }
+
         if let Some(default_port) = self.default_port {
             result.push_str(":");
             result.push_str(default_port.to_string().as_str());
