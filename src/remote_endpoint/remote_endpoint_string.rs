@@ -176,7 +176,19 @@ impl RemoteEndpointInner {
         panic!("Invalid scheme name {}", scheme);
     }
 
+    fn is_unix_socket(&self) -> bool {
+        if let Some(scheme) = self.scheme {
+            return scheme.is_unix_socket();
+        }
+
+        false
+    }
+
     pub fn get_host<'s>(&self, src: &'s str) -> &'s str {
+        if self.is_unix_socket() {
+            return &src[self.host_position..];
+        }
+
         if let Some(port_position) = self.port_position {
             return &src[self.host_position..port_position];
         }
@@ -185,6 +197,10 @@ impl RemoteEndpointInner {
     }
 
     pub fn get_port_str<'s>(&self, src: &'s str) -> Option<&'s str> {
+        if self.is_unix_socket() {
+            return None;
+        }
+
         if let Some(port_position) = self.port_position {
             Some(&src[port_position + 1..self.http_path_and_query_position])
         } else {
@@ -193,6 +209,10 @@ impl RemoteEndpointInner {
     }
 
     pub fn get_port(&self, src: &str) -> Option<u16> {
+        if self.is_unix_socket() {
+            return None;
+        }
+
         let port_str = self.get_port_str(src)?;
 
         match port_str.parse() {
@@ -203,6 +223,13 @@ impl RemoteEndpointInner {
 
     pub fn get_host_port(&self, src: &str) -> ShortString {
         let mut result = ShortString::new_empty();
+
+        if self.is_unix_socket() {
+            let host_as_str = &src[self.host_position..];
+            result.push_str(host_as_str);
+            return result;
+        }
+
         result.push_str(&src[self.host_position..self.http_path_and_query_position]);
         if self.port_position.is_some() {
             return result;
@@ -272,6 +299,10 @@ impl<'s> RemoteEndpoint<'s> {
     }
 
     pub fn get_http_path_and_query(&self) -> Option<&str> {
+        if self.inner.is_unix_socket() {
+            return None;
+        }
+
         if self.inner.http_path_and_query_position == self.host_str.len() {
             return None;
         }
@@ -334,6 +365,10 @@ impl RemoteEndpointOwned {
     }
 
     pub fn get_http_path_and_query(&self) -> Option<&str> {
+        if self.inner.is_unix_socket() {
+            return None;
+        }
+
         if self.inner.http_path_and_query_position == self.host_str.len() {
             return None;
         }
@@ -463,6 +498,18 @@ mod test {
         assert_eq!(result.get_host_port().as_str(), "127.0.0.1:9191");
 
         assert_eq!(result.get_host(), "127.0.0.1");
+
+        assert!(result.get_http_path_and_query().is_none());
+    }
+
+    #[test]
+    fn test_unix_socket_case() {
+        let result = RemoteEndpoint::try_parse("http+unix://var/run/docker.sock").unwrap();
+
+        assert!(result.get_scheme().unwrap().is_unix_socket());
+        assert_eq!(result.get_host(), "/var/run/docker.sock");
+
+        assert_eq!(result.get_host_port().as_str(), "/var/run/docker.sock");
 
         assert!(result.get_http_path_and_query().is_none());
     }

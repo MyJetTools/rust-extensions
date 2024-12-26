@@ -1,5 +1,5 @@
 pub trait StrUtils<'s> {
-    fn to_str(&'s self) -> &str;
+    fn to_str(&'s self) -> &'s str;
 
     fn eq_case_insensitive(&'s self, dst: &str) -> bool {
         compare_strings_case_insensitive(self.to_str(), dst)
@@ -134,7 +134,7 @@ impl<'s> StrUtils<'s> for &'s String {
 }
 
 impl<'s> StrUtils<'s> for String {
-    fn to_str(&'s self) -> &str {
+    fn to_str(&'s self) -> &'s str {
         self
     }
 }
