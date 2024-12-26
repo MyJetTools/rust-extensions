@@ -512,5 +512,14 @@ mod test {
         assert_eq!(result.get_host_port().as_str(), "/var/run/docker.sock");
 
         assert!(result.get_http_path_and_query().is_none());
+
+        let owned = result.to_owned();
+
+        assert!(owned.get_scheme().unwrap().is_unix_socket());
+        assert_eq!(owned.get_host(), "/var/run/docker.sock");
+
+        assert_eq!(owned.get_host_port().as_str(), "/var/run/docker.sock");
+
+        assert!(owned.get_http_path_and_query().is_none());
     }
 }
