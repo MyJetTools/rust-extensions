@@ -21,6 +21,10 @@ impl MyTimer {
         }
     }
 
+    pub fn set_iteration_timeout(&mut self, iteration_timeout: Duration) {
+        self.iteration_timeout = iteration_timeout;
+    }
+
     pub fn new_with_execute_timeout(interval: Duration, iteration_timeout: Duration) -> Self {
         Self {
             interval,
