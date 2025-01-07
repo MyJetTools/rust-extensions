@@ -522,4 +522,12 @@ mod test {
 
         assert!(owned.get_http_path_and_query().is_none());
     }
+
+    #[test]
+    fn test_example_from_real_life() {
+        let result = RemoteEndpoint::try_parse("https://oauth2.googleapis.com/token").unwrap();
+
+        assert_eq!(result.get_host(), "oauth2.googleapis.com");
+        assert!(result.get_scheme().unwrap().is_https());
+    }
 }
