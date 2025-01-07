@@ -68,4 +68,30 @@ mod tests {
             _ => panic!("Unexpected result"),
         }
     }
+
+    #[test]
+    fn test_example_from_real_life() {
+        let result =
+            RemoteEndpointHostString::try_parse("https://oauth2.googleapis.com/token").unwrap();
+
+        let remote_endpoint = match result {
+            RemoteEndpointHostString::Direct(remote_endpoint) => remote_endpoint,
+            RemoteEndpointHostString::ViaSsh { .. } => {
+                panic!("Unexpected result");
+            }
+        };
+
+        assert_eq!(remote_endpoint.get_host(), "oauth2.googleapis.com");
+        assert!(remote_endpoint.get_scheme().unwrap().is_https());
+        assert_eq!(
+            remote_endpoint.get_host_port().as_str(),
+            "oauth2.googleapis.com:443"
+        );
+
+        let owned = remote_endpoint.to_owned();
+
+        assert_eq!(owned.get_host(), "oauth2.googleapis.com");
+        assert!(owned.get_scheme().unwrap().is_https());
+        assert_eq!(owned.get_host_port().as_str(), "oauth2.googleapis.com:443");
+    }
 }
