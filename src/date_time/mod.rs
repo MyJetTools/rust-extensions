@@ -4,6 +4,7 @@ pub mod compact_date_time;
 mod date_time_duration;
 mod date_time_struct;
 mod interval_key;
+pub mod rfc2822;
 pub mod rfc_3339;
 pub mod rfc_5322;
 mod time_difference;

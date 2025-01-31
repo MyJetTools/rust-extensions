@@ -139,6 +139,12 @@ impl DateTimeAsMicroseconds {
         let dt: DateTimeStruct = self.into();
         return dt.to_rfc7231();
     }
+
+    pub fn to_rfc2822(&self) -> String {
+        let dt: DateTimeStruct = self.into();
+        return dt.to_rfc2822();
+    }
+
     pub fn to_compact_date_time_string(&self) -> String {
         let dt: DateTimeStruct = self.into();
         return dt.to_compact_date_time_string();
