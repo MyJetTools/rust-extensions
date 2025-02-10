@@ -101,3 +101,20 @@ impl AtomicDateTimeAsMicroseconds {
         return dt.to_compact_date_time_string();
     }
 }
+
+impl Clone for AtomicDateTimeAsMicroseconds {
+    fn clone(&self) -> Self {
+        let value = self
+            .unix_microseconds
+            .load(std::sync::atomic::Ordering::Relaxed);
+        Self {
+            unix_microseconds: AtomicI64::new(value),
+        }
+    }
+}
+
+impl Into<AtomicDateTimeAsMicroseconds> for DateTimeAsMicroseconds {
+    fn into(self) -> AtomicDateTimeAsMicroseconds {
+        AtomicDateTimeAsMicroseconds::new(self.unix_microseconds)
+    }
+}
