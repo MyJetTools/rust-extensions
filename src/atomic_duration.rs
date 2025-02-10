@@ -30,6 +30,13 @@ impl AtomicDuration {
         let micros = self.get_micros();
         Duration::from_micros(micros)
     }
+
+    pub fn update(&self, value: Duration) {
+        let micros = value.as_micros() as u64;
+
+        self.micros
+            .store(micros, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl Into<AtomicDuration> for Duration {
