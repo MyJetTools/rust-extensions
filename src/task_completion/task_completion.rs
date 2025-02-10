@@ -11,6 +11,7 @@ pub enum TaskCompletionError {
 pub struct TaskCompletion<OkResult, ErrorResult> {
     pub receiver: Option<Receiver<CompletionEvent<OkResult, ErrorResult>>>,
     pub sender: Option<Sender<CompletionEvent<OkResult, ErrorResult>>>,
+    pub drop_error: Option<ErrorResult>,
 }
 
 impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
@@ -19,6 +20,7 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
         Self {
             receiver: Some(receiver),
             sender: Some(sender),
+            drop_error: None,
         }
     }
 
@@ -26,6 +28,10 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
         let mut new_result = None;
         std::mem::swap(&mut new_result, &mut self.receiver);
         new_result
+    }
+
+    pub fn set_drop_error(&mut self, error: ErrorResult) {
+        self.drop_error = Some(error);
     }
 
     pub fn set_ok(&mut self, result: OkResult) {
@@ -149,7 +155,11 @@ impl<OkResult, ErrorResult> TaskCompletion<OkResult, ErrorResult> {
 impl<OkResult, ErrorResult> Drop for TaskCompletion<OkResult, ErrorResult> {
     fn drop(&mut self) {
         if let Some(sender) = self.sender.take() {
-            let _ = sender.send(CompletionEvent::Panic("Task is dropped".to_string()));
+            if let Some(drop_error) = self.drop_error.take() {
+                let _ = sender.send(CompletionEvent::Error(drop_error));
+            } else {
+                let _ = sender.send(CompletionEvent::Panic("Task is dropped".to_string()));
+            }
         }
     }
 }
