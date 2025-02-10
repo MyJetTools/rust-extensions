@@ -18,18 +18,13 @@ impl AtomicStopWatch {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset_and_start(&self) {
         let now = DateTimeAsMicroseconds::now();
         self.start_time.update(now);
         self.stop_time.update(now);
     }
 
-    pub fn start(&mut self) {
-        let now = DateTimeAsMicroseconds::now();
-        self.start_time.update(now);
-    }
-
-    pub fn pause(&mut self) {
+    pub fn pause(&self) {
         let now = DateTimeAsMicroseconds::now();
         self.stop_time.update(now);
     }
@@ -47,9 +42,9 @@ mod tests {
 
     #[test]
     fn test_duration() {
-        let mut sw = AtomicStopWatch::new();
+        let sw = AtomicStopWatch::new();
 
-        sw.start();
+        sw.reset_and_start();
 
         std::thread::sleep(std::time::Duration::from_millis(10));
         sw.pause();
