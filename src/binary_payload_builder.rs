@@ -1,4 +1,4 @@
-use crate::AsSliceOrVec;
+use crate::SliceOrVec;
 
 pub enum BinaryPayloadBuilder<'s> {
     AsSlice(&'s mut [u8], usize),
@@ -131,11 +131,11 @@ impl<'s> BinaryPayloadBuilder<'s> {
     }
 }
 
-impl<'s> Into<AsSliceOrVec<'s, u8>> for BinaryPayloadBuilder<'s> {
-    fn into(self) -> AsSliceOrVec<'s, u8> {
+impl<'s> Into<SliceOrVec<'s, u8>> for BinaryPayloadBuilder<'s> {
+    fn into(self) -> SliceOrVec<'s, u8> {
         match self {
-            BinaryPayloadBuilder::AsSlice(data, _) => AsSliceOrVec::AsSlice(data),
-            BinaryPayloadBuilder::AsVec(data) => AsSliceOrVec::AsVec(data),
+            BinaryPayloadBuilder::AsSlice(data, _) => SliceOrVec::AsSlice(data),
+            BinaryPayloadBuilder::AsVec(data) => SliceOrVec::AsVec(data),
         }
     }
 }

@@ -1,14 +1,14 @@
 use std::io::{Read, Seek};
 
-use crate::AsSliceOrVec;
+use crate::SliceOrVec;
 
 pub struct SliceOrVecSeqReader<'s, T: Clone> {
-    inner: AsSliceOrVec<'s, T>,
+    inner: SliceOrVec<'s, T>,
     offset: usize,
 }
 
 impl<'s, T: Clone> SliceOrVecSeqReader<'s, T> {
-    pub fn new(src: AsSliceOrVec<'s, T>) -> Self {
+    pub fn new(src: SliceOrVec<'s, T>) -> Self {
         Self {
             inner: src,
             offset: 0,
@@ -78,7 +78,7 @@ impl<'s> Seek for SliceOrVecSeqReader<'s, u8> {
     }
 }
 
-impl<'s, T: Clone> Into<SliceOrVecSeqReader<'s, T>> for AsSliceOrVec<'s, T> {
+impl<'s, T: Clone> Into<SliceOrVecSeqReader<'s, T>> for SliceOrVec<'s, T> {
     fn into(self) -> SliceOrVecSeqReader<'s, T> {
         SliceOrVecSeqReader::new(self)
     }
@@ -86,14 +86,14 @@ impl<'s, T: Clone> Into<SliceOrVecSeqReader<'s, T>> for AsSliceOrVec<'s, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AsSliceOrVec, SliceOrVecSeqReader};
+    use crate::{SliceOrVec, SliceOrVecSeqReader};
     use std::io::Read;
 
     #[test]
     fn test_read_sequences() {
         let buffer = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-        let mut buffer: SliceOrVecSeqReader<'_, u8> = AsSliceOrVec::create_as_vec(buffer).into();
+        let mut buffer: SliceOrVecSeqReader<'_, u8> = SliceOrVec::create_as_vec(buffer).into();
 
         let mut out_buffer = [0u8; 2];
 

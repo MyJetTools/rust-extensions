@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{AsSliceOrVec, ShortString};
+use crate::{ShortString, SliceOrVec};
 
 #[derive(Debug, Clone)]
 pub struct StrOrString<'s> {
@@ -124,6 +124,12 @@ impl<'s> StrOrString<'s> {
     }
 }
 
+impl std::fmt::Display for StrOrString<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 fn cut_data(src: &str, src_from: Option<usize>, src_to: Option<usize>) -> &str {
     if let Some(from) = src_from {
         if let Some(to) = src_to {
@@ -157,13 +163,13 @@ impl<'s> Into<StrOrString<'s>> for String {
     }
 }
 
-impl<'s> Into<StrOrString<'s>> for AsSliceOrVec<'s, u8> {
+impl<'s> Into<StrOrString<'s>> for SliceOrVec<'s, u8> {
     fn into(self) -> StrOrString<'s> {
         match self {
-            AsSliceOrVec::AsSlice(slice) => {
+            SliceOrVec::AsSlice(slice) => {
                 StrOrString::create_as_str(std::str::from_utf8(slice).unwrap())
             }
-            AsSliceOrVec::AsVec(vec) => {
+            SliceOrVec::AsVec(vec) => {
                 StrOrString::create_as_string(String::from_utf8(vec).unwrap())
             }
         }
@@ -180,12 +186,6 @@ pub enum StrOrStringData<'s> {
 impl Into<String> for StrOrString<'_> {
     fn into(self) -> String {
         self.to_string()
-    }
-}
-
-impl ToString for StrOrString<'_> {
-    fn to_string(&self) -> String {
-        self.as_str().to_string()
     }
 }
 
@@ -219,6 +219,7 @@ mod tests {
     fn test_string_with_no_cut() {
         let src = StrOrString::create_as_string("123".to_string());
 
-        assert_eq!("123", src.as_str())
+        assert_eq!("123", src.as_str());
+        println!("{}", src);
     }
 }
