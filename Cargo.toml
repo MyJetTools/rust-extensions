@@ -10,12 +10,14 @@ default = []
 objects-pool = []
 base64 = ["dep:base64"]
 hex = []
-with-tokio = ["tokio", "signal-hook"]
+with-tokio = ["tokio", "signal-hook", "futures"]
+
 vec-maybe-stack = []
 placeholders = []
 
 [dependencies]
 tokio = { version = "*", features = ["full"], optional = true }
+futures = { version = "*", optional = true }
 chrono = "*"
 async-trait = "*"
 signal-hook = { version = "*", optional = true }

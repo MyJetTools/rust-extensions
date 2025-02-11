@@ -22,6 +22,8 @@ mod str_or_string;
 mod string_builder;
 #[cfg(feature = "with-tokio")]
 mod task_completion;
+#[cfg(feature = "with-tokio")]
+pub mod tokio_queue;
 
 #[cfg(feature = "with-tokio")]
 pub use application_states::*;
