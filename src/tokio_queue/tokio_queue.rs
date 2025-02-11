@@ -32,14 +32,10 @@ impl tokio::io::AsyncRead for TokioQueue {
 
             self.inner.waker.register(cx.waker());
 
-            println!("Return pending");
-
             return Poll::Pending;
         }
 
         // Read available data into the buffer
-
-        println!("Remaining: {}", buf.remaining());
 
         if buf.remaining() >= queue_access.len() {
             buf.put_slice(queue_access.drain(..).as_slice());
