@@ -3,7 +3,7 @@ use std::{sync::Arc, task::Poll};
 use super::*;
 
 pub struct TokioQueue {
-    inner: Arc<TokioQueueInner>,
+    inner: Arc<TokioQueuePublish>,
 }
 
 impl TokioQueue {
@@ -13,7 +13,7 @@ impl TokioQueue {
         }
     }
 
-    pub fn get_publisher(&self) -> Arc<TokioQueueInner> {
+    pub fn get_publisher(&self) -> Arc<TokioQueuePublish> {
         self.inner.clone()
     }
 }
