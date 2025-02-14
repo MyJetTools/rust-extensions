@@ -73,6 +73,12 @@ impl FilePath {
     }
 }
 
+impl Into<FilePath> for &'_ str {
+    fn into(self) -> FilePath {
+        FilePath::from_str(self)
+    }
+}
+
 #[cfg(test)]
 mod test {
 
