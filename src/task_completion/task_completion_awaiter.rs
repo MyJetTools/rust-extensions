@@ -31,6 +31,7 @@ impl<OkResult, ErrorResult> TaskCompletionAwaiter<OkResult, ErrorResult> {
                         CompletionEvent::Ok(ok) => return Ok(ok),
                         CompletionEvent::Error(err) => return Err(err),
                         CompletionEvent::Panic(message) => {
+                            println!("{}", message.as_str());
                             panic!("Task completion panic result: {}", message)
                         }
                     },
