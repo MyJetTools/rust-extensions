@@ -191,9 +191,22 @@ impl TryInto<DateTimeAsMicroseconds> for IntervalKey<MinuteKey> {
     }
 }
 
+impl TryInto<DateTimeAsMicroseconds> for IntervalKey<Minute5Key> {
+    type Error = String;
+    fn try_into(self) -> Result<DateTimeAsMicroseconds, Self::Error> {
+        Minute5Key::to_date_time(self.value)
+    }
+}
+
+impl Into<IntervalKey<Minute5Key>> for DateTimeAsMicroseconds {
+    fn into(self) -> IntervalKey<Minute5Key> {
+        IntervalKey::new(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::date_time::{DateTimeAsMicroseconds, DayKey, HourKey, MinuteKey, MonthKey, YearKey};
+    use crate::date_time::*;
 
     #[test]
     fn test_year_key() {
@@ -258,5 +271,18 @@ mod tests {
         let d_result: DateTimeAsMicroseconds = minute_key.try_into().unwrap();
 
         assert_eq!("2021-03-05T01:12:00", &d_result.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_minute_five_key() {
+        let d = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+
+        let minute_key: super::IntervalKey<Minute5Key> = d.into();
+
+        assert_eq!(minute_key.value, 202103050110);
+
+        let d_result: DateTimeAsMicroseconds = minute_key.try_into().unwrap();
+
+        assert_eq!("2021-03-05T01:10:00", &d_result.to_rfc3339()[..19]);
     }
 }
