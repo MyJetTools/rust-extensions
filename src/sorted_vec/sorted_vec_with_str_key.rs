@@ -4,7 +4,7 @@ use crate::sorted_vec::{
 
 use super::InsertIfNotExists;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SortedVecWithStrKey<TValue: EntityWithStrKey> {
     pub(crate) items: Vec<TValue>,
 }

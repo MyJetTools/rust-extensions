@@ -4,7 +4,7 @@ use crate::sorted_vec::{
 
 use super::InsertIfNotExists;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct SortedVec<TKey: Ord, TValue: EntityWithKey<TKey>> {
     items: Vec<TValue>,
     itm: std::marker::PhantomData<TKey>,
