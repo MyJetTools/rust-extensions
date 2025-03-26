@@ -192,6 +192,24 @@ impl Into<IntervalKey<Minute5Key>> for i64 {
     }
 }
 
+impl TryInto<IntervalKey<Minute5Key>> for IntervalKey<MinuteKey> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute5Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute5Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<MinuteKey>> for IntervalKey<Minute5Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<MinuteKey>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<MinuteKey> = dt.into();
+        Ok(result)
+    }
+}
+
 impl Into<IntervalKey<Minute5Key>> for &'_ i64 {
     fn into(self) -> IntervalKey<Minute5Key> {
         IntervalKey::from_i64(*self)
