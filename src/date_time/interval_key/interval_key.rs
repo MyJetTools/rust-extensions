@@ -78,6 +78,18 @@ impl Into<IntervalKey<YearKey>> for &'_ i64 {
     }
 }
 
+impl Into<IntervalKey<YearKey>> for u64 {
+    fn into(self) -> IntervalKey<YearKey> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<YearKey>> for &'_ u64 {
+    fn into(self) -> IntervalKey<YearKey> {
+        IntervalKey::from_i64(*self as i64)
+    }
+}
+
 impl Into<IntervalKey<MonthKey>> for i64 {
     fn into(self) -> IntervalKey<MonthKey> {
         IntervalKey::from_i64(self)
@@ -87,6 +99,18 @@ impl Into<IntervalKey<MonthKey>> for i64 {
 impl Into<IntervalKey<MonthKey>> for &'_ i64 {
     fn into(self) -> IntervalKey<MonthKey> {
         IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<MonthKey>> for u64 {
+    fn into(self) -> IntervalKey<MonthKey> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<MonthKey>> for &'_ u64 {
+    fn into(self) -> IntervalKey<MonthKey> {
+        IntervalKey::from_i64(*self as i64)
     }
 }
 
@@ -102,6 +126,18 @@ impl Into<IntervalKey<DayKey>> for &'_ i64 {
     }
 }
 
+impl Into<IntervalKey<DayKey>> for u64 {
+    fn into(self) -> IntervalKey<DayKey> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<DayKey>> for &'_ u64 {
+    fn into(self) -> IntervalKey<DayKey> {
+        IntervalKey::from_i64(*self as i64)
+    }
+}
+
 impl Into<IntervalKey<HourKey>> for i64 {
     fn into(self) -> IntervalKey<HourKey> {
         IntervalKey::from_i64(self)
@@ -114,6 +150,18 @@ impl Into<IntervalKey<HourKey>> for &'_ i64 {
     }
 }
 
+impl Into<IntervalKey<HourKey>> for u64 {
+    fn into(self) -> IntervalKey<HourKey> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<HourKey>> for &'_ u64 {
+    fn into(self) -> IntervalKey<HourKey> {
+        IntervalKey::from_i64(*self as i64)
+    }
+}
+
 impl Into<IntervalKey<MinuteKey>> for i64 {
     fn into(self) -> IntervalKey<MinuteKey> {
         IntervalKey::from_i64(self)
@@ -123,6 +171,42 @@ impl Into<IntervalKey<MinuteKey>> for i64 {
 impl Into<IntervalKey<MinuteKey>> for &'_ i64 {
     fn into(self) -> IntervalKey<MinuteKey> {
         IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<MinuteKey>> for u64 {
+    fn into(self) -> IntervalKey<MinuteKey> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<MinuteKey>> for &'_ u64 {
+    fn into(self) -> IntervalKey<MinuteKey> {
+        IntervalKey::from_i64(*self as i64)
+    }
+}
+
+impl Into<IntervalKey<Minute5Key>> for i64 {
+    fn into(self) -> IntervalKey<Minute5Key> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl Into<IntervalKey<Minute5Key>> for &'_ i64 {
+    fn into(self) -> IntervalKey<Minute5Key> {
+        IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<Minute5Key>> for u64 {
+    fn into(self) -> IntervalKey<Minute5Key> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<Minute5Key>> for &'_ u64 {
+    fn into(self) -> IntervalKey<Minute5Key> {
+        IntervalKey::from_i64(*self as i64)
     }
 }
 
