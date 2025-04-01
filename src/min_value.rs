@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct MinValue<T: Clone + Copy + PartialOrd> {
     value: Option<T>,
 }

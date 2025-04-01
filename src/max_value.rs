@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct MaxValue<T: Clone + Copy + PartialOrd> {
     value: Option<T>,
 }
