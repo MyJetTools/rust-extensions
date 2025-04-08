@@ -73,3 +73,4 @@ mod atomic_duration;
 pub use atomic_duration::*;
 mod min_key_value;
 pub use min_key_value::*;
+pub mod binary_search;
