@@ -10,7 +10,7 @@ default = []
 objects-pool = []
 base64 = ["dep:base64"]
 hex = []
-with-tokio = ["tokio", "signal-hook", "futures"]
+with-tokio = ["tokio", "signal-hook", "futures", "uuid"]
 
 vec-maybe-stack = []
 placeholders = []
@@ -23,7 +23,7 @@ async-trait = "*"
 signal-hook = { version = "*", optional = true }
 base64 = { version = "*", optional = true }
 serde = { version = "*", features = ["derive"] }
-uuid = { version = "*", features = ["v4"] }
+uuid = { version = "*", features = ["v4"], optional = true }
 
 [dev-dependencies]
 serde_json = "*"
