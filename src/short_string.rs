@@ -6,7 +6,7 @@ use std::{
 use crate::slice_of_u8_utils::SliceOfU8Ext;
 
 pub const SHORT_STRING_MAX_LEN: usize = 255;
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ShortString {
     data: [u8; 256],
 }
