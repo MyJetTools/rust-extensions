@@ -28,8 +28,3 @@ uuid = { version = "*", features = ["v4"], optional = true }
 [dev-dependencies]
 serde_json = "*"
 criterion = "*"
-
-
-[[bench]]
-name = "sorted_vec_vs_hashmap"
-harness = false

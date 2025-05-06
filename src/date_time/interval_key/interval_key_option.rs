@@ -5,7 +5,7 @@ pub trait IntervalKeyOption {
     fn to_value(src: DateTimeAsMicroseconds) -> i64;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct YearKey;
 
 impl IntervalKeyOption for YearKey {
@@ -38,7 +38,7 @@ impl IntervalKeyOption for YearKey {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct MonthKey;
 
 impl IntervalKeyOption for MonthKey {
@@ -74,7 +74,7 @@ impl IntervalKeyOption for MonthKey {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct DayKey;
 
 impl IntervalKeyOption for DayKey {
@@ -113,7 +113,7 @@ impl IntervalKeyOption for DayKey {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct HourKey;
 
 impl IntervalKeyOption for HourKey {
@@ -154,7 +154,7 @@ impl IntervalKeyOption for HourKey {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct MinuteKey;
 
 impl IntervalKeyOption for MinuteKey {
@@ -197,7 +197,7 @@ impl IntervalKeyOption for MinuteKey {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Minute5Key;
 
 impl IntervalKeyOption for Minute5Key {
