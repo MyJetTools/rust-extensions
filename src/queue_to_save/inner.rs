@@ -2,18 +2,18 @@ use std::time::Duration;
 
 use tokio::sync::Mutex;
 
-use crate::queue_to_save::async_waker::*;
+use crate::{queue_to_save::async_waker::*, StrOrString};
 
 pub struct QueueToSaveInner<T> {
     queue: Mutex<(Vec<T>, AsyncWaker)>,
 
     pub(crate) max_chunk_size: usize,
     pub(crate) timeout: Duration,
-    pub(crate) name: String,
+    pub(crate) name: StrOrString<'static>,
 }
 
 impl<T> QueueToSaveInner<T> {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: StrOrString<'static>) -> Self {
         Self {
             queue: Default::default(),
             max_chunk_size: 50,

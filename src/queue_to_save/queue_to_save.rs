@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::{queue_to_save::inner::QueueToSaveInner, Logger};
+use crate::{queue_to_save::inner::QueueToSaveInner, Logger, StrOrString};
 
 pub enum HandlerStatus<T> {
     None,
@@ -16,9 +16,9 @@ pub struct QueueToSave<T: Send + Sync + 'static> {
 }
 
 impl<T: Send + Sync + 'static> QueueToSave<T> {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         Self {
-            inner: Arc::new(QueueToSaveInner::new(name)),
+            inner: Arc::new(QueueToSaveInner::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
         }
     }
@@ -35,7 +35,7 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
     }
 
     pub fn get_name(&self) -> &str {
-        &self.inner.name
+        self.inner.name.as_str()
     }
 
     pub async fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
