@@ -29,7 +29,6 @@ pub struct AsyncWakerAwaiter {
 impl AsyncWakerAwaiter {
     pub async fn await_me(self) {
         let err = self.receiver.await;
-        println!("Awaited");
         if let Err(err) = err {
             println!("Awaiter has an error: {:?}", err);
         }

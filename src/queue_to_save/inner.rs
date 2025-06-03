@@ -31,11 +31,9 @@ impl<T> QueueToSaveInner<T> {
         loop {
             match self.try_dequeue().await {
                 Ok(values) => {
-                    println!("Got {} elements", values.len());
                     return values;
                 }
                 Err(err) => {
-                    println!("Start awaiting element");
                     err.await_me().await;
                 }
             }
