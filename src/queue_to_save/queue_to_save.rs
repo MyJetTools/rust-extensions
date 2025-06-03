@@ -70,6 +70,7 @@ async fn queue_to_save_loop<T: Send + Sync + 'static>(
     handler: Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
 ) {
+    println!("Queue to save {} is started", inner.name.as_str());
     let timeout = inner.timeout;
     loop {
         let events = inner.dequeue().await;
