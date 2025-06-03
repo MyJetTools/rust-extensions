@@ -26,6 +26,10 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
         self.inner.enqueue(items).await;
     }
 
+    pub async fn enqueue_single(&self, item: T) {
+        self.inner.enqueue_single(item).await;
+    }
+
     pub async fn register_events_handler(
         &self,
         events_handle: Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>,

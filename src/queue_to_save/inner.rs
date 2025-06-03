@@ -27,6 +27,12 @@ impl<T> QueueToSaveInner<T> {
         queue.1.wake();
     }
 
+    pub(crate) async fn enqueue_single(&self, item: T) {
+        let mut queue = self.queue.lock().await;
+        queue.0.push(item);
+        queue.1.wake();
+    }
+
     pub(crate) async fn dequeue(&self) -> Vec<T> {
         loop {
             match self.try_dequeue().await {
