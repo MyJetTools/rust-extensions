@@ -78,3 +78,5 @@ pub mod binary_search;
 mod sortable_id;
 #[cfg(feature = "with-tokio")]
 pub use sortable_id::*;
+mod uint32_variable_size;
+pub use uint32_variable_size::*;
