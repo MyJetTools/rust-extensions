@@ -49,7 +49,11 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
                 );
             }
             HandlerStatus::Some(handler) => {
-                queue_to_save_loop(self.inner.clone(), handler.clone(), logger).await;
+                tokio::spawn(queue_to_save_loop(
+                    self.inner.clone(),
+                    handler.clone(),
+                    logger,
+                ));
             }
             HandlerStatus::Working => {
                 panic!("QueueToSave {} is already started", self.inner.name);
