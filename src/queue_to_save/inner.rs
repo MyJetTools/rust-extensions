@@ -23,7 +23,6 @@ impl<T> QueueToSaveInner<T> {
     }
     pub(crate) async fn enqueue(&self, items: impl Iterator<Item = T>) {
         let mut queue = self.queue.lock().await;
-        println!("Enqueuing items");
         queue.0.extend(items);
         queue.1.wake();
     }
@@ -56,12 +55,13 @@ impl<T> QueueToSaveInner<T> {
 
         let mut result = Vec::with_capacity(self.max_chunk_size);
 
-        while result.len() < self.max_chunk_size {
-            if let Some(item) = write_access.0.pop() {
-                result.push(item);
-            } else {
+        while write_access.0.len() > 0 {
+            if result.len() >= self.max_chunk_size {
                 break;
             }
+
+            let item = write_access.0.remove(0);
+            result.push(item);
         }
 
         Ok(result)
