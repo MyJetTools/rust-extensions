@@ -1,12 +1,12 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use tokio::sync::Mutex;
 
-use crate::{queue_to_save::async_waker::*, QueueToSaveEventsHandler};
+use crate::queue_to_save::async_waker::*;
 
 pub struct QueueToSaveInner<T> {
     queue: Mutex<(Vec<T>, AsyncWaker)>,
-    pub(crate) handler: Option<Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>>,
+
     pub(crate) max_chunk_size: usize,
     pub(crate) timeout: Duration,
     pub(crate) name: String,
@@ -16,7 +16,6 @@ impl<T> QueueToSaveInner<T> {
     pub fn new(name: String) -> Self {
         Self {
             queue: Default::default(),
-            handler: Default::default(),
             max_chunk_size: 50,
             timeout: Duration::from_secs(10),
             name,
