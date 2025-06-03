@@ -23,6 +23,7 @@ impl<T> QueueToSaveInner<T> {
     }
     pub(crate) async fn enqueue(&self, items: impl Iterator<Item = T>) {
         let mut queue = self.queue.lock().await;
+        println!("Enqueuing items");
         queue.0.extend(items);
         queue.1.wake();
     }
@@ -30,10 +31,12 @@ impl<T> QueueToSaveInner<T> {
     pub(crate) async fn dequeue(&self) -> Vec<T> {
         loop {
             match self.try_dequeue().await {
-                Ok(value) => {
-                    return value;
+                Ok(values) => {
+                    println!("Got {} elements", values.len());
+                    return values;
                 }
                 Err(err) => {
+                    println!("Start awaiting element");
                     err.await_me().await;
                 }
             }
