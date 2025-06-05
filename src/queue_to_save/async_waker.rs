@@ -6,7 +6,6 @@ pub struct AsyncWaker {
 impl AsyncWaker {
     pub fn wake(&mut self) {
         if let Some(value) = self.sender.take() {
-            println!("Awaking");
             let result = value.send(());
 
             if result.is_err() {
