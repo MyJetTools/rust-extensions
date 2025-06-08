@@ -2,23 +2,23 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::{queue_to_save::inner_as_single::QueueToSaveInnerAsSingle, Logger, StrOrString};
+use crate::{queue_to_save::inner_as_bulk::QueueToSaveInnerAsBulk, Logger, StrOrString};
 
 enum HandlerStatus<T> {
     None,
-    Some(Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>),
+    Some(Arc<dyn QueueToSaveAsBulkEventsHandler<T> + Send + Sync + 'static>),
     Working,
 }
 
-pub struct QueueToSave<T: Send + Sync + 'static> {
-    inner: Arc<QueueToSaveInnerAsSingle<T>>,
+pub struct QueueToSaveAsBulk<T: Send + Sync + 'static> {
+    inner: Arc<QueueToSaveInnerAsBulk<T>>,
     handler: Mutex<HandlerStatus<T>>,
 }
 
-impl<T: Send + Sync + 'static> QueueToSave<T> {
+impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
     pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         Self {
-            inner: Arc::new(QueueToSaveInnerAsSingle::new(name.into())),
+            inner: Arc::new(QueueToSaveInnerAsBulk::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
         }
     }
@@ -32,7 +32,7 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
 
     pub async fn register_events_handler(
         &self,
-        events_handle: Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>,
+        events_handle: Arc<dyn QueueToSaveAsBulkEventsHandler<T> + Send + Sync + 'static>,
     ) {
         let mut write_access = self.handler.lock().await;
         *write_access = HandlerStatus::Some(events_handle);
@@ -69,13 +69,13 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
 }
 
 #[async_trait::async_trait]
-pub trait QueueToSaveEventsHandler<T: Send + Sync + 'static> {
-    async fn execute(&self, items: T);
+pub trait QueueToSaveAsBulkEventsHandler<T: Send + Sync + 'static> {
+    async fn execute(&self, items: Vec<T>);
 }
 
 async fn queue_to_save_loop<T: Send + Sync + 'static>(
-    inner: Arc<QueueToSaveInnerAsSingle<T>>,
-    handler: Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>,
+    inner: Arc<QueueToSaveInnerAsBulk<T>>,
+    handler: Arc<dyn QueueToSaveAsBulkEventsHandler<T> + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
 ) {
     println!("Queue to save {} is started", inner.name.as_str());
