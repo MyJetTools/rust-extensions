@@ -60,6 +60,24 @@ pub trait ArrayOfBytesIterator {
         sub_seq(&slice[pos..(pos + size)])
     }
 
+    fn peek_and_find_sequence_pos(&self, sequence_to_fine: &[u8]) -> Option<usize> {
+        let mut pos = self.get_pos();
+
+        let slice = self.get_src_slice();
+
+        while pos + sequence_to_fine.len() < slice.len() {
+            let pos_slice = &slice[pos..pos + sequence_to_fine.len()];
+
+            if pos_slice == sequence_to_fine {
+                return Some(pos);
+            }
+
+            pos += 1;
+        }
+
+        None
+    }
+
     fn advance(&self, amount: usize) -> Option<&[u8]> {
         let pos = self.get_pos();
         let pos_after = amount + pos;
