@@ -43,6 +43,11 @@ impl VecIterator {
             self.pos.set(0);
         }
     }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.pos.set(0);
+    }
 }
 impl ArrayOfBytesIterator for VecIterator {
     fn get_src_slice(&self) -> &[u8] {
