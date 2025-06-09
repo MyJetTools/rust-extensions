@@ -8,3 +8,5 @@ pub use slice_iterator::*;
 mod file_iterator;
 #[cfg(feature = "with-tokio")]
 pub use file_iterator::*;
+mod vec_iterator;
+pub use vec_iterator::*;
