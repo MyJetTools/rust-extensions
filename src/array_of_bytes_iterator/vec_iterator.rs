@@ -49,65 +49,11 @@ impl ArrayOfBytesIterator for VecIterator {
         &self.data
     }
 
-    fn peek_value(&self) -> Option<NextValue> {
-        let pos = self.pos.get();
-        if pos < self.data.len() {
-            let result = NextValue {
-                pos: pos,
-                value: self.data[pos],
-            };
-            Some(result)
-        } else {
-            None
-        }
-    }
-
-    fn get_next(&self) -> Option<NextValue> {
-        let pos = self.pos.get();
-        if pos < self.data.len() {
-            let result = NextValue {
-                pos,
-                value: self.data[pos],
-            };
-            self.pos.set(pos + 1);
-            Some(result)
-        } else {
-            None
-        }
-    }
-
     fn get_pos(&self) -> usize {
         self.pos.get()
     }
 
-    fn get_slice_to_current_pos(&self, from_pos: usize) -> &[u8] {
-        let pos = self.pos.get();
-        &self.data[from_pos..pos]
-    }
-
-    fn get_slice_to_end(&self, from_pos: usize) -> &[u8] {
-        &self.data[from_pos..]
-    }
-
-    fn advance(&self, amount: usize) -> Option<&[u8]> {
-        let pos = self.pos.get();
-        let pos_after = amount + pos;
-
-        if pos_after >= self.data.len() {
-            None
-        } else {
-            let result = &self.data[pos..pos_after];
-            self.pos.set(pos_after);
-            Some(result)
-        }
-    }
-
-    fn peek_sequence(&self, size: usize, sub_seq: impl Fn(&[u8]) -> bool) -> bool {
-        let pos = self.pos.get();
-        if pos + size > self.data.len() {
-            return false;
-        }
-
-        sub_seq(&self.data[pos..(pos + size)])
+    fn set_pos(&self, pos: usize) {
+        self.pos.set(pos);
     }
 }
