@@ -16,7 +16,13 @@ vec-maybe-stack = []
 placeholders = []
 
 [dependencies]
-tokio = { version = "*", features = ["full"], optional = true }
+tokio = { version = "*", features = [
+    "time",
+    "sync",
+    "rt",
+    "io-util",
+    "fs",
+], optional = true }
 futures = { version = "*", optional = true }
 chrono = "*"
 async-trait = "*"
