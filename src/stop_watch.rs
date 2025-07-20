@@ -1,7 +1,5 @@
 use std::time::{Duration, SystemTime};
 
-use crate::date_time::DateTimeAsMicroseconds;
-
 use super::duration_utils::duration_to_string;
 
 pub struct StopWatch {
@@ -43,10 +41,7 @@ mod tests {
 
     #[test]
     fn test_negative_duration() {
-        let mut sw = StopWatch::new();
-
-        sw.start();
-        sw.pause();
+        let sw = StopWatch::new();
 
         println!("{:?}", sw.duration_as_string());
     }

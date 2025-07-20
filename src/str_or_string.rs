@@ -25,7 +25,7 @@ impl<'s> StrOrString<'s> {
             to: None,
         }
     }
-
+    /*
     pub fn create_as_short_string(s: ShortString) -> Self {
         Self {
             data: StrOrStringData::AsShortString(s),
@@ -33,6 +33,7 @@ impl<'s> StrOrString<'s> {
             to: None,
         }
     }
+
 
     pub fn create_as_short_string_or_string(s: &str) -> Self {
         let data = if let Some(s) = ShortString::from_str(s) {
@@ -47,6 +48,7 @@ impl<'s> StrOrString<'s> {
             to: None,
         }
     }
+     */
     pub fn slice_it(&mut self, from: Option<usize>, to: Option<usize>) {
         self.from = from;
         self.to = to;
@@ -60,7 +62,6 @@ impl<'s> StrOrString<'s> {
         let result = match &self.data {
             StrOrStringData::AsStr(s) => s,
             StrOrStringData::AsString(s) => s.as_str(),
-            StrOrStringData::AsShortString(s) => s.as_str(),
         };
 
         cut_data(result, self.from, self.to)
@@ -77,7 +78,6 @@ impl<'s> StrOrString<'s> {
                     s
                 }
             }
-            StrOrStringData::AsShortString(s) => s.as_str().to_string(),
         }
     }
 
@@ -92,19 +92,16 @@ impl<'s> StrOrString<'s> {
                 StrOrStringData::AsString(s) => {
                     ShortString::from_str(cut_data(&s, self.from, self.to)).unwrap()
                 }
-                StrOrStringData::AsShortString(s) => {
-                    ShortString::from_str(cut_data(&s, self.from, self.to)).unwrap()
-                }
             }
         } else {
             match self.data {
                 StrOrStringData::AsStr(s) => ShortString::from_str(s).unwrap(),
                 StrOrStringData::AsString(s) => ShortString::from_str(&s).unwrap(),
-                StrOrStringData::AsShortString(s) => s,
             }
         }
     }
 
+    /*
     pub fn from_str_convert_to_lower_case(src: &str) -> Self {
         let data = if let Some(s) = ShortString::from_str_convert_to_lower_case(src) {
             StrOrStringData::AsShortString(s)
@@ -118,6 +115,7 @@ impl<'s> StrOrString<'s> {
             to: None,
         }
     }
+     */
 
     pub fn compare_with_case_insensitive(&self, other: &str) -> bool {
         crate::str_utils::compare_strings_case_insensitive(self.as_str(), other)
@@ -180,7 +178,6 @@ impl<'s> Into<StrOrString<'s>> for SliceOrVec<'s, u8> {
 pub enum StrOrStringData<'s> {
     AsStr(&'s str),
     AsString(String),
-    AsShortString(ShortString),
 }
 
 impl Into<String> for StrOrString<'_> {

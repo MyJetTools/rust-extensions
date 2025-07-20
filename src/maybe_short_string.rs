@@ -59,7 +59,9 @@ impl MaybeShortString {
 
     pub fn into<'s>(self) -> StrOrString<'s> {
         match self {
-            MaybeShortString::AsShortString(value) => StrOrString::create_as_short_string(value),
+            MaybeShortString::AsShortString(value) => {
+                StrOrString::create_as_string(value.to_string())
+            }
             MaybeShortString::AsString(value) => StrOrString::create_as_string(value),
         }
     }
