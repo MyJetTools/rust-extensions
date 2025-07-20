@@ -97,3 +97,23 @@ impl<'s> Into<MaybeShortString> for &'s String {
         MaybeShortString::from_str(self)
     }
 }
+
+impl Into<String> for MaybeShortString {
+    fn into(self) -> String {
+        match self {
+            MaybeShortString::AsShortString(value) => value.to_string(),
+            MaybeShortString::AsString(value) => value,
+        }
+    }
+}
+
+impl TryInto<ShortString> for MaybeShortString {
+    type Error = String;
+
+    fn try_into(self) -> Result<ShortString, Self::Error> {
+        match self {
+            MaybeShortString::AsShortString(value) => Ok(value),
+            MaybeShortString::AsString(value) => Err(value),
+        }
+    }
+}
