@@ -73,3 +73,27 @@ impl MaybeShortString {
         }
     }
 }
+
+impl Into<MaybeShortString> for String {
+    fn into(self) -> MaybeShortString {
+        MaybeShortString::AsString(self)
+    }
+}
+
+impl Into<MaybeShortString> for ShortString {
+    fn into(self) -> MaybeShortString {
+        MaybeShortString::AsShortString(self)
+    }
+}
+
+impl<'s> Into<MaybeShortString> for &'s str {
+    fn into(self) -> MaybeShortString {
+        MaybeShortString::from_str(self)
+    }
+}
+
+impl<'s> Into<MaybeShortString> for &'s String {
+    fn into(self) -> MaybeShortString {
+        MaybeShortString::from_str(self)
+    }
+}
