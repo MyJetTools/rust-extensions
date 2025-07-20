@@ -18,6 +18,26 @@ impl MaybeShortString {
         }
     }
 
+    pub fn from_str_as_lower_case(src: &str) -> Self {
+        let mut result = Self::new();
+
+        for c in src.chars() {
+            result.push(c.to_ascii_lowercase());
+        }
+
+        result
+    }
+
+    pub fn from_str_as_upper_case(src: &str) -> Self {
+        let mut result = Self::new();
+
+        for c in src.chars() {
+            result.push(c.to_ascii_uppercase());
+        }
+
+        result
+    }
+
     pub fn push(&mut self, c: char) {
         match self {
             MaybeShortString::AsShortString(value) => {
