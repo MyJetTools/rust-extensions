@@ -216,7 +216,7 @@ pub enum StrOrStringData<'s> {
 
 impl Into<String> for StrOrString<'_> {
     fn into(self) -> String {
-        self.to_string()
+        self.into_string()
     }
 }
 
