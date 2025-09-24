@@ -169,7 +169,7 @@ impl SshRemoteEndpointOwned {
         Ok(Self { src, inner })
     }
 
-    pub fn to_ref(&self) -> SshRemoteEndpoint {
+    pub fn to_ref<'s>(&'s self) -> SshRemoteEndpoint<'s> {
         SshRemoteEndpoint {
             src: self.src.as_str(),
             inner: self.inner,

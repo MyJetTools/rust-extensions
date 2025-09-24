@@ -204,11 +204,11 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         self.items
     }
 
-    pub fn iter(&self) -> std::slice::Iter<TValue> {
+    pub fn iter<'s>(&'s self) -> std::slice::Iter<'s, TValue> {
         self.items.iter()
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<TValue> {
+    pub fn iter_mut<'s>(&'s mut self) -> std::slice::IterMut<'s, TValue> {
         self.items.iter_mut()
     }
 

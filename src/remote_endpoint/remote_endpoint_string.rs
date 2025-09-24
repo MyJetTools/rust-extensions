@@ -329,7 +329,7 @@ impl RemoteEndpointOwned {
         })
     }
 
-    pub fn to_ref(&self) -> RemoteEndpoint {
+    pub fn to_ref<'s>(&'s self) -> RemoteEndpoint<'s> {
         RemoteEndpoint {
             host_str: self.host_str.as_str(),
             inner: self.inner,
@@ -522,6 +522,4 @@ mod test {
 
         assert!(owned.get_http_path_and_query().is_none());
     }
-
-
 }

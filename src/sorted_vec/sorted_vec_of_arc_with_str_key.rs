@@ -144,11 +144,11 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         self.items.last()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<Arc<TValue>> {
+    pub fn iter<'s>(&'s self) -> std::slice::Iter<'s, Arc<TValue>> {
         self.items.iter()
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<Arc<TValue>> {
+    pub fn iter_mut<'s>(&'s mut self) -> std::slice::IterMut<'s, Arc<TValue>> {
         self.items.iter_mut()
     }
 

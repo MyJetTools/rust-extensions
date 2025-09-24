@@ -156,7 +156,10 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
         }
     }
 
-    pub fn get_by_primary_key(&self, primary_key: &str) -> Option<std::slice::Iter<TValue>> {
+    pub fn get_by_primary_key<'s>(
+        &'s self,
+        primary_key: &str,
+    ) -> Option<std::slice::Iter<'s, TValue>> {
         match self.get_index(primary_key) {
             Ok(partition_index) => {
                 let partition = self.partitions.get(partition_index).unwrap();
@@ -166,10 +169,10 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
         }
     }
 
-    pub fn get_by_primary_key_mut(
-        &mut self,
+    pub fn get_by_primary_key_mut<'s>(
+        &'s mut self,
         primary_key: &str,
-    ) -> Option<std::slice::IterMut<TValue>> {
+    ) -> Option<std::slice::IterMut<'s, TValue>> {
         match self.get_index(primary_key) {
             Ok(partition_index) => {
                 let partition = self.partitions.get_mut(partition_index).unwrap();
