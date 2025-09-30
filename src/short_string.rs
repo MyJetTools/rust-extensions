@@ -258,6 +258,30 @@ impl<'s> Into<ShortString> for &'s str {
     }
 }
 
+impl AsRef<str> for ShortString {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for ShortString {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<ShortString> for &str {
+    fn eq(&self, other: &ShortString) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<&str> for &ShortString {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::ShortString;
@@ -282,7 +306,7 @@ mod test {
 
         my_str.set_len(my_str.len() as u8 - 1);
 
-        assert_eq!(my_str.as_str(), "Hello");
+        assert_eq!(my_str, "Hello");
     }
 
     #[test]
@@ -291,7 +315,7 @@ mod test {
 
         my_str.replace("my", "ou");
 
-        assert_eq!(my_str.as_str(), "Hello ou world ou");
+        assert_eq!(&my_str, "Hello ou world ou");
     }
 
     #[test]
@@ -335,7 +359,7 @@ mod test {
 
         my_str.replace("beautiful", "my");
 
-        assert_eq!(my_str.as_str(), "Hello my world my");
+        assert_eq!(&my_str, "Hello my world my");
     }
 
     #[test]
