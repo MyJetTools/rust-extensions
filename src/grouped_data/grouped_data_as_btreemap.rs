@@ -2,22 +2,24 @@ use std::collections::{BTreeMap, HashMap};
 
 pub fn group_to_btree_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
     src: TIterator,
-    get_key: TGetKey,
+    get_key: impl Fn(&TValue) -> &TKey,
 ) -> BTreeMap<TKey, Vec<TValue>>
 where
     TKey: Ord + Clone,
-    TGetKey: Fn(&TValue) -> TKey,
 {
-    let mut result = BTreeMap::new();
+    let mut result: BTreeMap<TKey, Vec<TValue>> = BTreeMap::new();
 
     for itm in src {
         let key = get_key(&itm);
 
-        if !result.contains_key(&key) {
-            result.insert(key.clone(), Vec::new());
+        match result.get_mut(key) {
+            Some(items) => {
+                items.push(itm);
+            }
+            None => {
+                result.insert(key.clone(), vec![itm]);
+            }
         }
-
-        result.get_mut(&key).unwrap().push(itm);
     }
 
     result
