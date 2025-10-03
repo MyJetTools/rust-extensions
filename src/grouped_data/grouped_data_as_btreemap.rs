@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
-pub fn group_to_btree_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
-    src: TIterator,
+pub fn group_to_btree_map<TKey, TValue>(
+    src: impl Iterator<Item = TValue>,
     get_key: impl Fn(&TValue) -> &TKey,
 ) -> BTreeMap<TKey, Vec<TValue>>
 where

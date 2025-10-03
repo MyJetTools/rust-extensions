@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-pub fn group_to_hash_map<TKey, TValue, TIterator: Iterator<Item = TValue>, TGetKey>(
-    src: TIterator,
+pub fn group_to_hash_map<TKey, TValue>(
+    src: impl Iterator<Item = TValue>,
     get_key: impl Fn(&TValue) -> &TKey,
 ) -> HashMap<TKey, Vec<TValue>>
 where
