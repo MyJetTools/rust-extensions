@@ -83,3 +83,5 @@ pub use uint32_variable_size::*;
 mod queue_to_save;
 #[cfg(feature = "with-tokio")]
 pub use queue_to_save::*;
+mod as_str;
+pub use as_str::*;

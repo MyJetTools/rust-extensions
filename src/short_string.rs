@@ -282,6 +282,12 @@ impl PartialEq<&str> for &ShortString {
     }
 }
 
+impl crate::AsStr for ShortString {
+    fn as_str(&self) -> &str {
+        self.as_str()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::ShortString;
