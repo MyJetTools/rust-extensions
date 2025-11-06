@@ -173,7 +173,7 @@ impl RemoteEndpointInner {
             });
         }
 
-        panic!("Invalid scheme name {}", scheme);
+        return Err(format!("Invalid scheme name {}", scheme));
     }
 
     fn is_unix_socket(&self) -> bool {
