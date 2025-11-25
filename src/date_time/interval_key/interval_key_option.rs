@@ -1,6 +1,16 @@
 use crate::date_time::*;
 
+pub enum IntervalKeyOptionValue {
+    Minute,
+    Min5,
+    Hour,
+    Day,
+    Month,
+    YearKey,
+}
+
 pub trait IntervalKeyOption {
+    const VALUE: IntervalKeyOptionValue;
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String>;
     fn to_value(src: DateTimeAsMicroseconds) -> i64;
 }
@@ -9,6 +19,7 @@ pub trait IntervalKeyOption {
 pub struct YearKey;
 
 impl IntervalKeyOption for YearKey {
+    const VALUE: IntervalKeyOptionValue = IntervalKeyOptionValue::YearKey;
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let date_time_struct = DateTimeStruct {
             year: value as i32,
@@ -42,6 +53,7 @@ impl IntervalKeyOption for YearKey {
 pub struct MonthKey;
 
 impl IntervalKeyOption for MonthKey {
+    const VALUE: IntervalKeyOptionValue = IntervalKeyOptionValue::Month;
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let year = value / 100;
         let month = value % 100;
@@ -78,6 +90,7 @@ impl IntervalKeyOption for MonthKey {
 pub struct DayKey;
 
 impl IntervalKeyOption for DayKey {
+    const VALUE: IntervalKeyOptionValue = IntervalKeyOptionValue::Day;
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let year = value / 10000;
         let month = (value % 10000) / 100;
@@ -117,6 +130,8 @@ impl IntervalKeyOption for DayKey {
 pub struct HourKey;
 
 impl IntervalKeyOption for HourKey {
+    const VALUE: IntervalKeyOptionValue = IntervalKeyOptionValue::Hour;
+
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let year = value / 1000000;
         let month = (value % 1000000) / 10000;
@@ -158,6 +173,7 @@ impl IntervalKeyOption for HourKey {
 pub struct MinuteKey;
 
 impl IntervalKeyOption for MinuteKey {
+    const VALUE: IntervalKeyOptionValue = IntervalKeyOptionValue::Minute;
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let year = value / 100000000;
         let month = (value % 100000000) / 1000000;
@@ -201,6 +217,7 @@ impl IntervalKeyOption for MinuteKey {
 pub struct Minute5Key;
 
 impl IntervalKeyOption for Minute5Key {
+    const VALUE: IntervalKeyOptionValue = IntervalKeyOptionValue::Min5;
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let year = value / 100000000;
         let month = (value % 100000000) / 1000000;
