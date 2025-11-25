@@ -1,6 +1,7 @@
 use crate::date_time::DateTimeAsMicroseconds;
 
-pub enum IntervalKeyValue {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DateTimeInterval {
     Minute(i64),
     Min5(i64),
     Hour(i64),
@@ -9,7 +10,16 @@ pub enum IntervalKeyValue {
     Year(i64),
 }
 
-impl IntervalKeyValue {
+impl std::fmt::Debug for DateTimeInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = self.to_i64();
+        f.debug_struct("IntervalKeyValue")
+            .field("value", &value)
+            .finish()
+    }
+}
+
+impl DateTimeInterval {
     pub fn from_dt_to_minute(dt: DateTimeAsMicroseconds) -> Self {
         let value = super::utils::minute::to_value(dt);
         Self::Minute(value)

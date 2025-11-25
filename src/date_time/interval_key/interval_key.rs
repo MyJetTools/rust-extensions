@@ -43,8 +43,8 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
         &self.value
     }
 
-    pub fn to_interval_value(&self) -> IntervalKeyValue {
-        TOption::to_interval_value(self.value)
+    pub fn to_dt_interval(&self) -> DateTimeInterval {
+        TOption::to_dt_interval(self.value)
     }
 
     pub fn add(&self, duration: Duration) -> Self {

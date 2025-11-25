@@ -3,7 +3,7 @@ use crate::date_time::*;
 pub trait IntervalKeyOption {
     fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String>;
     fn to_value(src: DateTimeAsMicroseconds) -> i64;
-    fn to_interval_value(value: i64) -> IntervalKeyValue;
+    fn to_dt_interval(value: i64) -> DateTimeInterval;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -18,8 +18,8 @@ impl IntervalKeyOption for YearKey {
         super::utils::year::to_value(src)
     }
 
-    fn to_interval_value(value: i64) -> IntervalKeyValue {
-        IntervalKeyValue::Year(value)
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Year(value)
     }
 }
 
@@ -35,8 +35,8 @@ impl IntervalKeyOption for MonthKey {
         super::utils::month::to_value(src)
     }
 
-    fn to_interval_value(value: i64) -> IntervalKeyValue {
-        IntervalKeyValue::Month(value)
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Month(value)
     }
 }
 
@@ -52,8 +52,8 @@ impl IntervalKeyOption for DayKey {
         super::utils::day::to_value(src)
     }
 
-    fn to_interval_value(value: i64) -> IntervalKeyValue {
-        IntervalKeyValue::Day(value)
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Day(value)
     }
 }
 
@@ -69,8 +69,8 @@ impl IntervalKeyOption for HourKey {
         super::utils::hour::to_value(src)
     }
 
-    fn to_interval_value(value: i64) -> IntervalKeyValue {
-        IntervalKeyValue::Hour(value)
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Hour(value)
     }
 }
 
@@ -86,8 +86,8 @@ impl IntervalKeyOption for MinuteKey {
         super::utils::minute::to_value(src)
     }
 
-    fn to_interval_value(value: i64) -> IntervalKeyValue {
-        IntervalKeyValue::Minute(value)
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Minute(value)
     }
 }
 
@@ -103,7 +103,7 @@ impl IntervalKeyOption for Minute5Key {
         super::utils::min5::to_value(src)
     }
 
-    fn to_interval_value(value: i64) -> IntervalKeyValue {
-        IntervalKeyValue::Min5(value)
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Min5(value)
     }
 }
