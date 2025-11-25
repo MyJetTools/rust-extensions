@@ -45,6 +45,11 @@ This crate provides various utility modules including:
   - [Key Characteristics](#key-characteristics)
   - [Creating DateTimeAsMicroseconds](#creating-datetimeasmicroseconds)
   - [Common Operations](#common-operations)
+    - [Arithmetic Operations](#arithmetic-operations)
+    - [Comparisons](#comparisons)
+    - [Duration Calculations](#duration-calculations)
+    - [Formatting](#formatting)
+    - [Parsing Examples](#parsing-examples)
   - [Why Use DateTimeAsMicroseconds?](#why-use-datetimeasmicroseconds)
   - [Interval Key Module](#interval-key-module)
     - [Overview](#overview)
@@ -61,7 +66,179 @@ This crate provides various utility modules including:
 
 `DateTimeAsMicroseconds` is a lightweight, efficient representation of a point in time. It's a **single-field structure** that stores a Unix timestamp in **UTC+0** (Coordinated Universal Time) as microseconds since the Unix epoch (January 1, 1970, 00:00:00 UTC).
 
-## Overview
+## Design
+
+`DateTimeAsMicroseconds` is a **single-field structure** that stores a Unix timestamp in **UTC+0** (Coordinated Universal Time) as microseconds since the Unix epoch (January 1, 1970, 00:00:00 UTC).
+
+```rust
+pub struct DateTimeAsMicroseconds {
+    pub unix_microseconds: i64,
+}
+```
+
+## Key Characteristics
+
+- **Lightweight**: Contains only a single `i64` field (8 bytes)
+- **Copyable**: Implements `Copy` and `Clone` traits, making it cheap to pass around
+- **UTC+0**: Always represents time in UTC, eliminating timezone confusion
+- **Microsecond Precision**: Stores time with microsecond precision
+- **Serializable**: Supports `Serialize` and `Deserialize` via serde (with transparent serialization)
+
+## Creating DateTimeAsMicroseconds
+
+```rust
+use rust_extensions::date_time::*;
+
+// From a string (various formats supported)
+let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05").unwrap(); // Date only
+let dt3 = DateTimeAsMicroseconds::parse_iso_string("2021-03-05T01:12:32.000Z").unwrap();
+
+// From Unix timestamp (automatically detects seconds, milliseconds, or microseconds)
+let dt4: DateTimeAsMicroseconds = 1679059876i64.into();        // seconds
+let dt5: DateTimeAsMicroseconds = 1679059876123i64.into();     // milliseconds
+let dt6: DateTimeAsMicroseconds = 1679059876123456i64.into();  // microseconds
+
+// Direct creation
+let dt7 = DateTimeAsMicroseconds::new(1679059876123456i64);
+
+// Current time
+let now = DateTimeAsMicroseconds::now();
+
+// From components
+let dt8 = DateTimeAsMicroseconds::create(2021, 3, 5, 1, 12, 32, 0);
+```
+
+## Common Operations
+
+### Arithmetic Operations
+
+```rust
+use std::time::Duration;
+
+let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+
+// Add/subtract durations (non-mutating)
+let later = dt.add(Duration::from_secs(3600));  // Add 1 hour
+let earlier = dt.sub(Duration::from_secs(3600)); // Subtract 1 hour
+
+// Add time units (mutating)
+let mut dt = dt;
+dt.add_seconds(60);
+dt.add_minutes(5);
+dt.add_hours(2);
+dt.add_days(1);
+```
+
+### Comparisons
+
+```rust
+let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05T02:12:32.000000Z").unwrap();
+
+if dt2.is_later_than(dt1) {
+    // dt2 is after dt1
+}
+
+if dt1.is_earlier_than(dt2) {
+    // dt1 is before dt2
+}
+
+// Direct comparison operators also work
+assert!(dt1 < dt2);
+assert!(dt2 > dt1);
+```
+
+### Duration Calculations
+
+```rust
+let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05T01:15:32.000000Z").unwrap();
+
+// Calculate duration between two times
+let duration = dt2.duration_since(dt1);
+let seconds_diff = dt2.seconds_before(dt1); // Returns 180 (3 minutes)
+```
+
+### Formatting
+
+```rust
+let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+
+// RFC 3339 format (ISO 8601)
+let rfc3339 = dt.to_rfc3339();        // "2021-03-05T01:12:32.000000Z"
+
+// RFC 2822 format (Email/HTTP dates)
+let rfc2822 = dt.to_rfc2822();        // "Fri, 5 Mar 2021 01:12:32 +0000"
+
+// RFC 5322 format
+let rfc5322 = dt.to_rfc5322();
+
+// RFC 7231 format (HTTP dates)
+let rfc7231 = dt.to_rfc7231();
+
+// Compact format
+let compact = dt.to_compact_date_time_string();
+
+// Convert to chrono DateTime<Utc> for additional operations
+let chrono_dt = dt.to_chrono_utc();
+```
+
+### Parsing Examples
+
+```rust
+use rust_extensions::date_time::*;
+
+// Parse from various string formats
+let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05").unwrap();
+let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05T12:34").unwrap();
+let dt3 = DateTimeAsMicroseconds::from_str("2021-03-05T12:34:56").unwrap();
+let dt4 = DateTimeAsMicroseconds::from_str("2021-03-05T12:34:56.123456Z").unwrap();
+
+// Parse ISO 8601 / RFC 3339 strings
+let dt5 = DateTimeAsMicroseconds::parse_iso_string("2021-03-05T12:34:56.123Z").unwrap();
+
+// Parse from Unix timestamp (auto-detects format)
+let dt6: DateTimeAsMicroseconds = 1614950400i64.into();           // seconds
+let dt7: DateTimeAsMicroseconds = 1614950400123i64.into();        // milliseconds
+let dt8: DateTimeAsMicroseconds = 1614950400123456i64.into();     // microseconds
+```
+
+## Why Use DateTimeAsMicroseconds?
+
+1. **Performance**: Single-field structure means minimal memory overhead and fast comparisons
+2. **Simplicity**: No timezone handling complexity - everything is in UTC
+3. **Precision**: Microsecond precision is sufficient for most use cases
+4. **Interoperability**: Easy conversion to/from Unix timestamps
+5. **Type Safety**: Distinct type prevents mixing with raw integers
+6. **Copy Semantics**: `Copy` trait means no heap allocation or reference management needed
+
+## Interval Key Module
+
+The `interval_key` module extends `DateTimeAsMicroseconds` by providing functionality to "cut" or round down datetime values to specific time intervals. This is useful for grouping time-series data, creating time-based keys for databases, or aggregating data by time periods.
+
+`DateTimeAsMicroseconds` is the primary input type for creating interval keys:
+
+```rust
+use rust_extensions::date_time::*;
+use rust_extensions::date_time::interval_key::*;
+
+let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+
+// All interval key types can be created from DateTimeAsMicroseconds
+let hour_key: IntervalKey<HourKey> = dt.into();
+let day_key: IntervalKey<DayKey> = dt.into();
+```
+
+And interval keys can be converted back to `DateTimeAsMicroseconds`:
+
+```rust
+let hour_key: IntervalKey<HourKey> = dt.into();
+let dt_result: DateTimeAsMicroseconds = hour_key.try_into().unwrap();
+// Result represents the start of that hour interval: "2021-03-05T01:00:00"
+```
+
+### Overview
 
 The module offers two main approaches for working with time intervals:
 
@@ -69,9 +246,9 @@ The module offers two main approaches for working with time intervals:
 
 2. **`DateTimeInterval`** - A runtime enum that stores both the interval type and value, allowing for dynamic interval selection.
 
-## Core Concepts
+### Core Concepts
 
-### Interval Types
+#### Interval Types
 
 The module supports the following interval types:
 
@@ -82,7 +259,7 @@ The module supports the following interval types:
 - **Minute** - Rounds down to the start of the minute (format: `YYYYMMDDHHMM`, e.g., `202103050112`)
 - **Minute5** - Rounds down to the nearest 5-minute interval (format: `YYYYMMDDHHMM`, e.g., `202103050110`)
 
-### Key Format
+#### Key Format
 
 Each interval type uses a compact integer representation:
 - All values are stored as `i64`
@@ -95,9 +272,9 @@ Each interval type uses a compact integer representation:
   - Minute: `202103050112`
   - Minute5: `202103050110` (rounded to 5-minute boundary)
 
-## Usage
+### Usage
 
-### Using `IntervalKey<TOption>` (Compile-Time Type Safety)
+#### Using `IntervalKey<TOption>` (Compile-Time Type Safety)
 
 `IntervalKey` uses Rust generics to ensure type safety at compile time. The interval type is encoded in the type system, preventing mixing different interval types.
 
@@ -129,7 +306,7 @@ let dt_result: DateTimeAsMicroseconds = year_key.try_into().unwrap();
 // Result: "2021-01-01T00:00:00"
 ```
 
-### Using `DateTimeInterval` (Runtime Flexibility)
+#### Using `DateTimeInterval` (Runtime Flexibility)
 
 `DateTimeInterval` stores the interval type as a value, allowing for dynamic interval selection at runtime.
 
@@ -153,11 +330,13 @@ let value = interval.to_i64();
 let dt_result = interval.to_date_time().unwrap();
 ```
 
-### Converting Between Interval Types
+#### Converting Between Interval Types
 
 You can convert between compatible interval types:
 
 ```rust
+let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
+
 // Convert from DateTime to MinuteKey
 let minute_key: IntervalKey<MinuteKey> = dt.into();
 
@@ -168,13 +347,14 @@ let minute5_key: IntervalKey<Minute5Key> = minute_key.try_into().unwrap();
 let minute_key_again: IntervalKey<MinuteKey> = minute5_key.try_into().unwrap();
 ```
 
-### Arithmetic Operations
+#### Arithmetic Operations
 
 You can add or subtract durations from interval keys:
 
 ```rust
 use std::time::Duration;
 
+let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
 let hour_key: IntervalKey<HourKey> = dt.into();
 
 // Add 2 hours
@@ -184,19 +364,20 @@ let next_hour = hour_key.add(Duration::from_secs(2 * 3600));
 let prev_hour = hour_key.sub(Duration::from_secs(3600));
 ```
 
-### Converting to `DateTimeInterval`
+#### Converting to `DateTimeInterval`
 
 You can convert a compile-time `IntervalKey` to a runtime `DateTimeInterval`:
 
 ```rust
+let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
 let hour_key: IntervalKey<HourKey> = dt.into();
 let interval = hour_key.to_dt_interval();
 // interval is DateTimeInterval::Hour(value)
 ```
 
-## Available Types
+### Available Types
 
-### Interval Key Types (Compile-Time)
+#### Interval Key Types (Compile-Time)
 
 - `IntervalKey<YearKey>` - Year-level intervals
 - `IntervalKey<MonthKey>` - Month-level intervals
@@ -205,7 +386,7 @@ let interval = hour_key.to_dt_interval();
 - `IntervalKey<MinuteKey>` - Minute-level intervals
 - `IntervalKey<Minute5Key>` - 5-minute intervals
 
-### DateTimeInterval Variants (Runtime)
+#### DateTimeInterval Variants (Runtime)
 
 - `DateTimeInterval::Year(i64)`
 - `DateTimeInterval::Month(i64)`
@@ -214,23 +395,23 @@ let interval = hour_key.to_dt_interval();
 - `DateTimeInterval::Minute(i64)`
 - `DateTimeInterval::Min5(i64)`
 
-## When to Use Which?
+### When to Use Which?
 
-### Use `IntervalKey<TOption>` when:
+#### Use `IntervalKey<TOption>` when:
 - The interval type is known at compile time
 - You want type safety to prevent mixing different interval types
 - You want zero-cost abstractions (no runtime overhead for type checking)
 - You're working with collections of the same interval type
 
-### Use `DateTimeInterval` when:
+#### Use `DateTimeInterval` when:
 - The interval type needs to be determined at runtime
 - You need to store different interval types in the same collection
 - You're working with dynamic or user-configurable interval types
 - You need to serialize/deserialize interval information
 
-## Examples
+### Examples
 
-### Grouping Data by Time Intervals
+#### Grouping Data by Time Intervals
 
 ```rust
 use std::collections::HashMap;
@@ -246,7 +427,7 @@ for event in events {
 }
 ```
 
-### Dynamic Interval Selection
+#### Dynamic Interval Selection
 
 ```rust
 fn aggregate_by_interval(
@@ -262,135 +443,12 @@ fn aggregate_by_interval(
 }
 ```
 
-### Design
-
-`DateTimeAsMicroseconds` is a **single-field structure** that stores a Unix timestamp in **UTC+0** (Coordinated Universal Time) as microseconds since the Unix epoch (January 1, 1970, 00:00:00 UTC).
-
-```rust
-pub struct DateTimeAsMicroseconds {
-    pub unix_microseconds: i64,
-}
-```
-
-### Key Characteristics
-
-- **Lightweight**: Contains only a single `i64` field (8 bytes)
-- **Copyable**: Implements `Copy` and `Clone` traits, making it cheap to pass around
-- **UTC+0**: Always represents time in UTC, eliminating timezone confusion
-- **Microsecond Precision**: Stores time with microsecond precision
-- **Serializable**: Supports `Serialize` and `Deserialize` via serde (with transparent serialization)
-
-### Creating DateTimeAsMicroseconds
-
-```rust
-use rust_extensions::date_time::*;
-
-// From a string (various formats supported)
-let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05").unwrap(); // Date only
-let dt3 = DateTimeAsMicroseconds::parse_iso_string("2021-03-05T01:12:32.000Z").unwrap();
-
-// From Unix timestamp (automatically detects seconds, milliseconds, or microseconds)
-let dt4: DateTimeAsMicroseconds = 1679059876i64.into();        // seconds
-let dt5: DateTimeAsMicroseconds = 1679059876123i64.into();     // milliseconds
-let dt6: DateTimeAsMicroseconds = 1679059876123456i64.into();  // microseconds
-
-// Direct creation
-let dt7 = DateTimeAsMicroseconds::new(1679059876123456i64);
-
-// Current time
-let now = DateTimeAsMicroseconds::now();
-
-// From components
-let dt8 = DateTimeAsMicroseconds::create(2021, 3, 5, 1, 12, 32, 0);
-```
-
-### Common Operations
-
-```rust
-use std::time::Duration;
-
-// Arithmetic operations
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// Add/subtract durations
-let later = dt.add(Duration::from_secs(3600));  // Add 1 hour
-let earlier = dt.sub(Duration::from_secs(3600)); // Subtract 1 hour
-
-// Add time units (mutating)
-let mut dt = dt;
-dt.add_seconds(60);
-dt.add_minutes(5);
-dt.add_hours(2);
-dt.add_days(1);
-
-// Comparisons
-if dt1.is_later_than(dt2) {
-    // dt1 is after dt2
-}
-
-if dt1.is_earlier_than(dt2) {
-    // dt1 is before dt2
-}
-
-// Calculate duration between two times
-let duration = dt1.duration_since(dt2);
-let seconds_diff = dt1.seconds_before(dt2);
-
-// Formatting
-let rfc3339 = dt.to_rfc3339();        // "2021-03-05T01:12:32.000000Z"
-let rfc2822 = dt.to_rfc2822();        // RFC 2822 format
-let rfc5322 = dt.to_rfc5322();        // RFC 5322 format
-let rfc7231 = dt.to_rfc7231();        // RFC 7231 format
-let compact = dt.to_compact_date_time_string();
-
-// Convert to chrono DateTime<Utc>
-let chrono_dt = dt.to_chrono_utc();
-```
-
-### Why Use DateTimeAsMicroseconds?
-
-1. **Performance**: Single-field structure means minimal memory overhead and fast comparisons
-2. **Simplicity**: No timezone handling complexity - everything is in UTC
-3. **Precision**: Microsecond precision is sufficient for most use cases
-4. **Interoperability**: Easy conversion to/from Unix timestamps
-5. **Type Safety**: Distinct type prevents mixing with raw integers
-6. **Copy Semantics**: `Copy` trait means no heap allocation or reference management needed
-
-### Integration with Interval Keys
-
-`DateTimeAsMicroseconds` is the primary input type for creating interval keys:
-
-```rust
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// All interval key types can be created from DateTimeAsMicroseconds
-let hour_key: IntervalKey<HourKey> = dt.into();
-let day_key: IntervalKey<DayKey> = dt.into();
-// ... etc
-```
-
-And interval keys can be converted back to `DateTimeAsMicroseconds`:
-
-```rust
-let hour_key: IntervalKey<HourKey> = dt.into();
-let dt_result: DateTimeAsMicroseconds = hour_key.try_into().unwrap();
-// Result represents the start of that hour interval
-```
-
-## Implementation Details
+### Implementation Details
 
 - All interval keys are stored as `i64` values for efficient storage and comparison
 - The module uses a phantom type pattern to ensure type safety without runtime overhead
 - Conversion between `DateTimeAsMicroseconds` and interval keys is done through utility functions in the `utils` module
 - The `IntervalKeyOption` trait defines the behavior for each interval type
-
-## See Also
-
-- `DateTimeAsMicroseconds` - The base datetime type used by this module (see detailed section above)
-- `DateTimeStruct` - Used internally for date/time calculations and conversions
-
----
 
 ## License
 
