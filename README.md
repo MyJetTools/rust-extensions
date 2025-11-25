@@ -40,18 +40,26 @@ This crate provides various utility modules including:
 
 ## Table of Contents
 
-- [Interval Key Module](#interval-key-module)
-  - [Overview](#overview)
-  - [Core Concepts](#core-concepts)
-  - [Usage](#usage)
-  - [DateTimeAsMicroseconds](#datetimeasmicroseconds)
-  - [Implementation Details](#implementation-details)
+- [DateTimeAsMicroseconds](#datetimeasmicroseconds)
+  - [Design](#design)
+  - [Key Characteristics](#key-characteristics)
+  - [Creating DateTimeAsMicroseconds](#creating-datetimeasmicroseconds)
+  - [Common Operations](#common-operations)
+  - [Why Use DateTimeAsMicroseconds?](#why-use-datetimeasmicroseconds)
+  - [Interval Key Module](#interval-key-module)
+    - [Overview](#overview)
+    - [Core Concepts](#core-concepts)
+    - [Usage](#usage)
+    - [Available Types](#available-types)
+    - [When to Use Which?](#when-to-use-which)
+    - [Examples](#examples)
+    - [Implementation Details](#implementation-details)
 
 ---
 
-# Interval Key Module
+# DateTimeAsMicroseconds
 
-The `interval_key` module provides functionality to "cut" or round down `DateTime` values to specific time intervals. This is useful for grouping time-series data, creating time-based keys for databases, or aggregating data by time periods.
+`DateTimeAsMicroseconds` is a lightweight, efficient representation of a point in time. It's a **single-field structure** that stores a Unix timestamp in **UTC+0** (Coordinated Universal Time) as microseconds since the Unix epoch (January 1, 1970, 00:00:00 UTC).
 
 ## Overview
 
@@ -253,10 +261,6 @@ fn aggregate_by_interval(
     }
 }
 ```
-
-## DateTimeAsMicroseconds
-
-`DateTimeAsMicroseconds` is the base datetime type used throughout the `interval_key` module. It's a lightweight, efficient representation of a point in time.
 
 ### Design
 
