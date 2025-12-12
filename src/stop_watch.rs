@@ -1,20 +1,20 @@
 use std::time::{Duration, SystemTime};
 
+use crate::date_time::DateTimeAsMicroseconds;
+
 use super::duration_utils::duration_to_string;
 
-pub struct StopWatch {
-    start_time: SystemTime,
-}
+pub struct StopWatch(SystemTime);
 
 //Bug - negative duration;
 impl StopWatch {
     pub fn new() -> Self {
         let now = SystemTime::now();
-        Self { start_time: now }
+        Self(now)
     }
 
     pub fn reset(&mut self) {
-        self.start_time = SystemTime::now();
+        Self(SystemTime::now());
     }
 
     #[deprecated(note = "No need to use this function")]
@@ -25,12 +25,16 @@ impl StopWatch {
 
     pub fn duration(&self) -> Duration {
         let now = SystemTime::now();
-        now.duration_since(self.start_time).unwrap()
+        now.duration_since(self.0).unwrap()
     }
 
     pub fn duration_as_string(&self) -> String {
         let duration = self.duration();
         duration_to_string(duration)
+    }
+
+    pub fn get_start_time(&self) -> DateTimeAsMicroseconds {
+        self.0.into()
     }
 }
 

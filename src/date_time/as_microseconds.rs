@@ -50,12 +50,7 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn now() -> Self {
-        let unix_microseconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as i64;
-
-        Self { unix_microseconds }
+        SystemTime::now().into()
     }
 
     pub fn from_str(src: &str) -> Option<Self> {
@@ -175,6 +170,13 @@ impl DateTimeAsMicroseconds {
         let mut result = client_input_time.clone();
         result.add_minutes(-difference.difference_in_half_hours() * 30);
         result
+    }
+}
+
+impl Into<DateTimeAsMicroseconds> for SystemTime {
+    fn into(self) -> DateTimeAsMicroseconds {
+        let unix_microseconds = self.duration_since(UNIX_EPOCH).unwrap().as_micros() as i64;
+        DateTimeAsMicroseconds { unix_microseconds }
     }
 }
 
