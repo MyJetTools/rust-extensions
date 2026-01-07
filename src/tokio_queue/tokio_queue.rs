@@ -26,22 +26,22 @@ impl tokio::io::AsyncRead for TokioQueue {
     ) -> std::task::Poll<std::io::Result<()>> {
         let mut queue_access = self.inner.queue.lock().unwrap();
 
-        // Check if there's data available
-        if queue_access.len() == 0 {
-            // No data, register waker and return Pending
-
+        if queue_access.is_empty() {
+            // Register the waker while holding the lock to avoid races,
+            // then re-check and drop the lock before returning Pending.
             self.inner.waker.register(cx.waker());
 
-            return Poll::Pending;
+            if queue_access.is_empty() {
+                drop(queue_access);
+                return Poll::Pending;
+            }
         }
 
-        // Read available data into the buffer
+        let available = queue_access.len();
+        let to_copy = available.min(buf.remaining());
 
-        if buf.remaining() >= queue_access.len() {
-            buf.put_slice(queue_access.drain(..).as_slice());
-        } else {
-            buf.put_slice(queue_access.drain(..buf.remaining()).as_slice());
-        }
+        buf.put_slice(&queue_access[..to_copy]);
+        queue_access.drain(..to_copy);
 
         Poll::Ready(Ok(()))
     }

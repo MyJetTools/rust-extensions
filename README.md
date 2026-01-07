@@ -1,464 +1,160 @@
-# rust-extensions
+rust-extensions
+==============
 
-A collection of useful Rust extensions and utilities for common programming tasks, including date/time handling, data structures, async utilities, and more.
+Utility crate of composable building blocks for time handling, strings, binary helpers, collection ergonomics, and small async/Tokio primitives.
 
-## Installation
-
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-rust-extensions = {git="https://github.com/rust-extensions/rust-extensions", tag="0.1.5"}
-```
-
-### Optional Features
-
-- `with-tokio` - Enables async utilities and tokio-based features
-- `base64` - Base64 encoding/decoding support
-- `hex` - Hexadecimal encoding/decoding support
-- `objects-pool` - Object pooling utilities
-- `vec-maybe-stack` - Stack-allocated vector buffers
-
-Example with features:
+## Install
 
 ```toml
 [dependencies]
-rust-extensions = { version = "0.1.5", features = ["with-tokio", "base64"] }
+rust-extensions = { tag = "${last_tag}", git = "https://github.com/MyJetTools/rust-extensions.git" }
 ```
 
-## Overview
+### Feature flags
 
-This crate provides various utility modules including:
+- `with-tokio` — Tokio-backed helpers: timers, queues, events loop, task completions, application state tracking, sortable IDs.
+- `base64` — Enable base64 encode/decode utilities.
+- `hex` — Enable hex helpers.
+- `objects-pool` — Object pooling.
+- `vec-maybe-stack` — Stack-or-heap small-buffer optimization helpers.
 
-- **Date/Time** - Comprehensive date and time handling with `DateTimeAsMicroseconds` and interval keys
-- **Data Structures** - Sorted vectors, lazy collections, grouped data, and more
-- **Async Utilities** - Event loops, task completion, tokio queues (requires `with-tokio` feature)
-- **String Utilities** - String builders, short strings, and string manipulation
-- **Iterators** - Array of bytes iterators, file iterators, and more
-- **Binary Utilities** - Binary payload builders, hex encoding, base64 encoding
-- **And more...**
+Example:
 
-## Table of Contents
-
-- [DateTimeAsMicroseconds](#datetimeasmicroseconds)
-  - [Design](#design)
-  - [Key Characteristics](#key-characteristics)
-  - [Creating DateTimeAsMicroseconds](#creating-datetimeasmicroseconds)
-  - [Common Operations](#common-operations)
-    - [Arithmetic Operations](#arithmetic-operations)
-    - [Comparisons](#comparisons)
-    - [Duration Calculations](#duration-calculations)
-    - [Formatting](#formatting)
-    - [Parsing Examples](#parsing-examples)
-  - [Why Use DateTimeAsMicroseconds?](#why-use-datetimeasmicroseconds)
-  - [Interval Key Module](#interval-key-module)
-    - [Overview](#overview)
-    - [Core Concepts](#core-concepts)
-    - [Usage](#usage)
-    - [Available Types](#available-types)
-    - [When to Use Which?](#when-to-use-which)
-    - [Examples](#examples)
-    - [Implementation Details](#implementation-details)
-
----
-
-# DateTimeAsMicroseconds
-
-`DateTimeAsMicroseconds` is a lightweight, efficient representation of a point in time. It's a **single-field structure** that stores a Unix timestamp in **UTC+0** (Coordinated Universal Time) as microseconds since the Unix epoch (January 1, 1970, 00:00:00 UTC).
-
-## Design
-
-`DateTimeAsMicroseconds` is a **single-field structure** that stores a Unix timestamp in **UTC+0** (Coordinated Universal Time) as microseconds since the Unix epoch (January 1, 1970, 00:00:00 UTC).
-
-```rust
-pub struct DateTimeAsMicroseconds {
-    pub unix_microseconds: i64,
-}
+```toml
+rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"] }
 ```
 
-## Key Characteristics
+## Module map (what you get)
 
-- **Lightweight**: Contains only a single `i64` field (8 bytes)
-- **Copyable**: Implements `Copy` and `Clone` traits, making it cheap to pass around
-- **UTC+0**: Always represents time in UTC, eliminating timezone confusion
-- **Microsecond Precision**: Stores time with microsecond precision
-- **Serializable**: Supports `Serialize` and `Deserialize` via serde (with transparent serialization)
+- Time: `date_time`, `duration_utils`, `stop_watch`, `atomic_stop_watch`, `atomic_duration`.
+- String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
+- Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
+- Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
+- Async/Tokio (feature `with-tokio`): `events_loop`, `my_timer`, `task_completion`, `tokio_queue`, `queue_to_save`, `application_states`, `sortable_id`.
+- IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
 
-## Creating DateTimeAsMicroseconds
+## Quick recipes
+
+- Time point + interval keys:
+  - `date_time::DateTimeAsMicroseconds` for UTC timestamps with µs precision.
+  - `date_time::interval_key::*` for rounding/grouping into year/month/day/hour/minute/minute5 buckets.
+- High-performance strings:
+  - `ShortString` (Pascal-style, single-byte length, max 255 bytes on stack) with `Display`, `Serialize`, `Eq`, hashing.
+- `MaybeShortString` keeps data inline as `ShortString` when length ≤ 255 bytes; seamlessly upgrades to `String` when longer.
+  - `StringBuilder` for incremental push/format operations.
+- Binary payloads:
+  - `BinaryPayloadBuilder` to append scalars, slices, and length-prefixed data into a single `Vec<u8>`.
+  - `Uint32VariableSize` for compact integer encoding/decoding.
+- Collections:
+  - `SortedVec` / `SortedVecOf2Keys` maintain order on insert and support efficient lookups.
+  - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
+  - `SliceOrVec` toggles between borrowed and owned buffers.
+- Async/Tokio (enable `with-tokio`):
+  - `MyTimer` for tick-driven tasks, `EventsLoop` for fan-out processing, `TaskCompletion` for awaiting completion handles, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+- File/IO:
+  - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
+
+## Time utilities in detail
+
+`DateTimeAsMicroseconds` is a single-field UTC timestamp (`unix_microseconds: i64`) with serde support and helpers to add/subtract durations, compare, format (RFC 3339/2822/5322/7231, compact), and convert to `chrono::DateTime<Utc>`.
+
+Interval keys let you cut timestamps to buckets:
+- Compile-time typed: `IntervalKey<YearKey | MonthKey | DayKey | HourKey | MinuteKey | Minute5Key>`.
+- Runtime enum: `DateTimeInterval::{Year, Month, Day, Hour, Minute, Min5}`.
+- Conversions are zero-cost wrappers over `i64` values; you can go from `DateTimeAsMicroseconds` to an interval key and back.
+
+Minimal example:
 
 ```rust
 use rust_extensions::date_time::*;
+use rust_extensions::date_time::interval_key::*;
+use std::time::Duration;
 
-// From a string (various formats supported)
-let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05").unwrap(); // Date only
-let dt3 = DateTimeAsMicroseconds::parse_iso_string("2021-03-05T01:12:32.000Z").unwrap();
-
-// From Unix timestamp (automatically detects seconds, milliseconds, or microseconds)
-let dt4: DateTimeAsMicroseconds = 1679059876i64.into();        // seconds
-let dt5: DateTimeAsMicroseconds = 1679059876123i64.into();     // milliseconds
-let dt6: DateTimeAsMicroseconds = 1679059876123456i64.into();  // microseconds
-
-// Direct creation
-let dt7 = DateTimeAsMicroseconds::new(1679059876123456i64);
-
-// Current time
 let now = DateTimeAsMicroseconds::now();
-
-// From components
-let dt8 = DateTimeAsMicroseconds::create(2021, 3, 5, 1, 12, 32, 0);
+let minute_key: IntervalKey<MinuteKey> = now.into();
+let next_minute = minute_key.add(Duration::from_secs(60));
+assert!(next_minute.to_i64() >= minute_key.to_i64());
 ```
 
-## Common Operations
+## Strings in detail
 
-### Arithmetic Operations
+- `ShortString`: Pascal-style layout (length stored in the first byte) backed by `[u8; 256]`, so the maximum encoded length is 255 bytes. Supports UTF-8 chars, checked `try_push`/`try_push_str` and panicking `push`/`push_str`, serde, comparison, and case-insensitive helpers. Ideal for small IDs, headers, and keys without heap allocations.
+- `MaybeShortString`: stores as `ShortString` while length ≤ 255 bytes; automatically promotes to `String` once it would overflow, so you can push without manual branching.
+- `StrOrString` / `SliceOrVec` for zero-copy borrow-or-own patterns.
+- `StringBuilder`: push bytes/strings/char, drain to `String` without realloc churn.
+
+Example:
 
 ```rust
-use std::time::Duration;
+use rust_extensions::ShortString;
 
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// Add/subtract durations (non-mutating)
-let later = dt.add(Duration::from_secs(3600));  // Add 1 hour
-let earlier = dt.sub(Duration::from_secs(3600)); // Subtract 1 hour
-
-// Add time units (mutating)
-let mut dt = dt;
-dt.add_seconds(60);
-dt.add_minutes(5);
-dt.add_hours(2);
-dt.add_days(1);
+let mut s = ShortString::from_str("hi").unwrap();
+assert!(s.try_push('-'));
+s.push_str("there");
+assert_eq!(s.as_str(), "hi-there");
 ```
 
-### Comparisons
+## Binary helpers
+
+- `BinaryPayloadBuilder`: append primitives (`u8`, `u16`, `u32`, `u64`, slices) and length-prefixed blobs; get the final `Vec<u8>` or borrowed slice.
+- `Uint32VariableSize`: encode variable-length `u32` values for compact wire/storage formats.
+- Optional: `base64` and `hex` modules expose encode/decode helpers compatible with the rest of the crate.
+
+Example:
 
 ```rust
-let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05T02:12:32.000000Z").unwrap();
+use rust_extensions::binary_payload_builder::BinaryPayloadBuilder;
 
-if dt2.is_later_than(dt1) {
-    // dt2 is after dt1
-}
-
-if dt1.is_earlier_than(dt2) {
-    // dt1 is before dt2
-}
-
-// Direct comparison operators also work
-assert!(dt1 < dt2);
-assert!(dt2 > dt1);
+let mut builder = BinaryPayloadBuilder::new();
+builder.write_u16(42);
+builder.write_slice(b"ping");
+let bytes = builder.finish();
+assert_eq!(bytes.len(), 2 + 4);
 ```
 
-### Duration Calculations
+## Collections & memory helpers
+
+- `SortedVec<T>` / `SortedVecWith2Keys<K1, K2, V>` keep elements ordered; provide binary search insertion and lookup APIs.
+- `GroupedData` to collect items by key with minimal allocations.
+- `AutoShrinkVec` / `AutoShrinkVecDeque` shrink capacity after spikes.
+- `ObjectsPool` (feature `objects-pool`) for pooling reusable buffers/objects.
+- `VecMaybeStack` (feature `vec-maybe-stack`) for small-buffer-optimized vectors.
+- Iteration helpers: `array_of_bytes_iterator::{SliceIterator, VecIterator, FileIterator}`, `slice_of_u8_utils` for safe chunking.
+- `Lazy<T>` for deferred construction guarded by `OnceLock`-like behavior.
+
+## Async & Tokio (feature `with-tokio`)
+
+- `EventsLoop`: process tasks with configurable parallelism.
+- `MyTimer`: tick-based scheduling with graceful stop.
+- `TaskCompletion`: create awaitable completion sources with error support.
+- `TokioQueue`: bounded async queue with backpressure.
+- `QueueToSave`: producer/consumer file-saving pipeline with retries.
+- `ApplicationStates`: async state machine with callbacks.
+- `SortableId`: monotonic sortable IDs backed by time + randomness.
 
 ```rust
-let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05T01:15:32.000000Z").unwrap();
-
-// Calculate duration between two times
-let duration = dt2.duration_since(dt1);
-let seconds_diff = dt2.seconds_before(dt1); // Returns 180 (3 minutes)
-```
-
-### Formatting
-
-```rust
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// RFC 3339 format (ISO 8601)
-let rfc3339 = dt.to_rfc3339();        // "2021-03-05T01:12:32.000000Z"
-
-// RFC 2822 format (Email/HTTP dates)
-let rfc2822 = dt.to_rfc2822();        // "Fri, 5 Mar 2021 01:12:32 +0000"
-
-// RFC 5322 format
-let rfc5322 = dt.to_rfc5322();
-
-// RFC 7231 format (HTTP dates)
-let rfc7231 = dt.to_rfc7231();
-
-// Compact format
-let compact = dt.to_compact_date_time_string();
-
-// Convert to chrono DateTime<Utc> for additional operations
-let chrono_dt = dt.to_chrono_utc();
-```
-
-### Parsing Examples
-
-```rust
-use rust_extensions::date_time::*;
-
-// Parse from various string formats
-let dt1 = DateTimeAsMicroseconds::from_str("2021-03-05").unwrap();
-let dt2 = DateTimeAsMicroseconds::from_str("2021-03-05T12:34").unwrap();
-let dt3 = DateTimeAsMicroseconds::from_str("2021-03-05T12:34:56").unwrap();
-let dt4 = DateTimeAsMicroseconds::from_str("2021-03-05T12:34:56.123456Z").unwrap();
-
-// Parse ISO 8601 / RFC 3339 strings
-let dt5 = DateTimeAsMicroseconds::parse_iso_string("2021-03-05T12:34:56.123Z").unwrap();
-
-// Parse from Unix timestamp (auto-detects format)
-let dt6: DateTimeAsMicroseconds = 1614950400i64.into();           // seconds
-let dt7: DateTimeAsMicroseconds = 1614950400123i64.into();        // milliseconds
-let dt8: DateTimeAsMicroseconds = 1614950400123456i64.into();     // microseconds
-```
-
-## Why Use DateTimeAsMicroseconds?
-
-1. **Performance**: Single-field structure means minimal memory overhead and fast comparisons
-2. **Simplicity**: No timezone handling complexity - everything is in UTC
-3. **Precision**: Microsecond precision is sufficient for most use cases
-4. **Interoperability**: Easy conversion to/from Unix timestamps
-5. **Type Safety**: Distinct type prevents mixing with raw integers
-6. **Copy Semantics**: `Copy` trait means no heap allocation or reference management needed
-
-## Interval Key Module
-
-The `interval_key` module extends `DateTimeAsMicroseconds` by providing functionality to "cut" or round down datetime values to specific time intervals. This is useful for grouping time-series data, creating time-based keys for databases, or aggregating data by time periods.
-
-`DateTimeAsMicroseconds` is the primary input type for creating interval keys:
-
-```rust
-use rust_extensions::date_time::*;
-use rust_extensions::date_time::interval_key::*;
-
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// All interval key types can be created from DateTimeAsMicroseconds
-let hour_key: IntervalKey<HourKey> = dt.into();
-let day_key: IntervalKey<DayKey> = dt.into();
-```
-
-And interval keys can be converted back to `DateTimeAsMicroseconds`:
-
-```rust
-let hour_key: IntervalKey<HourKey> = dt.into();
-let dt_result: DateTimeAsMicroseconds = hour_key.try_into().unwrap();
-// Result represents the start of that hour interval: "2021-03-05T01:00:00"
-```
-
-### Overview
-
-The module offers two main approaches for working with time intervals:
-
-1. **`IntervalKey<TOption>`** - A compile-time generic type that provides type safety and zero-cost abstractions. The interval type is determined at compile time using generics.
-
-2. **`DateTimeInterval`** - A runtime enum that stores both the interval type and value, allowing for dynamic interval selection.
-
-### Core Concepts
-
-#### Interval Types
-
-The module supports the following interval types:
-
-- **Year** - Rounds down to the start of the year (format: `YYYY`, e.g., `2021`)
-- **Month** - Rounds down to the start of the month (format: `YYYYMM`, e.g., `202103`)
-- **Day** - Rounds down to the start of the day (format: `YYYYMMDD`, e.g., `20210305`)
-- **Hour** - Rounds down to the start of the hour (format: `YYYYMMDDHH`, e.g., `2021030501`)
-- **Minute** - Rounds down to the start of the minute (format: `YYYYMMDDHHMM`, e.g., `202103050112`)
-- **Minute5** - Rounds down to the nearest 5-minute interval (format: `YYYYMMDDHHMM`, e.g., `202103050110`)
-
-#### Key Format
-
-Each interval type uses a compact integer representation:
-- All values are stored as `i64`
-- The format is hierarchical: year, month, day, hour, minute are concatenated
-- For example, `2021-03-05T01:12:32` becomes:
-  - Year: `2021`
-  - Month: `202103`
-  - Day: `20210305`
-  - Hour: `2021030501`
-  - Minute: `202103050112`
-  - Minute5: `202103050110` (rounded to 5-minute boundary)
-
-### Usage
-
-#### Using `IntervalKey<TOption>` (Compile-Time Type Safety)
-
-`IntervalKey` uses Rust generics to ensure type safety at compile time. The interval type is encoded in the type system, preventing mixing different interval types.
-
-```rust
-use rust_extensions::date_time::*;
-use rust_extensions::date_time::interval_key::*;
-
-// Create an interval key from a DateTime
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// Create different interval keys
-let year_key: IntervalKey<YearKey> = dt.into();
-let month_key: IntervalKey<MonthKey> = dt.into();
-let day_key: IntervalKey<DayKey> = dt.into();
-let hour_key: IntervalKey<HourKey> = dt.into();
-let minute_key: IntervalKey<MinuteKey> = dt.into();
-let minute5_key: IntervalKey<Minute5Key> = dt.into();
-
-// Access the integer value
-assert_eq!(year_key.to_i64(), 2021);
-assert_eq!(month_key.to_i64(), 202103);
-assert_eq!(day_key.to_i64(), 20210305);
-assert_eq!(hour_key.to_i64(), 2021030501);
-assert_eq!(minute_key.to_i64(), 202103050112);
-assert_eq!(minute5_key.to_i64(), 202103050110);
-
-// Convert back to DateTime
-let dt_result: DateTimeAsMicroseconds = year_key.try_into().unwrap();
-// Result: "2021-01-01T00:00:00"
-```
-
-#### Using `DateTimeInterval` (Runtime Flexibility)
-
-`DateTimeInterval` stores the interval type as a value, allowing for dynamic interval selection at runtime.
-
-```rust
-use rust_extensions::date_time::*;
-use rust_extensions::date_time::interval_key::*;
-
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// Create interval based on runtime condition
-let interval = if some_condition {
-    DateTimeInterval::from_dt_to_hour(dt)
-} else {
-    DateTimeInterval::from_dt_to_day(dt)
-};
-
-// Access the value
-let value = interval.to_i64();
-
-// Convert back to DateTime
-let dt_result = interval.to_date_time().unwrap();
-```
-
-#### Converting Between Interval Types
-
-You can convert between compatible interval types:
-
-```rust
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-
-// Convert from DateTime to MinuteKey
-let minute_key: IntervalKey<MinuteKey> = dt.into();
-
-// Convert to Minute5Key
-let minute5_key: IntervalKey<Minute5Key> = minute_key.try_into().unwrap();
-
-// Convert back to MinuteKey
-let minute_key_again: IntervalKey<MinuteKey> = minute5_key.try_into().unwrap();
-```
-
-#### Arithmetic Operations
-
-You can add or subtract durations from interval keys:
-
-```rust
-use std::time::Duration;
-
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-let hour_key: IntervalKey<HourKey> = dt.into();
-
-// Add 2 hours
-let next_hour = hour_key.add(Duration::from_secs(2 * 3600));
-
-// Subtract 1 hour
-let prev_hour = hour_key.sub(Duration::from_secs(3600));
-```
-
-#### Converting to `DateTimeInterval`
-
-You can convert a compile-time `IntervalKey` to a runtime `DateTimeInterval`:
-
-```rust
-let dt = DateTimeAsMicroseconds::from_str("2021-03-05T01:12:32.000000Z").unwrap();
-let hour_key: IntervalKey<HourKey> = dt.into();
-let interval = hour_key.to_dt_interval();
-// interval is DateTimeInterval::Hour(value)
-```
-
-### Available Types
-
-#### Interval Key Types (Compile-Time)
-
-- `IntervalKey<YearKey>` - Year-level intervals
-- `IntervalKey<MonthKey>` - Month-level intervals
-- `IntervalKey<DayKey>` - Day-level intervals
-- `IntervalKey<HourKey>` - Hour-level intervals
-- `IntervalKey<MinuteKey>` - Minute-level intervals
-- `IntervalKey<Minute5Key>` - 5-minute intervals
-
-#### DateTimeInterval Variants (Runtime)
-
-- `DateTimeInterval::Year(i64)`
-- `DateTimeInterval::Month(i64)`
-- `DateTimeInterval::Day(i64)`
-- `DateTimeInterval::Hour(i64)`
-- `DateTimeInterval::Minute(i64)`
-- `DateTimeInterval::Min5(i64)`
-
-### When to Use Which?
-
-#### Use `IntervalKey<TOption>` when:
-- The interval type is known at compile time
-- You want type safety to prevent mixing different interval types
-- You want zero-cost abstractions (no runtime overhead for type checking)
-- You're working with collections of the same interval type
-
-#### Use `DateTimeInterval` when:
-- The interval type needs to be determined at runtime
-- You need to store different interval types in the same collection
-- You're working with dynamic or user-configurable interval types
-- You need to serialize/deserialize interval information
-
-### Examples
-
-#### Grouping Data by Time Intervals
-
-```rust
-use std::collections::HashMap;
-use rust_extensions::date_time::*;
-use rust_extensions::date_time::interval_key::*;
-
-// Group events by hour
-let mut events_by_hour: HashMap<IntervalKey<HourKey>, Vec<Event>> = HashMap::new();
-
-for event in events {
-    let hour_key: IntervalKey<HourKey> = event.timestamp.into();
-    events_by_hour.entry(hour_key).or_insert_with(Vec::new).push(event);
+#[cfg(feature = "with-tokio")]
+async fn example_queue() {
+    use rust_extensions::tokio_queue::TokioQueue;
+
+    let queue = TokioQueue::new(100);
+    queue.send("item").await.unwrap();
+    let item = queue.recv().await.unwrap();
+    assert_eq!(item, "item");
 }
 ```
 
-#### Dynamic Interval Selection
+## IO, logging, misc
 
-```rust
-fn aggregate_by_interval(
-    dt: DateTimeAsMicroseconds,
-    interval_type: &str
-) -> DateTimeInterval {
-    match interval_type {
-        "hour" => DateTimeInterval::from_dt_to_hour(dt),
-        "day" => DateTimeInterval::from_dt_to_day(dt),
-        "month" => DateTimeInterval::from_dt_to_month(dt),
-        _ => DateTimeInterval::from_dt_to_minute(dt),
-    }
-}
-```
+- `file_utils`: iterators over file lines and path helpers.
+- `logger`: simple structured logger traits.
+- `remote_endpoint`: parse/format endpoints (`host:port`), detect loopback.
+- Math/min-max helpers: `min_value`, `max_value`, `min_key_value`, `max_value`.
+- `StopWatch` / `AtomicStopWatch` / `AtomicDuration` for timing.
 
-### Implementation Details
+## Development status
 
-- All interval keys are stored as `i64` values for efficient storage and comparison
-- The module uses a phantom type pattern to ensure type safety without runtime overhead
-- Conversion between `DateTimeAsMicroseconds` and interval keys is done through utility functions in the `utils` module
-- The `IntervalKeyOption` trait defines the behavior for each interval type
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Version
-
-Current version: **0.1.5**
+- License: MIT (see `LICENSE.md`).
+- Current crate version: **0.1.5**.
+- Contributions are welcome via pull requests.
 
