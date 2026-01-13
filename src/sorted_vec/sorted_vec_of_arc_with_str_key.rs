@@ -103,11 +103,15 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
     }
 
     pub fn get_from_bottom_to_key(&self, key: &str) -> &[Arc<TValue>] {
+        if self.items.is_empty() {
+            return &self.items[0..0];
+        }
+
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
             Ok(index) => &self.items[..=index],
-            Err(index) => &self.items[..=index],
+            Err(index) => &self.items[..index],
         }
     }
 

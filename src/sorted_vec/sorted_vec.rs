@@ -151,11 +151,15 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
     }
 
     pub fn get_from_bottom_to_key(&self, key: &TKey) -> &[TValue] {
+        if self.items.is_empty() {
+            return &self.items[0..0];
+        }
+
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
         match result {
             Ok(index) => &self.items[..=index],
-            Err(index) => &self.items[..=index],
+            Err(index) => &self.items[..index],
         }
     }
 
@@ -225,6 +229,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
     }
 
     pub fn get_highest_and_below_amount(&self, highest_key: &TKey, amount: usize) -> &[TValue] {
+        if self.items.is_empty() {
+            return &self.items[0..0];
+        }
+
         let index_to = self
             .items
             .binary_search_by(|itm| itm.get_key().cmp(highest_key));
@@ -453,5 +461,37 @@ mod tests {
             Vec::<u8>::new(),
             result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
+    }
+
+    #[test]
+    fn test_get_from_bottom_to_key_bounds() {
+        let mut vec = super::SortedVec::new();
+
+        let result = vec.get_from_bottom_to_key(&1);
+        assert_eq!(0, result.len());
+
+        vec.insert_or_replace(TestEntity { key: 2, value: 2 });
+        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
+
+        let below_first = vec.get_from_bottom_to_key(&1);
+        assert_eq!(0, below_first.len());
+
+        let between = vec.get_from_bottom_to_key(&3);
+        assert_eq!(1, between.len());
+        assert_eq!(2, between[0].value);
+
+        let above_last = vec.get_from_bottom_to_key(&5);
+        assert_eq!(
+            vec![2u8, 4u8],
+            above_last.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+    }
+
+    #[test]
+    fn test_get_highest_and_below_amount_empty() {
+        let vec = super::SortedVec::<u8, TestEntity>::new();
+
+        let result = vec.get_highest_and_below_amount(&5, 3);
+        assert_eq!(0, result.len());
     }
 }

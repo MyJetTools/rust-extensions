@@ -122,13 +122,17 @@ impl<TValue: EntityWith2StrKey> Partition<TValue> {
     }
 
     pub fn get_from_bottom_to_key(&self, secondary_key: &str) -> &[TValue] {
+        if self.rows.is_empty() {
+            return &self.rows[0..0];
+        }
+
         let result = self
             .rows
             .binary_search_by(|itm| itm.get_secondary_key().cmp(secondary_key));
 
         match result {
             Ok(index) => &self.rows[..=index],
-            Err(index) => &self.rows[..=index],
+            Err(index) => &self.rows[..index],
         }
     }
 
