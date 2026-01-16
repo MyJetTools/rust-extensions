@@ -145,14 +145,14 @@ pub mod hour {
 pub mod minute {
     use crate::date_time::*;
 
-    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+    pub fn to_date_time_struct(value: i64) -> DateTimeStruct {
         let year = value / 100000000;
         let month = (value % 100000000) / 1000000;
         let day = (value % 1000000) / 10000;
         let hour = (value % 10000) / 100;
         let min = value % 100;
 
-        let date_time_struct = DateTimeStruct {
+        DateTimeStruct {
             year: year as i32,
             month: month as u32,
             day: day as u32,
@@ -163,10 +163,12 @@ pub mod minute {
                 micros: 0,
             },
             dow: None,
-        };
+        }
+    }
 
+    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let result: Option<DateTimeAsMicroseconds> =
-            date_time_struct.to_date_time_as_microseconds();
+            to_date_time_struct(value).to_date_time_as_microseconds();
 
         match result {
             Some(value) => Ok(value),
