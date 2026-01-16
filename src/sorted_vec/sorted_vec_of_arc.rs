@@ -153,6 +153,37 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         }
     }
 
+    pub fn sub_sequence(&self, range: std::ops::Range<TKey>) -> Self
+    where
+        TValue: Clone,
+    {
+        let items = self.range(range).to_vec();
+        Self {
+            items,
+            itm: std::marker::PhantomData,
+        }
+    }
+
+    pub fn sub_sequence_by_index(&self, range: std::ops::Range<usize>) -> Self
+    where
+        TValue: Clone,
+    {
+        if range.start >= self.items.len() {
+            return Self::new();
+        }
+
+        let end = range.end.min(self.items.len());
+        if range.start >= end {
+            return Self::new();
+        }
+
+        let items = self.items[range.start..end].to_vec();
+        Self {
+            items,
+            itm: std::marker::PhantomData,
+        }
+    }
+
     pub fn truncate_capacity(&mut self, capacity: usize) {
         self.items.truncate(capacity);
     }

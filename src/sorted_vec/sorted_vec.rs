@@ -141,6 +141,37 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
+    pub fn sub_sequence(&self, range: std::ops::Range<TKey>) -> Self
+    where
+        TValue: Clone,
+    {
+        let items = self.range(range).to_vec();
+        Self {
+            items,
+            itm: std::marker::PhantomData,
+        }
+    }
+
+    pub fn sub_sequence_by_index(&self, range: std::ops::Range<usize>) -> Self
+    where
+        TValue: Clone,
+    {
+        if range.start >= self.items.len() {
+            return Self::new();
+        }
+
+        let end = range.end.min(self.items.len());
+        if range.start >= end {
+            return Self::new();
+        }
+
+        let items = self.items[range.start..end].to_vec();
+        Self {
+            items,
+            itm: std::marker::PhantomData,
+        }
+    }
+
     pub fn get_from_key_to_up(&self, key: &TKey) -> &[TValue] {
         let result = self.items.binary_search_by(|itm| itm.get_key().cmp(key));
 
@@ -401,6 +432,47 @@ mod tests {
             vec![3u8, 4u8, 6u8, 7u8],
             result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
+    }
+
+    #[test]
+    fn test_sub_sequence() {
+        let mut vec = super::SortedVec::new();
+
+        vec.insert_or_replace(TestEntity { key: 1, value: 1 });
+        vec.insert_or_replace(TestEntity { key: 3, value: 3 });
+        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
+        vec.insert_or_replace(TestEntity { key: 6, value: 6 });
+        vec.insert_or_replace(TestEntity { key: 7, value: 7 });
+
+        let sub = vec.sub_sequence(2..7);
+
+        assert_eq!(4, sub.len());
+        assert_eq!(
+            vec![3u8, 4u8, 6u8, 7u8],
+            sub.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+    }
+
+    #[test]
+    fn test_sub_sequence_by_index() {
+        let mut vec = super::SortedVec::new();
+
+        vec.insert_or_replace(TestEntity { key: 1, value: 1 });
+        vec.insert_or_replace(TestEntity { key: 3, value: 3 });
+        vec.insert_or_replace(TestEntity { key: 4, value: 4 });
+        vec.insert_or_replace(TestEntity { key: 6, value: 6 });
+        vec.insert_or_replace(TestEntity { key: 7, value: 7 });
+
+        let sub = vec.sub_sequence_by_index(1..4);
+
+        assert_eq!(3, sub.len());
+        assert_eq!(
+            vec![3u8, 4u8, 6u8],
+            sub.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let empty = vec.sub_sequence_by_index(10..20);
+        assert_eq!(0, empty.len());
     }
 
     #[test]

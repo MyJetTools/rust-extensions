@@ -180,6 +180,31 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         self.items.is_empty()
     }
 
+    pub fn sub_sequence(&self, range: std::ops::Range<&str>) -> Self
+    where
+        TValue: Clone,
+    {
+        let items = self.range(range).to_vec();
+        Self { items }
+    }
+
+    pub fn sub_sequence_by_index(&self, range: std::ops::Range<usize>) -> Self
+    where
+        TValue: Clone,
+    {
+        if range.start >= self.items.len() {
+            return Self::new();
+        }
+
+        let end = range.end.min(self.items.len());
+        if range.start >= end {
+            return Self::new();
+        }
+
+        let items = self.items[range.start..end].to_vec();
+        Self { items }
+    }
+
     pub fn range(&self, range: std::ops::Range<&str>) -> &[Arc<TValue>] {
         let index_from = self
             .items
