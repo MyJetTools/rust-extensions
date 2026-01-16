@@ -151,21 +151,26 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         Self { items }
     }
 
-    pub fn sub_sequence_by_index(&self, range: std::ops::Range<usize>) -> Self
-    where
-        TValue: Clone,
-    {
-        if range.start >= self.items.len() {
-            return Self::new();
+    pub fn range_by_index<R: std::ops::RangeBounds<usize>>(&self, range: R) -> &[TValue] {
+        let len = self.items.len();
+        let start = match range.start_bound() {
+            std::ops::Bound::Included(&value) => value,
+            std::ops::Bound::Excluded(&value) => value.saturating_add(1),
+            std::ops::Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            std::ops::Bound::Included(&value) => value.saturating_add(1),
+            std::ops::Bound::Excluded(&value) => value,
+            std::ops::Bound::Unbounded => len,
+        };
+
+        let start = start.min(len);
+        let end = end.min(len);
+        if start >= end {
+            return &self.items[0..0];
         }
 
-        let end = range.end.min(self.items.len());
-        if range.start >= end {
-            return Self::new();
-        }
-
-        let items = self.items[range.start..end].to_vec();
-        Self { items }
+        &self.items[start..end]
     }
 
     pub fn remove(&mut self, key: &str) -> Option<TValue> {

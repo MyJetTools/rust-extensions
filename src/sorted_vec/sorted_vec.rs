@@ -152,24 +152,26 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
-    pub fn sub_sequence_by_index(&self, range: std::ops::Range<usize>) -> Self
-    where
-        TValue: Clone,
-    {
-        if range.start >= self.items.len() {
-            return Self::new();
+    pub fn range_by_index<R: std::ops::RangeBounds<usize>>(&self, range: R) -> &[TValue] {
+        let len = self.items.len();
+        let start = match range.start_bound() {
+            std::ops::Bound::Included(&value) => value,
+            std::ops::Bound::Excluded(&value) => value.saturating_add(1),
+            std::ops::Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            std::ops::Bound::Included(&value) => value.saturating_add(1),
+            std::ops::Bound::Excluded(&value) => value,
+            std::ops::Bound::Unbounded => len,
+        };
+
+        let start = start.min(len);
+        let end = end.min(len);
+        if start >= end {
+            return &self.items[0..0];
         }
 
-        let end = range.end.min(self.items.len());
-        if range.start >= end {
-            return Self::new();
-        }
-
-        let items = self.items[range.start..end].to_vec();
-        Self {
-            items,
-            itm: std::marker::PhantomData,
-        }
+        &self.items[start..end]
     }
 
     pub fn get_from_key_to_up(&self, key: &TKey) -> &[TValue] {
@@ -454,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sub_sequence_by_index() {
+    fn test_range_by_index() {
         let mut vec = super::SortedVec::new();
 
         vec.insert_or_replace(TestEntity { key: 1, value: 1 });
@@ -463,16 +465,38 @@ mod tests {
         vec.insert_or_replace(TestEntity { key: 6, value: 6 });
         vec.insert_or_replace(TestEntity { key: 7, value: 7 });
 
-        let sub = vec.sub_sequence_by_index(1..4);
-
-        assert_eq!(3, sub.len());
+        let all = vec.range_by_index(..);
         assert_eq!(
-            vec![3u8, 4u8, 6u8],
-            sub.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+            vec![1u8, 3u8, 4u8, 6u8, 7u8],
+            all.iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
 
-        let empty = vec.sub_sequence_by_index(10..20);
-        assert_eq!(0, empty.len());
+        let from = vec.range_by_index(2..);
+        assert_eq!(
+            vec![4u8, 6u8, 7u8],
+            from.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let to = vec.range_by_index(..2);
+        assert_eq!(
+            vec![1u8, 3u8],
+            to.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let mid = vec.range_by_index(1..4);
+        assert_eq!(
+            vec![3u8, 4u8, 6u8],
+            mid.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let inclusive = vec.range_by_index(..=0);
+        assert_eq!(
+            vec![1u8],
+            inclusive.iter().map(|itm| itm.value).collect::<Vec<u8>>()
+        );
+
+        let empty = vec.range_by_index(10..);
+        assert!(empty.is_empty());
     }
 
     #[test]
