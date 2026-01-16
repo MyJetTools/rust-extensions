@@ -46,7 +46,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `BinaryPayloadBuilder` to append scalars, slices, and length-prefixed data into a single `Vec<u8>`.
   - `Uint32VariableSize` for compact integer encoding/decoding.
 - Collections:
-  - `SortedVec` / `SortedVecOf2Keys` maintain order on insert and support efficient lookups.
+  - `SortedVec` family: `SortedVec`, `SortedVecWithStrKey`, `SortedVecOfArc`, `SortedVecOfArcWithStrKey`, and `SortedVecWith2Keys` maintain order on insert and support efficient lookups.
   - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
