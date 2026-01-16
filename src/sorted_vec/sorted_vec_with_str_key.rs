@@ -151,7 +151,13 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         Self { items }
     }
 
-    pub fn range_by_index<R: std::ops::RangeBounds<usize>>(&self, range: R) -> &[TValue] {
+    pub fn range_by_index<'s, R: std::ops::RangeBounds<usize>>(
+        &'s self,
+        range: R,
+    ) -> SortedVecWithStrKeySlice<'s, TValue>
+    where
+        TValue: Clone,
+    {
         let len = self.items.len();
         let start = match range.start_bound() {
             std::ops::Bound::Included(&value) => value,
@@ -167,10 +173,10 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         let start = start.min(len);
         let end = end.min(len);
         if start >= end {
-            return &self.items[0..0];
+            return SortedVecWithStrKeySlice::new(&self.items[0..0]);
         }
 
-        &self.items[start..end]
+        SortedVecWithStrKeySlice::new(&self.items[start..end])
     }
 
     pub fn remove(&mut self, key: &str) -> Option<TValue> {
@@ -242,7 +248,10 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         self.items.is_empty()
     }
 
-    pub fn range(&self, range: std::ops::Range<&str>) -> &[TValue] {
+    pub fn range<'s>(&'s self, range: std::ops::Range<&str>) -> SortedVecWithStrKeySlice<'s, TValue>
+    where
+        TValue: Clone,
+    {
         let index_from = self
             .items
             .binary_search_by(|itm| itm.get_key().cmp(&range.start));
@@ -258,14 +267,64 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
 
         match index_to {
             Ok(index_to) => {
-                return &self.items[index_from..=index_to];
+                return SortedVecWithStrKeySlice::new(&self.items[index_from..=index_to]);
             }
-            Err(index_to) => &self.items[index_from..index_to],
+            Err(index_to) => SortedVecWithStrKeySlice::new(&self.items[index_from..index_to]),
         }
     }
 
     pub fn pop(&mut self) -> Option<TValue> {
         self.items.pop()
+    }
+}
+
+pub struct SortedVecWithStrKeySlice<'s, TValue: EntityWithStrKey + Clone> {
+    slice: &'s [TValue],
+}
+
+impl<'s, TValue: EntityWithStrKey + Clone> std::ops::Deref
+    for SortedVecWithStrKeySlice<'s, TValue>
+{
+    type Target = [TValue];
+
+    fn deref(&self) -> &Self::Target {
+        self.slice
+    }
+}
+
+impl<'s, TValue: EntityWithStrKey + Clone> AsRef<[TValue]>
+    for SortedVecWithStrKeySlice<'s, TValue>
+{
+    fn as_ref(&self) -> &[TValue] {
+        self.slice
+    }
+}
+
+impl<'s, TValue: EntityWithStrKey + Clone> SortedVecWithStrKeySlice<'s, TValue> {
+    fn new(slice: &'s [TValue]) -> Self {
+        Self { slice }
+    }
+
+    pub fn to_sorted_vec(self) -> SortedVecWithStrKey<TValue> {
+        SortedVecWithStrKey {
+            items: self.slice.to_vec(),
+        }
+    }
+
+    pub fn to_vec(self) -> Vec<TValue> {
+        self.slice.to_vec()
+    }
+
+    pub fn len(&self) -> usize {
+        self.slice.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.slice.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'s, TValue> {
+        self.slice.iter()
     }
 }
 

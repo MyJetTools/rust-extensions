@@ -188,7 +188,13 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         Self { items }
     }
 
-    pub fn range_by_index<R: std::ops::RangeBounds<usize>>(&self, range: R) -> &[Arc<TValue>] {
+    pub fn range_by_index<'s, R: std::ops::RangeBounds<usize>>(
+        &'s self,
+        range: R,
+    ) -> SortedVecOfArcWithStrKeySlice<'s, TValue>
+    where
+        TValue: Clone,
+    {
         let len = self.items.len();
         let start = match range.start_bound() {
             std::ops::Bound::Included(&value) => value,
@@ -204,13 +210,19 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
         let start = start.min(len);
         let end = end.min(len);
         if start >= end {
-            return &self.items[0..0];
+            return SortedVecOfArcWithStrKeySlice::new(&self.items[0..0]);
         }
 
-        &self.items[start..end]
+        SortedVecOfArcWithStrKeySlice::new(&self.items[start..end])
     }
 
-    pub fn range(&self, range: std::ops::Range<&str>) -> &[Arc<TValue>] {
+    pub fn range<'s>(
+        &'s self,
+        range: std::ops::Range<&str>,
+    ) -> SortedVecOfArcWithStrKeySlice<'s, TValue>
+    where
+        TValue: Clone,
+    {
         let index_from = self
             .items
             .binary_search_by(|itm| itm.get_key().cmp(&range.start));
@@ -226,9 +238,9 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
 
         match index_to {
             Ok(index_to) => {
-                return &self.items[index_from..=index_to];
+                return SortedVecOfArcWithStrKeySlice::new(&self.items[index_from..=index_to]);
             }
-            Err(index_to) => &self.items[index_from..index_to],
+            Err(index_to) => SortedVecOfArcWithStrKeySlice::new(&self.items[index_from..index_to]),
         }
     }
 
@@ -242,6 +254,56 @@ impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {
 
     pub fn pop(&mut self) -> Option<Arc<TValue>> {
         self.items.pop()
+    }
+}
+
+pub struct SortedVecOfArcWithStrKeySlice<'s, TValue: EntityWithStrKey + Clone> {
+    slice: &'s [Arc<TValue>],
+}
+
+impl<'s, TValue: EntityWithStrKey + Clone> std::ops::Deref
+    for SortedVecOfArcWithStrKeySlice<'s, TValue>
+{
+    type Target = [Arc<TValue>];
+
+    fn deref(&self) -> &Self::Target {
+        self.slice
+    }
+}
+
+impl<'s, TValue: EntityWithStrKey + Clone> AsRef<[Arc<TValue>]>
+    for SortedVecOfArcWithStrKeySlice<'s, TValue>
+{
+    fn as_ref(&self) -> &[Arc<TValue>] {
+        self.slice
+    }
+}
+
+impl<'s, TValue: EntityWithStrKey + Clone> SortedVecOfArcWithStrKeySlice<'s, TValue> {
+    fn new(slice: &'s [Arc<TValue>]) -> Self {
+        Self { slice }
+    }
+
+    pub fn to_sorted_vec(self) -> SortedVecOfArcWithStrKey<TValue> {
+        SortedVecOfArcWithStrKey {
+            items: self.slice.to_vec(),
+        }
+    }
+
+    pub fn to_vec(self) -> Vec<Arc<TValue>> {
+        self.slice.to_vec()
+    }
+
+    pub fn len(&self) -> usize {
+        self.slice.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.slice.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'s, Arc<TValue>> {
+        self.slice.iter()
     }
 }
 

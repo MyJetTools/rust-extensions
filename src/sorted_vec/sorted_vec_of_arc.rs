@@ -164,7 +164,13 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         }
     }
 
-    pub fn range_by_index<R: std::ops::RangeBounds<usize>>(&self, range: R) -> &[Arc<TValue>] {
+    pub fn range_by_index<'s, R: std::ops::RangeBounds<usize>>(
+        &'s self,
+        range: R,
+    ) -> SortedVecOfArcSlice<'s, TKey, TValue>
+    where
+        TValue: Clone,
+    {
         let len = self.items.len();
         let start = match range.start_bound() {
             std::ops::Bound::Included(&value) => value,
@@ -180,10 +186,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         let start = start.min(len);
         let end = end.min(len);
         if start >= end {
-            return &self.items[0..0];
+            return SortedVecOfArcSlice::new(&self.items[0..0]);
         }
 
-        &self.items[start..end]
+        SortedVecOfArcSlice::new(&self.items[start..end])
     }
 
     pub fn truncate_capacity(&mut self, capacity: usize) {
@@ -226,7 +232,13 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         result
     }
 
-    pub fn range(&self, range: std::ops::Range<TKey>) -> &[Arc<TValue>] {
+    pub fn range<'s>(
+        &'s self,
+        range: std::ops::Range<TKey>,
+    ) -> SortedVecOfArcSlice<'s, TKey, TValue>
+    where
+        TValue: Clone,
+    {
         let index_from = self
             .items
             .binary_search_by(|itm| itm.get_key().cmp(&range.start));
@@ -242,14 +254,69 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
 
         match index_to {
             Ok(index_to) => {
-                return &self.items[index_from..=index_to];
+                return SortedVecOfArcSlice::new(&self.items[index_from..=index_to]);
             }
-            Err(index_to) => &self.items[index_from..index_to],
+            Err(index_to) => SortedVecOfArcSlice::new(&self.items[index_from..index_to]),
         }
     }
 
     pub fn pop(&mut self) -> Option<Arc<TValue>> {
         self.items.pop()
+    }
+}
+
+pub struct SortedVecOfArcSlice<'s, TKey: Ord, TValue: EntityWithKey<TKey> + Clone> {
+    slice: &'s [Arc<TValue>],
+    itm: std::marker::PhantomData<TKey>,
+}
+
+impl<'s, TKey: Ord, TValue: EntityWithKey<TKey> + Clone> std::ops::Deref
+    for SortedVecOfArcSlice<'s, TKey, TValue>
+{
+    type Target = [Arc<TValue>];
+
+    fn deref(&self) -> &Self::Target {
+        self.slice
+    }
+}
+
+impl<'s, TKey: Ord, TValue: EntityWithKey<TKey> + Clone> AsRef<[Arc<TValue>]>
+    for SortedVecOfArcSlice<'s, TKey, TValue>
+{
+    fn as_ref(&self) -> &[Arc<TValue>] {
+        self.slice
+    }
+}
+
+impl<'s, TKey: Ord, TValue: EntityWithKey<TKey> + Clone> SortedVecOfArcSlice<'s, TKey, TValue> {
+    fn new(slice: &'s [Arc<TValue>]) -> Self {
+        Self {
+            slice,
+            itm: std::marker::PhantomData,
+        }
+    }
+
+    pub fn to_sorted_vec(self) -> SortedVecOfArc<TKey, TValue> {
+        SortedVecOfArc {
+            items: self.slice.to_vec(),
+            itm: self.itm,
+        }
+    }
+
+    pub fn to_vec(self) -> Vec<Arc<TValue>> {
+        self.slice.to_vec()
+    }
+
+    pub fn len(&self) -> usize {
+        self.slice.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.slice.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'s, Arc<TValue>> {
+        self.slice.iter()
     }
 }
 
