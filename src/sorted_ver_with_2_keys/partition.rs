@@ -140,6 +140,10 @@ impl<TValue: EntityWith2StrKey> Partition<TValue> {
         self.rows.clear();
     }
 
+    pub fn truncate_capacity(&mut self, capacity: usize) {
+        self.rows.truncate(capacity);
+    }
+
     pub fn first(&self) -> Option<&TValue> {
         self.rows.first()
     }
@@ -203,5 +207,56 @@ impl<TValue: EntityWith2StrKey> Partition<TValue> {
     }
     pub fn get_capacity(&self) -> usize {
         self.rows.capacity()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TestEntity {
+        primary_key: String,
+        secondary_key: String,
+        value: u8,
+    }
+
+    impl EntityWith2StrKey for TestEntity {
+        fn get_primary_key(&self) -> &str {
+            &self.primary_key
+        }
+
+        fn get_secondary_key(&self) -> &str {
+            &self.secondary_key
+        }
+    }
+
+    #[test]
+    fn test_truncate_capacity() {
+        let mut partition = Partition::new(TestEntity {
+            primary_key: "p".to_string(),
+            secondary_key: "b".to_string(),
+            value: 2,
+        });
+
+        partition.insert_or_replace(TestEntity {
+            primary_key: "p".to_string(),
+            secondary_key: "a".to_string(),
+            value: 1,
+        });
+        partition.insert_or_replace(TestEntity {
+            primary_key: "p".to_string(),
+            secondary_key: "c".to_string(),
+            value: 3,
+        });
+
+        partition.truncate_capacity(2);
+
+        let values = partition
+            .rows
+            .iter()
+            .map(|itm| itm.value)
+            .collect::<Vec<_>>();
+        assert_eq!(vec![1, 2], values);
     }
 }

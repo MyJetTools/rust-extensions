@@ -153,6 +153,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         }
     }
 
+    pub fn truncate_capacity(&mut self, capacity: usize) {
+        self.items.truncate(capacity);
+    }
+
     pub fn iter<'s>(&'s self) -> std::slice::Iter<'s, Arc<TValue>> {
         self.items.iter()
     }
@@ -213,5 +217,40 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
 
     pub fn pop(&mut self) -> Option<Arc<TValue>> {
         self.items.pop()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TestEntity {
+        key: u8,
+        value: u8,
+    }
+
+    impl EntityWithKey<u8> for TestEntity {
+        fn get_key(&self) -> &u8 {
+            &self.key
+        }
+    }
+
+    #[test]
+    fn test_truncate_capacity() {
+        let mut vec = SortedVecOfArc::new();
+
+        vec.insert_or_replace(Arc::new(TestEntity { key: 2, value: 2 }));
+        vec.insert_or_replace(Arc::new(TestEntity { key: 1, value: 1 }));
+        vec.insert_or_replace(Arc::new(TestEntity { key: 3, value: 3 }));
+
+        vec.truncate_capacity(2);
+
+        let values = vec
+            .as_slice()
+            .iter()
+            .map(|itm| itm.value)
+            .collect::<Vec<_>>();
+        assert_eq!(vec![1, 2], values);
     }
 }

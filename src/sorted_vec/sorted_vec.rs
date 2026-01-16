@@ -188,6 +188,10 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         }
     }
 
+    pub fn truncate_capacity(&mut self, capacity: usize) {
+        self.items.truncate(capacity);
+    }
+
     pub fn first(&self) -> Option<&TValue> {
         self.items.first()
     }

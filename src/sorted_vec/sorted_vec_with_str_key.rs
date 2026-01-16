@@ -169,6 +169,10 @@ impl<TValue: EntityWithStrKey> SortedVecWithStrKey<TValue> {
         }
     }
 
+    pub fn truncate_capacity(&mut self, capacity: usize) {
+        self.items.truncate(capacity);
+    }
+
     pub fn first(&self) -> Option<&TValue> {
         self.items.first()
     }
@@ -329,5 +333,30 @@ mod tests {
         assert_eq!(1, result);
 
         println!("result: {:?}", vec.items);
+    }
+
+    #[test]
+    fn test_truncate_capacity() {
+        let mut vec = super::SortedVecWithStrKey::new();
+
+        vec.insert_or_replace(TestEntity {
+            key: "b".to_string(),
+            value: 2,
+        });
+        vec.insert_or_replace(TestEntity {
+            key: "a".to_string(),
+            value: 1,
+        });
+        vec.insert_or_replace(TestEntity {
+            key: "c".to_string(),
+            value: 3,
+        });
+
+        vec.truncate_capacity(2);
+
+        assert_eq!(
+            vec!["a", "b"],
+            vec.items.iter().map(|x| x.key.as_str()).collect::<Vec<_>>()
+        );
     }
 }
