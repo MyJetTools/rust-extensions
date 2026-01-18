@@ -1,8 +1,7 @@
 pub mod year {
     use crate::date_time::*;
-
-    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
-        let date_time_struct = DateTimeStruct {
+    pub fn to_date_time_struct(value: i64) -> DateTimeStruct {
+        DateTimeStruct {
             year: value as i32,
             month: 1,
             day: 1,
@@ -13,10 +12,12 @@ pub mod year {
                 micros: 0,
             },
             dow: None,
-        };
+        }
+    }
 
+    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let result: Option<DateTimeAsMicroseconds> =
-            date_time_struct.to_date_time_as_microseconds();
+            to_date_time_struct(value).to_date_time_as_microseconds();
 
         match result {
             Some(value) => Ok(value),
@@ -32,11 +33,12 @@ pub mod year {
 
 pub mod month {
     use crate::date_time::*;
-    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+
+    pub fn to_date_time_struct(value: i64) -> DateTimeStruct {
         let year = value / 100;
         let month = value % 100;
 
-        let date_time_struct = DateTimeStruct {
+        DateTimeStruct {
             year: year as i32,
             month: month as u32,
             day: 1,
@@ -47,10 +49,12 @@ pub mod month {
                 micros: 0,
             },
             dow: None,
-        };
+        }
+    }
 
+    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let result: Option<DateTimeAsMicroseconds> =
-            date_time_struct.to_date_time_as_microseconds();
+            to_date_time_struct(value).to_date_time_as_microseconds();
 
         match result {
             Some(value) => Ok(value),
@@ -67,12 +71,12 @@ pub mod month {
 pub mod day {
     use crate::date_time::*;
 
-    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+    pub fn to_date_time_struct(value: i64) -> DateTimeStruct {
         let year = value / 10000;
         let month = (value % 10000) / 100;
         let day = value % 100;
 
-        let date_time_struct = DateTimeStruct {
+        DateTimeStruct {
             year: year as i32,
             month: month as u32,
             day: day as u32,
@@ -83,10 +87,12 @@ pub mod day {
                 micros: 0,
             },
             dow: None,
-        };
+        }
+    }
 
+    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let result: Option<DateTimeAsMicroseconds> =
-            date_time_struct.to_date_time_as_microseconds();
+            to_date_time_struct(value).to_date_time_as_microseconds();
 
         match result {
             Some(value) => Ok(value),
@@ -105,13 +111,12 @@ pub mod day {
 pub mod hour {
     use crate::date_time::*;
 
-    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+    pub fn to_date_time_struct(value: i64) -> DateTimeStruct {
         let year = value / 1000000;
         let month = (value % 1000000) / 10000;
         let day = (value % 10000) / 100;
         let hour = value % 100;
-
-        let date_time_struct = DateTimeStruct {
+        DateTimeStruct {
             year: year as i32,
             month: month as u32,
             day: day as u32,
@@ -122,10 +127,12 @@ pub mod hour {
                 micros: 0,
             },
             dow: None,
-        };
+        }
+    }
 
+    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let result: Option<DateTimeAsMicroseconds> =
-            date_time_struct.to_date_time_as_microseconds();
+            to_date_time_struct(value).to_date_time_as_microseconds();
 
         match result {
             Some(value) => Ok(value),
@@ -189,14 +196,14 @@ pub mod minute {
 pub mod min5 {
     use crate::date_time::*;
 
-    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+    pub fn to_date_time_struct(value: i64) -> DateTimeStruct {
         let year = value / 100000000;
         let month = (value % 100000000) / 1000000;
         let day = (value % 1000000) / 10000;
         let hour = (value % 10000) / 100;
         let min = value % 100;
 
-        let date_time_struct = DateTimeStruct {
+        DateTimeStruct {
             year: year as i32,
             month: month as u32,
             day: day as u32,
@@ -207,10 +214,12 @@ pub mod min5 {
                 micros: 0,
             },
             dow: None,
-        };
+        }
+    }
 
+    pub fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
         let result: Option<DateTimeAsMicroseconds> =
-            date_time_struct.to_date_time_as_microseconds();
+            to_date_time_struct(value).to_date_time_as_microseconds();
 
         match result {
             Some(value) => Ok(value),
