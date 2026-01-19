@@ -58,7 +58,7 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
 
     pub fn sub(&self, duration: Duration) -> Self {
         let dt: DateTimeAsMicroseconds = TOption::to_date_time(self.value).unwrap();
-        let dt = dt.add(duration);
+        let dt = dt.sub(duration);
         Self {
             value: TOption::to_value(dt),
             _phantom: std::marker::PhantomData,

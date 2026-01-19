@@ -66,6 +66,21 @@ pub mod month {
         let date_time_struct: DateTimeStruct = src.into();
         date_time_struct.year as i64 * 100 + date_time_struct.month as i64
     }
+
+    #[cfg(test)]
+    mod tests {
+
+        #[test]
+        fn test_dt_struct() {
+            let key = 202502;
+
+            let dt_struct = super::to_date_time_struct(key);
+
+            assert_eq!(dt_struct.year, 2025);
+            assert_eq!(dt_struct.month, 02);
+            assert_eq!(dt_struct.day, 01);
+        }
+    }
 }
 
 pub mod day {
@@ -105,6 +120,21 @@ pub mod day {
         date_time_struct.year as i64 * 10000
             + date_time_struct.month as i64 * 100
             + date_time_struct.day as i64
+    }
+
+    #[cfg(test)]
+    mod tests {
+
+        #[test]
+        fn test_dt_struct() {
+            let key = 20250203;
+
+            let dt_struct = super::to_date_time_struct(key);
+
+            assert_eq!(dt_struct.year, 2025);
+            assert_eq!(dt_struct.month, 02);
+            assert_eq!(dt_struct.day, 03);
+        }
     }
 }
 
