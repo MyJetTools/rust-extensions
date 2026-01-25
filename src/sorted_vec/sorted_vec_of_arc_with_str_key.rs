@@ -4,9 +4,15 @@ use crate::sorted_vec::{EntityWithStrKey, GetOrCreateEntry, InsertEntity};
 
 use super::InsertIfNotExists;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SortedVecOfArcWithStrKey<TValue: EntityWithStrKey> {
     items: Vec<Arc<TValue>>,
+}
+
+impl<TValue: EntityWithStrKey> Default for SortedVecOfArcWithStrKey<TValue> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<TValue: EntityWithStrKey> SortedVecOfArcWithStrKey<TValue> {

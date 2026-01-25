@@ -4,10 +4,16 @@ use crate::sorted_vec::{GetOrCreateEntry, InsertEntity};
 
 use super::{EntityWithKey, InsertIfNotExists};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SortedVecOfArc<TKey: Ord, TValue: EntityWithKey<TKey>> {
     items: Vec<Arc<TValue>>,
     itm: std::marker::PhantomData<TKey>,
+}
+
+impl<TKey: Ord, TValue: EntityWithKey<TKey>> Default for SortedVecOfArc<TKey, TValue> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {

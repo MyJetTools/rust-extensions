@@ -10,6 +10,12 @@ pub struct SortedVecWith2StrKey<TValue: super::EntityWith2StrKey> {
     len: usize,
 }
 
+impl<TValue: super::EntityWith2StrKey> Default for SortedVecWith2StrKey<TValue> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
     pub fn new() -> Self {
         Self {
