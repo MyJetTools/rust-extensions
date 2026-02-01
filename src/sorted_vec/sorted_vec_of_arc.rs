@@ -31,6 +31,18 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVecOfArc<TKey, TValue> {
         }
     }
 
+    pub fn from_iterator(items: impl IntoIterator<Item = Arc<TValue>>) -> Self {
+        let iterator = items.into_iter();
+
+        let mut result = Self::new();
+
+        for item in iterator {
+            result.insert_or_replace(item);
+        }
+
+        result
+    }
+
     pub fn capacity(&self) -> usize {
         self.items.capacity()
     }
