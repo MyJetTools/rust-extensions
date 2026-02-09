@@ -108,47 +108,6 @@ impl<TValue: super::EntityWith2StrKey> SortedVecOfArcWith2StrKey<TValue> {
             .binary_search_by(|itm| itm.get_key().cmp(primary_key))
     }
 
-    pub fn insert_or_update<'s>(
-        &'s mut self,
-        primary_key: &str,
-        secondary_key: &str,
-    ) -> InsertOrUpdateEntry2KeysArc<'s, TValue> {
-        let partition_index = self.get_index(primary_key);
-
-        match partition_index {
-            Ok(partition_index) => {
-                let row_index = {
-                    let partition = self.partitions.get_mut(partition_index).unwrap();
-                    partition.binary_search(secondary_key)
-                };
-
-                match row_index {
-                    Ok(row_index) => {
-                        return InsertOrUpdateEntry2KeysArc::Update(UpdateEntry2KeysArc::new(
-                            partition_index,
-                            row_index,
-                            self,
-                        ))
-                    }
-                    Err(row_index) => {
-                        return InsertOrUpdateEntry2KeysArc::Insert(InsertEntity2KeysArc::new(
-                            partition_index,
-                            Some(row_index),
-                            self,
-                        ));
-                    }
-                }
-            }
-            Err(partition_index) => {
-                return InsertOrUpdateEntry2KeysArc::Insert(InsertEntity2KeysArc::new(
-                    partition_index,
-                    None,
-                    self,
-                ))
-            }
-        }
-    }
-
     pub fn contains(&self, primary_key: &str, secondary_key: &str) -> bool {
         match self.get_index(primary_key) {
             Ok(partition_index) => {
