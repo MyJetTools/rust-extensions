@@ -12,6 +12,10 @@ pub struct DateTimeStruct {
 }
 
 impl DateTimeStruct {
+    pub fn is_date_the_same(&self, other: &Self) -> bool {
+        self.year == other.year && self.month == other.month && self.day == other.day
+    }
+
     pub fn inc_month(&mut self) {
         self.month += 1;
         if self.month > 12 {
