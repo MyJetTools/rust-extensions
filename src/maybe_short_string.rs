@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display};
+
 use crate::{ShortString, StrOrString};
 
 pub enum MaybeShortString {
@@ -90,6 +92,21 @@ impl MaybeShortString {
         match self {
             MaybeShortString::AsShortString(value) => value.as_str(),
             MaybeShortString::AsString(value) => value.as_str(),
+        }
+    }
+}
+
+impl Display for MaybeShortString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl Debug for MaybeShortString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AsShortString(arg0) => f.debug_tuple("AsShortString").field(arg0).finish(),
+            Self::AsString(arg0) => f.debug_tuple("AsString").field(arg0).finish(),
         }
     }
 }
