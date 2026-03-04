@@ -85,3 +85,5 @@ mod queue_to_save;
 pub use queue_to_save::*;
 mod as_str;
 pub use as_str::*;
+
+pub extern crate macros;
