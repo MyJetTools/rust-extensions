@@ -27,22 +27,26 @@ impl<'s> ExtractedType<'s> {
 
     pub fn get_as_value_fn(&self)->proc_macro2::TokenStream{
 
-        let (tp, ref_count) = self.get_type_and_wrapper();
+        let (tp_str, ref_count) = self.get_type_and_wrapper();
 
         if ref_count{
-            if tp.eq_ignore_ascii_case("string"){
+            if tp_str.eq_ignore_ascii_case("string"){
+                        let tp = &self.tp;
                 return   quote::quote! {
                     pub fn as_str(&self) -> &str {
                         self.0.as_str()
+                    }
+
+                    pub fn as_ref(&self) -> &#tp{
+                        &self.0
                     }
                 }
             }
         }
 
-        let value = format!("as_{}", tp);
+        let value = format!("as_{}", tp_str);
 
         let fn_name =  proc_macro2::TokenStream::from_str(value.as_str()).unwrap();
-
 
         let tp = &self.tp;
 
