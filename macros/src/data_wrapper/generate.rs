@@ -6,10 +6,13 @@ pub fn generate(
 ) -> Result<proc_macro::TokenStream, syn::Error> {
     let struct_name = &ast.ident;
 
-    let (tp, tp_as_str) = crate::utils::extract_type(input_as_string.as_str());
+    let extracted_tp = crate::utils::extract_type(input_as_string.as_str());
 
-    let as_value_fn = tp_as_str.get_as_value_fn();
 
+    
+    let as_value_fn = extracted_tp.get_as_value_fn();
+
+    let tp = &extracted_tp.tp;
 
     let result = quote! {
 
