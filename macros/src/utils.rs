@@ -50,6 +50,10 @@ impl<'s> ExtractedType<'s> {
             pub fn #fn_name(&self) -> #tp {
                 self.0
             }
+
+            pub fn as_ref(&self) -> &#tp{
+                &self.0
+            }
         }
     }
 }
