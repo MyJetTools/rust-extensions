@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use quote::quote;
 
 pub fn generate(
@@ -10,9 +8,8 @@ pub fn generate(
 
     let (tp, tp_as_str) = crate::utils::extract_type(input_as_string.as_str());
 
-    let as_tp_fn_name = format!("as_{}", tp_as_str);
+    let as_tp_fn_name = tp_as_str.get_as_value_fn();
 
-    let as_tp_fn_name = proc_macro2::TokenStream::from_str(as_tp_fn_name.as_str()).unwrap();
 
     let result = quote! {
 
@@ -23,7 +20,7 @@ pub fn generate(
 
               pub fn #as_tp_fn_name(&self) -> #tp {
                 self.0
-              }
+             }
         }
 
         impl Into<#struct_name> for #tp {
