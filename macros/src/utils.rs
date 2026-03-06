@@ -1,6 +1,39 @@
 use std::str::FromStr;
 
 
+
+
+pub enum WrappedType<'s>{
+    String,
+    Other(&'s str)
+}
+
+impl<'s> WrappedType<'s>{
+
+    pub fn from_str(str: &'s str)->Self{
+        if str == "String"{
+            return Self::String;
+        }
+
+        Self::Other(str)
+    }
+
+    pub fn is_string(&self)->bool{
+        match self{
+            WrappedType::String => true,
+            WrappedType::Other(_) => false,
+        }
+    }
+
+    pub fn as_str(&self)->&str{
+        match self{
+            WrappedType::String => "string",
+            WrappedType::Other(tp) => tp,
+        }
+    }
+}
+
+
 pub struct ExtractedType<'s> {
     pub tp_str: &'s str,
     pub tp: proc_macro2::TokenStream,
@@ -9,28 +42,28 @@ pub struct ExtractedType<'s> {
 
 impl<'s> ExtractedType<'s> {
 
-    pub fn get_type_and_wrapper(&'s self)->(&'s str, bool){
+    pub fn get_type_and_wrapper(&'s self)->(WrappedType<'s>, bool){
 
         if let Some(start_index) = self.tp_str.find('<'){
             let Some(end_index) = self.tp_str.find(">") else{
-                return (self.tp_str, false);
+                return (WrappedType::from_str(self.tp_str) , false);
             };
 
             let type_str = &self.tp_str[start_index + 1..end_index].trim();
 
-            return (type_str, true);
+            return (WrappedType::from_str(type_str), true);
         }
         
 
-        (self.tp_str, false)
+        (WrappedType::from_str(self.tp_str), false)
     }
 
     pub fn get_as_value_fn(&self)->proc_macro2::TokenStream{
 
-        let (tp_str, ref_count) = self.get_type_and_wrapper();
+        let (wrapped_tp, ref_count) = self.get_type_and_wrapper();
 
         if ref_count{
-            if tp_str.eq_ignore_ascii_case("string"){
+            if wrapped_tp.is_string(){
                         let tp = &self.tp;
                 return   quote::quote! {
                     pub fn as_str(&self) -> &str {
@@ -44,7 +77,7 @@ impl<'s> ExtractedType<'s> {
             }
         }
 
-        let value = format!("as_{}", tp_str);
+        let value = format!("as_{}", wrapped_tp.as_str());
 
         let fn_name =  proc_macro2::TokenStream::from_str(value.as_str()).unwrap();
 
@@ -58,6 +91,42 @@ impl<'s> ExtractedType<'s> {
             pub fn as_ref(&self) -> &#tp{
                 &self.0
             }
+        }
+    }
+
+
+    pub fn get_into_fn(&self, struct_name: &syn::Ident)->  proc_macro2::TokenStream {
+
+          let (wrapped_tp, ref_count) = self.get_type_and_wrapper();
+
+          let tp = &self.tp;
+
+          if ref_count{
+            if wrapped_tp.is_string(){
+                
+
+                return quote::quote! {
+                    fn into(self) -> #struct_name {
+                        #struct_name::new(self)
+                    }
+
+                    fn into(self) -> String {
+                        #struct_name::new(self.into())
+                    }
+                };
+
+            }
+               
+          }
+
+
+        quote::quote! {
+
+          impl Into<#struct_name> for #tp {
+            fn into(self) -> #struct_name {
+                #struct_name::new(self)
+            }
+          }
         }
     }
 }

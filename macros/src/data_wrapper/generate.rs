@@ -9,10 +9,14 @@ pub fn generate(
     let extracted_tp = crate::utils::extract_type(input_as_string.as_str());
 
 
+    let into_fn = extracted_tp.get_into_fn(struct_name);
+
     
     let as_value_fn = extracted_tp.get_as_value_fn();
 
     let tp = &extracted_tp.tp;
+
+    
 
     let result = quote! {
 
@@ -24,11 +28,8 @@ pub fn generate(
               #as_value_fn
         }
 
-        impl Into<#struct_name> for #tp {
-            fn into(self) -> #struct_name {
-                #struct_name::new(self)
-        }
-}
+
+        #into_fn
 
     };
 
