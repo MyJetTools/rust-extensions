@@ -106,12 +106,17 @@ impl<'s> ExtractedType<'s> {
                 
 
                 return quote::quote! {
-                    fn into(self) -> #struct_name {
+
+                    impl Into<#struct_name> for #tp {
+                      fn into(self) -> #struct_name {
                         #struct_name::new(self)
+                      }
                     }
 
-                    fn into(self) -> String {
-                        #struct_name::new(self.into())
+                    impl Into<#struct_name> for String {
+                        fn into(self) -> #struct_name {
+                            #struct_name::new(self.into())
+                        }
                     }
                 };
 
