@@ -64,10 +64,14 @@ impl<'s> ExtractedType<'s> {
 
         if ref_count{
             if wrapped_tp.is_string(){
-                        let tp = &self.tp;
+                let tp = &self.tp;
                 return   quote::quote! {
                     pub fn as_str(&self) -> &str {
                         self.0.as_str()
+                    }
+
+                    pub fn to_string(&self) -> String {
+                        self.0.to_string()
                     }
 
                     pub fn as_ref(&self) -> &#tp{
