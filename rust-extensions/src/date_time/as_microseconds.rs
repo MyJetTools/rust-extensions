@@ -171,7 +171,17 @@ impl DateTimeAsMicroseconds {
         result.add_minutes(-difference.difference_in_half_hours() * 30);
         result
     }
+
+
+    pub unsafe  fn update_unsafe(&self, new_value: DateTimeAsMicroseconds){
+      let value = &self.unix_microseconds as *const i64 as *mut i64;
+      value.write(new_value.unix_microseconds);
+    }
+  
 }
+
+
+
 
 impl Into<DateTimeAsMicroseconds> for SystemTime {
     fn into(self) -> DateTimeAsMicroseconds {
