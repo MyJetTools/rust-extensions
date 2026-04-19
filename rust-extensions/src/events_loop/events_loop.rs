@@ -36,7 +36,7 @@ pub struct EventsLoop<TModel: Send + Sync + 'static> {
     pending_receiver:
         Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     inner: Mutex<Option<EventsLoopInner<TModel>>>,
-    publisher: Arc<EventsLoopPublisher<TModel>>,
+    publisher: EventsLoopPublisher<TModel>,
     name: Arc<String>,
     iteration_timeout: Duration,
 }
@@ -48,7 +48,7 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
-            publisher: Arc::new(EventsLoopPublisher::new(name.clone(), sender)),
+            publisher: EventsLoopPublisher::new(name.clone(), sender),
             name,
             iteration_timeout: Duration::from_secs(30),
             pending_receiver: Mutex::new(Some(receiver)),
@@ -104,7 +104,7 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         ));
     }
 
-    pub fn get_publisher(&self) -> Arc<EventsLoopPublisher<TModel>> {
+    pub fn get_publisher(&self) -> EventsLoopPublisher<TModel> {
         self.publisher.clone()
     }
 

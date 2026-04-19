@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use super::EventsLoopMessage;
 
+
 pub struct EventsLoopPublisher<TModel: Send + Sync + 'static> {
-    sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
+    sender: Arc<tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>>,
     name: Arc<String>,
 }
 
@@ -12,7 +13,7 @@ impl<TModel: Send + Sync + 'static> EventsLoopPublisher<TModel> {
         name: Arc<String>,
         sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
     ) -> Self {
-        Self { sender, name }
+        Self { sender: Arc::new(sender), name }
     }
 
     pub fn name(&self) -> &str {
@@ -35,5 +36,9 @@ impl<TModel: Send + Sync + 'static> EventsLoopPublisher<TModel> {
                 self.name, err
             );
         }
+    }
+
+    pub fn clone(&self)->Self{
+        Self { sender: self.sender.clone(), name: self.name.clone() }
     }
 }
