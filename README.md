@@ -30,7 +30,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 - String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
 - Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
-- Async/Tokio (feature `with-tokio`): `events_loop`, `my_timer`, `task_completion`, `tokio_queue`, `queue_to_save`, `application_states`, `sortable_id`.
+- Async/Tokio (feature `with-tokio`): `events_loop`, `my_timer`, `task_completion`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
 - IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
 
 ## Quick recipes
@@ -129,6 +129,7 @@ assert_eq!(bytes.len(), 2 + 4);
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `TokioQueue`: bounded async queue with backpressure.
 - `QueueToSave`: producer/consumer file-saving pipeline with retries.
+- `QueueToSaveWithId`: same producer/consumer batching as `QueueToSave`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone`; the handler receives a `Vec<T>` per tick. No ordering guarantee across IDs.
 - `ApplicationStates`: async state machine with callbacks.
 - `SortableId`: monotonic sortable IDs backed by time + randomness.
 
