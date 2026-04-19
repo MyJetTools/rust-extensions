@@ -124,7 +124,7 @@ assert_eq!(bytes.len(), 2 + 4);
 
 ## Async & Tokio (feature `with-tokio`)
 
-- `EventsLoop`: process tasks with configurable parallelism.
+- `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task.
 - `MyTimer`: tick-based scheduling with graceful stop.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `TokioQueue`: bounded async queue with backpressure.
@@ -143,6 +143,79 @@ async fn example_queue() {
     assert_eq!(item, "item");
 }
 ```
+
+### `EventsLoop` use case
+
+`EventsLoop` is designed to live inside an `AppCtx` as a plain field (no outer `Mutex` / no `mut` access needed). The flow:
+
+1. **Construct in `AppCtx::new`** — the channel is created immediately, so `send` is available right away and is lock-free (no mutex on the hot path).
+2. **Register a callback** (`EventsLoopTick`) via `register_event_loop` — typically during app initialization, once dependencies are wired.
+3. **Start** — spawns the background reader task which owns the receiver + callback and drives `started` / `tick` / `finished`.
+4. **Send / stop** — `send(msg)` pushes a message; `stop()` sends a shutdown signal.
+
+```rust
+#[cfg(feature = "with-tokio")]
+mod example {
+    use std::sync::Arc;
+    use rust_extensions::{
+        events_loop::{EventsLoop, EventsLoopTick},
+        ApplicationStates, Logger,
+    };
+
+    // 1. Define what each tick should do.
+    struct MyHandler;
+
+    #[async_trait::async_trait]
+    impl EventsLoopTick<String> for MyHandler {
+        async fn started(&self) {
+            println!("loop started");
+        }
+        async fn tick(&self, model: String) {
+            println!("got message: {model}");
+        }
+        async fn finished(&self) {
+            println!("loop finished");
+        }
+    }
+
+    // 2. Keep it inside AppCtx without any outer Mutex.
+    pub struct AppCtx {
+        pub events_loop: EventsLoop<String>,
+    }
+
+    impl AppCtx {
+        pub fn new() -> Self {
+            Self {
+                events_loop: EventsLoop::new("my-loop"),
+            }
+        }
+    }
+
+    // 3. Wire up at startup.
+    pub async fn bootstrap(
+        ctx: Arc<AppCtx>,
+        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) {
+        ctx.events_loop
+            .register_event_loop(Arc::new(MyHandler))
+            .await;
+        ctx.events_loop.start(app_states, logger).await;
+    }
+
+    // 4. Produce messages from anywhere — `send` takes `&self` and never locks.
+    pub fn produce(ctx: &AppCtx) {
+        ctx.events_loop.send("hello".to_string());
+    }
+}
+```
+
+Key properties:
+
+- **Lock-free `send` / `stop`** — the `Sender` lives directly on the struct; `.lock()` is only ever taken in `register_event_loop` and `start`.
+- **One-shot registration** — a second `register_event_loop` panics; `start` without a prior register panics.
+- **Bounded lifecycle** — `stop` delivers `Shutdown` through the same channel, so in-flight messages ahead of it are processed first.
+- **Per-tick timeout** — `set_iteration_timeout(Duration)` caps a single `tick` call; overruns are logged via the provided `Logger` and the loop keeps running.
 
 ## IO, logging, misc
 

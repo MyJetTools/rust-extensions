@@ -2,16 +2,20 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{ApplicationStates, Logger};
 
-use super::{events_loop::EventsLoopMessage, EventsLoopTick};
+use super::{events_loop::EventsLoopInner, EventsLoopTick};
 
 pub async fn events_loop_reader<TModel: Send + Sync + 'static>(
     name: Arc<String>,
-    event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
+    inner: EventsLoopInner<TModel>,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
     iteration_timeout: Duration,
-    mut receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
 ) {
+    let EventsLoopInner {
+        event_loop_tick,
+        mut receiver,
+    } = inner;
+
     while !app_states.is_initialized() {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
@@ -66,3 +70,4 @@ async fn execute_timer<TModel: Send + Sync + 'static>(
 ) {
     events_loop_tick.tick(model).await;
 }
+

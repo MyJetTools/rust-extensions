@@ -1,8 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::{ApplicationStates, Logger};
+use tokio::sync::Mutex;
 
-use super::{EventsLoopInner, EventsLoopMode, EventsLoopPublisher, EventsLoopTick};
+use crate::{ApplicationStates, Logger, StrOrString};
+
+use super::EventsLoopTick;
 
 pub enum EventsLoopMessage<TModel: Send + Sync + 'static> {
     NewMessage(TModel),
@@ -25,39 +27,33 @@ impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
     }
 }
 
+pub(super) struct EventsLoopInner<TModel: Send + Sync + 'static> {
+    pub event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
+    pub receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
+}
+
 pub struct EventsLoop<TModel: Send + Sync + 'static> {
-    inner: EventsLoopInner<TModel>,
-    iteration_timeout: Duration,
+    pending_receiver:
+        Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
+    inner: Mutex<Option<EventsLoopInner<TModel>>>,
+    sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
     name: Arc<String>,
-    logger: Arc<dyn Logger + Send + Sync + 'static>,
+    iteration_timeout: Duration,
 }
 
 impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
-    pub fn new(name: String, logger: Arc<dyn Logger + Send + Sync + 'static>) -> Self {
-        let name = Arc::new(name);
+    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+        let name: String = name.into().to_string();
+
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+
         Self {
-            iteration_timeout: Duration::from_secs(5),
-            inner: EventsLoopInner::new(),
-            name,
-            logger,
+            name: Arc::new(name),
+            sender,
+            iteration_timeout: Duration::from_secs(30),
+            pending_receiver: Mutex::new(Some(receiver)),
+            inner: Mutex::new(None),
         }
-    }
-
-    pub fn get_publisher(&mut self) -> EventsLoopPublisher<TModel> {
-        match &self.inner.mode {
-            EventsLoopMode::Unknown => {}
-            EventsLoopMode::NoExternalPublisher(_) => {
-                panic!("Event loop is already running")
-            }
-            EventsLoopMode::Publisher(_) => {
-                panic!("Publisher already created")
-            }
-        }
-
-        let (publisher, receiver) =
-            EventsLoopPublisher::new(self.name.clone(), self.logger.clone());
-        self.inner.mode = EventsLoopMode::Publisher(Some(receiver));
-        publisher
     }
 
     pub fn set_iteration_timeout(mut self, timeout: Duration) -> Self {
@@ -65,88 +61,64 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         self
     }
 
-    pub fn register_event_loop(
-        &mut self,
+    pub async fn register_event_loop(
+        &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     ) {
-        if self.inner.events_loop_tick.is_some() {
-            panic!("Event Loop is already registered");
+        let receiver = self.pending_receiver.lock().await.take();
+
+        if receiver.is_none() {
+            panic!(
+                "Event loop tick is already registered for this event loop {}",
+                self.name
+            );
         }
-        self.inner.events_loop_tick = Some(event_loop);
+
+        let mut inner_lock = self.inner.lock().await;
+        *inner_lock = Some(EventsLoopInner {
+            event_loop_tick: event_loop,
+            receiver: receiver.unwrap(),
+        });
     }
 
-    pub fn send(&self, model: TModel) {
-        match &self.inner.mode {
-            EventsLoopMode::Unknown => {
-                panic!("Event loop is not running")
-            }
-            EventsLoopMode::NoExternalPublisher(publisher) => {
-                publisher.send(model);
-            }
-            EventsLoopMode::Publisher(_) => {
-                panic!(
-                    "Event loop works in publisher mode. Please use publisher to publish messages"
-                )
-            }
-        }
-    }
+    pub async fn start(
+        &self,
+        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) {
+        let inner = self.inner.lock().await.take();
 
-    fn get_receiver(&mut self) -> tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>> {
-        match &mut self.inner.mode {
-            EventsLoopMode::Unknown => {
-                let (publisher, receiver) =
-                    EventsLoopPublisher::new(self.name.clone(), self.logger.clone());
-
-                self.inner.mode = EventsLoopMode::NoExternalPublisher(publisher);
-                return receiver;
-            }
-            EventsLoopMode::NoExternalPublisher(_) => {
-                panic!("Event loop is already running in no external publisher mode");
-            }
-            EventsLoopMode::Publisher(receiver) => {
-                if let Some(receiver) = receiver.take() {
-                    return receiver;
-                } else {
-                    panic!("Event loop is already running in external publisher mode");
-                }
-            }
-        }
-    }
-
-    pub fn start(&mut self, app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>) {
-        let receiver = self.get_receiver();
-
-        let event_loop = self.inner.events_loop_tick.take();
-        if event_loop.is_none() {
-            panic!("Event Loop is not registered");
+        if inner.is_none() {
+            panic!(
+                "Event Loop {} is not registered or already started.",
+                self.name
+            );
         }
 
-        let event_loop = event_loop.unwrap();
-
-        let logger = self.logger.clone();
         tokio::spawn(super::event_loop_reader::events_loop_reader(
             self.name.clone(),
-            event_loop,
+            inner.unwrap(),
             app_states,
             logger,
             self.iteration_timeout,
-            receiver,
         ));
     }
 
+    pub fn send(&self, model: TModel) {
+        if let Err(err) = self.sender.send(EventsLoopMessage::NewMessage(model)) {
+            panic!(
+                "Error while sending message to event loop {}. Err: {}",
+                self.name, err
+            );
+        }
+    }
+
     pub fn stop(&self) {
-        match &self.inner.mode {
-            EventsLoopMode::Unknown => {
-                panic!("Event loop is not running")
-            }
-            EventsLoopMode::NoExternalPublisher(publisher) => {
-                publisher.stop();
-            }
-            EventsLoopMode::Publisher(_) => {
-                panic!(
-                    "Event loop works in publisher mode. Please use publisher to publish messages"
-                )
-            }
+        if let Err(err) = self.sender.send(EventsLoopMessage::Shutdown) {
+            panic!(
+                "Error while sending message to event loop {}. Err: {}",
+                self.name, err
+            );
         }
     }
 }
