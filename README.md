@@ -211,9 +211,30 @@ mod example {
 }
 ```
 
+#### Detached publisher
+
+For producers that don't need access to the whole `EventsLoop` (e.g. a background task, an HTTP handler held in its own struct), grab a cheap reference-counted publisher:
+
+```rust
+use std::sync::Arc;
+use rust_extensions::events_loop::EventsLoopPublisher;
+
+let publisher: Arc<EventsLoopPublisher<String>> = ctx.events_loop.get_publisher();
+
+// Move/clone the Arc into other tasks; `send` / `stop` work the same way and stay lock-free.
+tokio::spawn({
+    let publisher = publisher.clone();
+    async move {
+        publisher.send("from background task".into());
+    }
+});
+```
+
+`get_publisher` returns `Arc<EventsLoopPublisher<TModel>>` — every call hands out a clone of the same shared publisher (the `Sender` is created once in `EventsLoop::new`).
+
 Key properties:
 
-- **Lock-free `send` / `stop`** — the `Sender` lives directly on the struct; `.lock()` is only ever taken in `register_event_loop` and `start`.
+- **Lock-free `send` / `stop`** — the `Sender` lives inside the shared `EventsLoopPublisher`; `.lock()` is only ever taken in `register_event_loop` and `start`.
 - **One-shot registration** — a second `register_event_loop` panics; `start` without a prior register panics.
 - **Bounded lifecycle** — `stop` delivers `Shutdown` through the same channel, so in-flight messages ahead of it are processed first.
 - **Per-tick timeout** — `set_iteration_timeout(Duration)` caps a single `tick` call; overruns are logged via the provided `Logger` and the loop keeps running.

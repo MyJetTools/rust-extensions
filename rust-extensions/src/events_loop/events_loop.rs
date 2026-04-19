@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::{ApplicationStates, Logger, StrOrString};
 
-use super::EventsLoopTick;
+use super::{EventsLoopPublisher, EventsLoopTick};
 
 pub enum EventsLoopMessage<TModel: Send + Sync + 'static> {
     NewMessage(TModel),
@@ -36,20 +36,20 @@ pub struct EventsLoop<TModel: Send + Sync + 'static> {
     pending_receiver:
         Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     inner: Mutex<Option<EventsLoopInner<TModel>>>,
-    sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,
+    publisher: Arc<EventsLoopPublisher<TModel>>,
     name: Arc<String>,
     iteration_timeout: Duration,
 }
 
 impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
-        let name: String = name.into().to_string();
+        let name: Arc<String> = Arc::new(name.into().to_string());
 
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
-            name: Arc::new(name),
-            sender,
+            publisher: Arc::new(EventsLoopPublisher::new(name.clone(), sender)),
+            name,
             iteration_timeout: Duration::from_secs(30),
             pending_receiver: Mutex::new(Some(receiver)),
             inner: Mutex::new(None),
@@ -104,21 +104,15 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
         ));
     }
 
+    pub fn get_publisher(&self) -> Arc<EventsLoopPublisher<TModel>> {
+        self.publisher.clone()
+    }
+
     pub fn send(&self, model: TModel) {
-        if let Err(err) = self.sender.send(EventsLoopMessage::NewMessage(model)) {
-            panic!(
-                "Error while sending message to event loop {}. Err: {}",
-                self.name, err
-            );
-        }
+        self.publisher.send(model);
     }
 
     pub fn stop(&self) {
-        if let Err(err) = self.sender.send(EventsLoopMessage::Shutdown) {
-            panic!(
-                "Error while sending message to event loop {}. Err: {}",
-                self.name, err
-            );
-        }
+        self.publisher.stop();
     }
 }
