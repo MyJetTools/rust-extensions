@@ -3,12 +3,12 @@ use std::sync::Arc;
 use super::EventsLoopMessage;
 
 
-pub struct EventsLoopPublisher<TModel: Send + Sync + 'static> {
+pub struct EventsLoopPublisher<TModel: 'static> {
     sender: Arc<tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>>,
     name: Arc<String>,
 }
 
-impl<TModel: Send + Sync + 'static> EventsLoopPublisher<TModel> {
+impl<TModel: 'static> EventsLoopPublisher<TModel> {
     pub(super) fn new(
         name: Arc<String>,
         sender: tokio::sync::mpsc::UnboundedSender<EventsLoopMessage<TModel>>,

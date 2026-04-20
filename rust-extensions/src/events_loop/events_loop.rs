@@ -6,12 +6,12 @@ use crate::{ApplicationStates, Logger, StrOrString};
 
 use super::{EventsLoopPublisher, EventsLoopTick};
 
-pub enum EventsLoopMessage<TModel: Send + Sync + 'static> {
+pub enum EventsLoopMessage<TModel> {
     NewMessage(TModel),
     Shutdown,
 }
 
-impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
+impl<TModel: 'static> EventsLoopMessage<TModel> {
     pub fn is_shutdown(&self) -> bool {
         match self {
             EventsLoopMessage::Shutdown => true,
@@ -27,12 +27,12 @@ impl<TModel: Send + Sync + 'static> EventsLoopMessage<TModel> {
     }
 }
 
-pub(super) struct EventsLoopInner<TModel: Send + Sync + 'static> {
-    pub event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
+pub(super) struct EventsLoopInner<TModel: 'static> {
+    pub event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send +'static>,
     pub receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
 }
 
-pub struct EventsLoop<TModel: Send + Sync + 'static> {
+pub struct EventsLoop<TModel: 'static> {
     pending_receiver:
         Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     inner: Mutex<Option<EventsLoopInner<TModel>>>,
@@ -41,7 +41,7 @@ pub struct EventsLoop<TModel: Send + Sync + 'static> {
     iteration_timeout: Duration,
 }
 
-impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
+impl<TModel: Send+ 'static> EventsLoop<TModel> {
     pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
@@ -88,16 +88,17 @@ impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
     ) {
         let inner = self.inner.lock().await.take();
 
-        if inner.is_none() {
-            panic!(
+        let Some(inner) = inner else{
+             panic!(
                 "Event Loop {} is not registered or already started.",
                 self.name
             );
-        }
+        };
+
 
         tokio::spawn(super::event_loop_reader::events_loop_reader(
             self.name.clone(),
-            inner.unwrap(),
+            inner,
             app_states,
             logger,
             self.iteration_timeout,
