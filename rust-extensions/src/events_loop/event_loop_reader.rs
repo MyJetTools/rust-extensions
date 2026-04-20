@@ -1,14 +1,16 @@
-use std::{ sync::Arc, time::Duration};
+use std::{ panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use crate::{ApplicationStates, Logger};
 
-use super::{events_loop::EventsLoopInner, EventsLoopTick};
+use super::{events_loop::EventsLoopInner};
 
-pub async fn events_loop_reader<TModel : Send+ 'static>(
+use futures::FutureExt;
+
+pub async fn events_loop_reader<TModel : Send + 'static>(
     name: Arc<String>,
     inner: EventsLoopInner<TModel>,
-    app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-    logger: Arc<dyn Logger + Send + Sync + 'static>,
+    app_states: Arc<dyn ApplicationStates + Send +  Sync+ 'static>,
+    logger: Arc<dyn Logger + Send + Sync+ 'static>,
     iteration_timeout: Duration,
 
 ) {
@@ -21,14 +23,9 @@ pub async fn events_loop_reader<TModel : Send+ 'static>(
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
-    let event_loop_tick_spawned = event_loop_tick.clone();
-    let _ = tokio::task::spawn_local(async move {
-        event_loop_tick_spawned.started().await;
-    })
+    let _ = AssertUnwindSafe(event_loop_tick.started())
+    .catch_unwind()
     .await;
-
-
-    
 
     while !app_states.is_shutting_down() {
         if let Some(message) = tokio::sync::mpsc::UnboundedReceiver::recv(&mut receiver).await {
@@ -40,23 +37,23 @@ pub async fn events_loop_reader<TModel : Send+ 'static>(
                 },
             };
 
-            let timer_tick = tokio::task::spawn_local(
-             execute_timer(
-                event_loop_tick.clone(),
-                message,
-            ));
+            let timeout_tick = event_loop_tick.tick(message);
 
-            match tokio::time::timeout(iteration_timeout, timer_tick).await {
-                Ok(result) => {
-                    if let Err(_) = result {
-                        logger.write_error(
+            let timer_tick_future = AssertUnwindSafe(timeout_tick)
+                    .catch_unwind();
+
+                match tokio::time::timeout(iteration_timeout, timer_tick_future).await {
+                Ok(Ok(_)) => {
+              
+                }
+                Ok(Err(_panic)) => {
+                      logger.write_error(
                             format!("EventLoop {} iteration", name.as_str()),
                             format!("Iteration is panicked"),
                             None.into(),
                         );
-                    }
                 }
-                Err(_) => {
+                Err(_elapsed) => {
                     logger.write_error(
                         format!("EventLoop {} iteration", name.as_str()),
                         format!("Iteration is time outed"),
@@ -64,20 +61,12 @@ pub async fn events_loop_reader<TModel : Send+ 'static>(
                     );
                 }
             }
+
         }
     }
 
-    let event_loop_tick_spawned = event_loop_tick.clone();
-    let _ = tokio::task::spawn_local(async move {
-        event_loop_tick_spawned.finished().await;
-    })
+  
+    let _ = AssertUnwindSafe(event_loop_tick.finished())
+    .catch_unwind()
     .await;
 }
-
-async fn execute_timer<TModel: 'static>(
-    events_loop_tick: Arc<dyn EventsLoopTick<TModel>>,
-    model: TModel,
-) {
-    events_loop_tick.tick(model).await;
-}
-

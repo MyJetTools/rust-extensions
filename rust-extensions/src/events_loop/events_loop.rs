@@ -27,12 +27,12 @@ impl<TModel: 'static> EventsLoopMessage<TModel> {
     }
 }
 
-pub(super) struct EventsLoopInner<TModel: 'static> {
-    pub event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send +'static>,
+pub(super) struct EventsLoopInner<TModel: Send+'static> {
+    pub event_loop_tick: Box<dyn EventsLoopTick<TModel> + Send +'static>,
     pub receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
 }
 
-pub struct EventsLoop<TModel: 'static> {
+pub struct EventsLoop<TModel: Send + 'static> {
     pending_receiver:
         Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     inner: Mutex<Option<EventsLoopInner<TModel>>>,
@@ -41,7 +41,7 @@ pub struct EventsLoop<TModel: 'static> {
     iteration_timeout: Duration,
 }
 
-impl<TModel: Send+ 'static> EventsLoop<TModel> {
+impl<TModel: Send + 'static> EventsLoop<TModel> {
     pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
@@ -63,7 +63,7 @@ impl<TModel: Send+ 'static> EventsLoop<TModel> {
 
     pub async fn register_event_loop(
         &self,
-        event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
+        event_loop: Box<dyn EventsLoopTick<TModel> + Send +  'static>,
     ) {
         let receiver = self.pending_receiver.lock().await.take();
 
