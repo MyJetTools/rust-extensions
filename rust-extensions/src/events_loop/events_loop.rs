@@ -28,7 +28,7 @@ impl<TModel: 'static> EventsLoopMessage<TModel> {
 }
 
 pub(super) struct EventsLoopInner<TModel: Send+'static> {
-    pub event_loop_tick: Box<dyn EventsLoopTick<TModel> + Send +'static>,
+    pub event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     pub receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
 }
 
@@ -63,7 +63,7 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
 
     pub async fn register_event_loop(
         &self,
-        event_loop: Box<dyn EventsLoopTick<TModel> + Send +  'static>,
+        event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync+  'static>,
     ) {
         let receiver = self.pending_receiver.lock().await.take();
 

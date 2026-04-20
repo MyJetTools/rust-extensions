@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 #[async_trait::async_trait]
 pub trait EventsLoopTick<TModel: 'static>: Send + 'static {
