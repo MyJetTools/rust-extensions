@@ -1,6 +1,6 @@
 use std::{hash::Hash, sync::Arc};
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::{Logger, StrOrString};
 
@@ -33,19 +33,19 @@ where
         }
     }
 
-    pub async fn enqueue(&self, items: impl Iterator<Item = T>) {
-        self.inner.enqueue(items).await;
+    pub fn enqueue(&self, items: impl Iterator<Item = T>) {
+        self.inner.enqueue(items);
     }
 
-    pub async fn enqueue_single(&self, item: T) {
-        self.inner.enqueue_single(item).await;
+    pub fn enqueue_single(&self, item: T) {
+        self.inner.enqueue_single(item);
     }
 
-    pub async fn register_events_handler(
+    pub fn register_events_handler(
         &self,
         events_handle: Arc<dyn QueueToSaveWithIdEventsHandler<T> + Send + Sync + 'static>,
     ) {
-        let mut write_access = self.handler.lock().await;
+        let mut write_access = self.handler.lock();
         *write_access = HandlerStatus::Some(events_handle);
     }
 
@@ -53,8 +53,8 @@ where
         self.inner.name.as_str()
     }
 
-    pub async fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
-        let mut write_access = self.handler.lock().await;
+    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+        let mut write_access = self.handler.lock();
 
         match &*write_access {
             HandlerStatus::None => {
@@ -225,13 +225,13 @@ mod tests {
                 notify: notify.clone(),
             });
 
-            queue.register_events_handler(handler).await;
+            queue.register_events_handler(handler);
 
-            queue.enqueue_single(Obj { id: 1, value: "a" }).await;
-            queue.enqueue_single(Obj { id: 2, value: "b" }).await;
-            queue.enqueue_single(Obj { id: 1, value: "c" }).await;
+            queue.enqueue_single(Obj { id: 1, value: "a" });
+            queue.enqueue_single(Obj { id: 2, value: "b" });
+            queue.enqueue_single(Obj { id: 1, value: "c" });
 
-            queue.start(Arc::new(NoopLogger)).await;
+            queue.start(Arc::new(NoopLogger));
 
             notify.notified().await;
 

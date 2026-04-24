@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::{queue_to_save::async_waker::*, StrOrString};
 
@@ -21,21 +21,21 @@ impl<T> QueueToSaveInnerAsBulk<T> {
             name,
         }
     }
-    pub(crate) async fn enqueue(&self, items: impl Iterator<Item = T>) {
-        let mut queue = self.queue.lock().await;
+    pub(crate) fn enqueue(&self, items: impl Iterator<Item = T>) {
+        let mut queue = self.queue.lock();
         queue.0.extend(items);
         queue.1.wake();
     }
 
-    pub(crate) async fn enqueue_single(&self, item: T) {
-        let mut queue = self.queue.lock().await;
+    pub(crate) fn enqueue_single(&self, item: T) {
+        let mut queue = self.queue.lock();
         queue.0.push(item);
         queue.1.wake();
     }
 
     pub(crate) async fn dequeue(&self) -> Vec<T> {
         loop {
-            match self.try_dequeue().await {
+            match self.try_dequeue() {
                 Ok(values) => {
                     return values;
                 }
@@ -46,8 +46,8 @@ impl<T> QueueToSaveInnerAsBulk<T> {
         }
     }
 
-    async fn try_dequeue(&self) -> Result<Vec<T>, AsyncWakerAwaiter> {
-        let mut write_access = self.queue.lock().await;
+    fn try_dequeue(&self) -> Result<Vec<T>, AsyncWakerAwaiter> {
+        let mut write_access = self.queue.lock();
 
         if write_access.0.len() == 0 {
             return Err(write_access.1.get_awaiter());

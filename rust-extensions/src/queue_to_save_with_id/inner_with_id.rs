@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hash::Hash, time::Duration};
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::StrOrString;
 
@@ -33,8 +33,8 @@ where
         }
     }
 
-    pub(crate) async fn enqueue(&self, items: impl Iterator<Item = T>) {
-        let mut queue = self.queue.lock().await;
+    pub(crate) fn enqueue(&self, items: impl Iterator<Item = T>) {
+        let mut queue = self.queue.lock();
         for item in items {
             let id = item.get_persist_object_id().clone();
             queue.0.insert(id, item);
@@ -42,8 +42,8 @@ where
         queue.1.wake();
     }
 
-    pub(crate) async fn enqueue_single(&self, item: T) {
-        let mut queue = self.queue.lock().await;
+    pub(crate) fn enqueue_single(&self, item: T) {
+        let mut queue = self.queue.lock();
         let id = item.get_persist_object_id().clone();
         queue.0.insert(id, item);
         queue.1.wake();
@@ -51,7 +51,7 @@ where
 
     pub(crate) async fn dequeue(&self) -> Vec<T> {
         loop {
-            match self.try_dequeue().await {
+            match self.try_dequeue() {
                 Ok(values) => {
                     return values;
                 }
@@ -62,8 +62,8 @@ where
         }
     }
 
-    async fn try_dequeue(&self) -> Result<Vec<T>, AsyncWakerAwaiter> {
-        let mut write_access = self.queue.lock().await;
+    fn try_dequeue(&self) -> Result<Vec<T>, AsyncWakerAwaiter> {
+        let mut write_access = self.queue.lock();
 
         if write_access.0.is_empty() {
             return Err(write_access.1.get_awaiter());

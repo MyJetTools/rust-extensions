@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::{queue_to_save::inner_as_single::QueueToSaveInnerAsSingle, Logger, StrOrString};
 
@@ -22,19 +22,19 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
             handler: Mutex::new(HandlerStatus::None),
         }
     }
-    pub async fn enqueue(&self, items: impl Iterator<Item = T>) {
-        self.inner.enqueue(items).await;
+    pub fn enqueue(&self, items: impl Iterator<Item = T>) {
+        self.inner.enqueue(items);
     }
 
-    pub async fn enqueue_single(&self, item: T) {
-        self.inner.enqueue_single(item).await;
+    pub fn enqueue_single(&self, item: T) {
+        self.inner.enqueue_single(item);
     }
 
-    pub async fn register_events_handler(
+    pub fn register_events_handler(
         &self,
         events_handle: Arc<dyn QueueToSaveEventsHandler<T> + Send + Sync + 'static>,
     ) {
-        let mut write_access = self.handler.lock().await;
+        let mut write_access = self.handler.lock();
         *write_access = HandlerStatus::Some(events_handle);
     }
 
@@ -42,8 +42,8 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
         self.inner.name.as_str()
     }
 
-    pub async fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
-        let mut write_access = self.handler.lock().await;
+    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+        let mut write_access = self.handler.lock();
 
         match &*write_access {
             HandlerStatus::None => {

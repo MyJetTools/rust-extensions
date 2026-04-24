@@ -31,6 +31,7 @@ base64 = { version = "*", optional = true }
 serde = { version = "*", features = ["derive"] }
 uuid = { version = "*", features = ["v4"], optional = true }
 macros = { path = "../macros" }
+parking_lot = "*"
 
 [dev-dependencies]
 serde_json = "*"
