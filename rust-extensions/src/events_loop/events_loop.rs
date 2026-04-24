@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::{ApplicationStates, Logger, StrOrString};
 
@@ -61,11 +61,11 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
         self
     }
 
-    pub async fn register_event_loop(
+    pub fn register_event_loop(
         &self,
         event_loop: Arc<dyn EventsLoopTick<TModel> + Send + Sync+  'static>,
     ) {
-        let receiver = self.pending_receiver.lock().await.take();
+        let receiver = self.pending_receiver.lock().take();
 
         if receiver.is_none() {
             panic!(
@@ -74,19 +74,19 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
             );
         }
 
-        let mut inner_lock = self.inner.lock().await;
+        let mut inner_lock = self.inner.lock();
         *inner_lock = Some(EventsLoopInner {
             event_loop_tick: event_loop,
             receiver: receiver.unwrap(),
         });
     }
 
-    pub async fn start(
+    pub fn start(
         &self,
         app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
         logger: Arc<dyn Logger + Send + Sync + 'static>,
     ) {
-        let inner = self.inner.lock().await.take();
+        let inner = self.inner.lock().take();
 
         let Some(inner) = inner else{
              panic!(
