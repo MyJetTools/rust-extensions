@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use super::ObjectPoolInner;
 
@@ -24,12 +24,9 @@ impl<T: Sync + Send + 'static> RentedObject<T> {
 
 impl<T: Sync + Send + 'static> Drop for RentedObject<T> {
     fn drop(&mut self) {
-        let inner = self.inner.clone();
         let value = self.value.take().unwrap();
-        tokio::spawn(async move {
-            let mut inner = inner.lock().await;
-            inner.return_element(value);
-        });
+        let mut inner = self.inner.lock();
+        inner.return_element(value);
     }
 }
 

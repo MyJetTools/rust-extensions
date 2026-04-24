@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use futures::task::AtomicWaker;
 
@@ -9,7 +9,7 @@ pub struct TokioQueuePublish {
 
 impl TokioQueuePublish {
     pub fn enqueue(&self, payload: &[u8]) {
-        let mut write_access = self.queue.lock().unwrap();
+        let mut write_access = self.queue.lock();
         write_access.extend_from_slice(payload);
         drop(write_access);
         self.waker.wake();

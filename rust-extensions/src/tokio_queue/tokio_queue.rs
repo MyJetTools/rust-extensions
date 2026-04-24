@@ -24,7 +24,7 @@ impl tokio::io::AsyncRead for TokioQueue {
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        let mut queue_access = self.inner.queue.lock().unwrap();
+        let mut queue_access = self.inner.queue.lock();
 
         if queue_access.is_empty() {
             // Register the waker while holding the lock to avoid races,

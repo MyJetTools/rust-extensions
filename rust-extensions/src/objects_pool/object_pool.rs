@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use super::{ObjectPoolInner, RentedObject};
 
@@ -28,14 +28,15 @@ impl<T: Sync + Send + 'static, TFactory: ObjectsPoolFactory<T>> ObjectsPool<T, T
     }
 
     pub async fn get_element(&self) -> RentedObject<T> {
-        let mut write_access = self.inner.lock().await;
-
         loop {
-            match write_access.take(self.max_pool_size) {
+            let rent_result = {
+                let mut write_access = self.inner.lock();
+                write_access.take(self.max_pool_size)
+            };
+
+            match rent_result {
                 RentResult::Rented(result) => {
-                    let inner = self.inner.clone();
-                    let result = RentedObject::new(inner, result);
-                    return result;
+                    return RentedObject::new(self.inner.clone(), result);
                 }
                 RentResult::CreateNew => {
                     return RentedObject::new(self.inner.clone(), self.factory.create_new().await);
