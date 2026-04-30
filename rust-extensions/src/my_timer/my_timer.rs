@@ -1,4 +1,6 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, panic::AssertUnwindSafe, sync::Arc, time::Duration};
+
+use futures::FutureExt;
 
 use crate::{ApplicationStates, Logger};
 
@@ -109,28 +111,46 @@ async fn timer_loop(
     }
 
     while !app_states.is_shutting_down() {
-        let mut timer_handles = HashMap::new();
-        for (timer_id, timer) in &timers {
-            let handle = tokio::spawn(execute_timer(timer.clone()));
-            timer_handles.insert(timer_id, handle);
-        }
+        if timers.len() == 1 {
+            let (timer_id, timer) = &timers[0];
+            let tick_future = AssertUnwindSafe(execute_timer(timer.clone())).catch_unwind();
 
-        for (timer_id, timer_handler) in timer_handles {
-            match tokio::time::timeout(iteration_timeout, timer_handler).await {
-                Ok(result) => {
-                    if let Err(err) = result {
-                        let message = format!("Timer {} is panicked. Err: {:?}", timer_id, err);
-                        let timer_id = timer_id.to_string();
-                        let logger = logger.clone();
-
-                        tokio::spawn(async move {
-                            println!("{}", message);
-                            logger.write_error(timer_id.into(), message.into(), None.into());
-                        });
-                    }
+            match tokio::time::timeout(iteration_timeout, tick_future).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(_panic)) => {
+                    let message = format!("Timer {} is panicked", timer_id);
+                    println!("{}", message);
+                    logger.write_error(timer_id.to_string().into(), message.into(), None.into());
                 }
                 Err(err) => {
                     println!("Timer {} is time outed with err: {:?}", timer_id, err);
+                }
+            }
+        } else {
+            let mut timer_handles = HashMap::new();
+            for (timer_id, timer) in &timers {
+                let handle = tokio::spawn(execute_timer(timer.clone()));
+                timer_handles.insert(timer_id, handle);
+            }
+
+            for (timer_id, timer_handler) in timer_handles {
+                match tokio::time::timeout(iteration_timeout, timer_handler).await {
+                    Ok(result) => {
+                        if let Err(err) = result {
+                            let message =
+                                format!("Timer {} is panicked. Err: {:?}", timer_id, err);
+                            let timer_id = timer_id.to_string();
+                            let logger = logger.clone();
+
+                            tokio::spawn(async move {
+                                println!("{}", message);
+                                logger.write_error(timer_id.into(), message.into(), None.into());
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        println!("Timer {} is time outed with err: {:?}", timer_id, err);
+                    }
                 }
             }
         }
