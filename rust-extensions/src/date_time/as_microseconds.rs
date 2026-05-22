@@ -19,6 +19,12 @@ impl DateTimeAsMicroseconds {
         Self { unix_microseconds }
     }
 
+    pub fn from_nanos(value: i64) -> Self {
+        Self {
+            unix_microseconds: value / 1000,
+        }
+    }
+
     pub fn create(
         year: i32,
         month: u32,
@@ -219,8 +225,13 @@ impl From<i64> for DateTimeAsMicroseconds {
         if src < 4733514061000 {
             return DateTimeAsMicroseconds::new(src * 1000);
         }
+        //Microseconds From  to [Mon Jan 01 2120 01:01:01]
+        if src < 4733514061000000 {
+            return DateTimeAsMicroseconds::new(src);
+        }
 
-        return DateTimeAsMicroseconds::new(src);
+        //Nanoseconds
+        return DateTimeAsMicroseconds::new(src / 1000);
     }
 }
 
@@ -417,7 +428,11 @@ mod tests {
 
     #[test]
     fn test_from_mil_micro_secs() {
-        //milliseconds
+        //nanoseconds
+        let value: DateTimeAsMicroseconds = 1679059876123456000i64.into();
+        assert_eq!("2023-03-17T13:31:16.123456", &value.to_rfc3339()[..26]);
+
+        //microseconds
         let value: DateTimeAsMicroseconds = 1679059876123456i64.into();
         assert_eq!("2023-03-17T13:31:16.123456", &value.to_rfc3339()[..26]);
         let value: DateTimeAsMicroseconds = 315525600123456i64.into();

@@ -58,6 +58,10 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 
 `DateTimeAsMicroseconds` is a single-field UTC timestamp (`unix_microseconds: i64`) with serde support and helpers to add/subtract durations, compare, format (RFC 3339/2822/5322/7231, compact), and convert to `chrono::DateTime<Utc>`.
 
+Constructors include `new(unix_microseconds)`, `now()`, `create(...)`, `from_str`, `parse_iso_string`, and `from_nanos(value: i64)` — which converts a Unix nanoseconds timestamp to µs (valid range ~1677–2262).
+
+`From<i64>` (`let dt: DateTimeAsMicroseconds = value.into()`) auto-detects the unit of a Unix timestamp by magnitude — seconds, milliseconds, microseconds, or nanoseconds — and normalizes it to microseconds.
+
 Interval keys let you cut timestamps to buckets:
 - Compile-time typed: `IntervalKey<YearKey | MonthKey | DayKey | HourKey | MinuteKey | Minute5Key>`.
 - Runtime enum: `DateTimeInterval::{Year, Month, Day, Hour, Minute, Min5}`.
