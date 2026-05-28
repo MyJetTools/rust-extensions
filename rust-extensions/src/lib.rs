@@ -5,6 +5,8 @@ pub mod date_time;
 pub mod duration_utils;
 #[cfg(feature = "with-tokio")]
 pub mod events_loop;
+#[cfg(feature = "with-tokio")]
+pub mod background_executor;
 pub mod lazy;
 pub mod linq;
 mod logger;

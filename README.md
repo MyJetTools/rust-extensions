@@ -30,7 +30,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 - String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
 - Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
-- Async/Tokio (feature `with-tokio`): `events_loop`, `my_timer`, `task_completion`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
+- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
 - IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
 
 ## Quick recipes
@@ -50,7 +50,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
-  - `MyTimer` for tick-driven tasks, `EventsLoop` for fan-out processing, `TaskCompletion` for awaiting completion handles, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+  - `MyTimer` for tick-driven tasks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
 - File/IO:
   - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
 
@@ -129,6 +129,7 @@ assert_eq!(bytes.len(), 2 + 4);
 ## Async & Tokio (feature `with-tokio`)
 
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task.
+- `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel.
 - `MyTimer`: tick-based scheduling with graceful stop.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `TokioQueue`: bounded async queue with backpressure.
@@ -242,6 +243,71 @@ Key properties:
 - **One-shot registration** — a second `register_event_loop` panics; `start` without a prior register panics.
 - **Bounded lifecycle** — `stop` delivers `Shutdown` through the same channel, so in-flight messages ahead of it are processed first.
 - **Per-tick timeout** — `set_iteration_timeout(Duration)` caps a single `tick` call; overruns are logged via the provided `Logger` and the loop keeps running.
+
+### `BackgroundExecutor` use case
+
+`BackgroundExecutor` offloads work off the caller's thread and finishes it on a single background Tokio task. The caller just signals "there may be work to do" via `trigger()` and returns immediately; the registered job runs in the background, decides for itself whether anything actually needs doing, and so a `trigger()` is allowed to fire idly.
+
+A typical example is on-demand persistence: callers mutate state and `trigger()`; the job locks the shared state, takes whatever is pending, and persists it. If nothing changed since the last run the job locks, sees an empty set, and returns — a cheap no-op.
+
+1. **Construct** — `BackgroundExecutor::new(name)`; the name is used in panic and log messages.
+2. **Register a job** (`BackgroundJob`) via `register` — one-shot; a second call panics.
+3. **Start** — `start(logger)` moves the registered job into the live state. Calling `start` without a prior `register` panics.
+4. **Trigger** — `trigger()` bumps an atomic counter; the first trigger (0 → 1) spawns the reader task, and further triggers while the reader is alive just increment the counter and stay lock-free.
+
+```rust
+#[cfg(feature = "with-tokio")]
+mod example {
+    use std::sync::Arc;
+    use rust_extensions::{
+        background_executor::{BackgroundExecutor, BackgroundJob},
+        Logger,
+    };
+
+    // 1. Define the work (no payload — the job pulls what it needs itself).
+    struct FlushJob;
+
+    #[async_trait::async_trait]
+    impl BackgroundJob for FlushJob {
+        async fn execute(&self) {
+            // lock shared state, take what is pending, persist it (no-op if nothing changed).
+        }
+    }
+
+    // Keep it inside AppCtx as a plain field.
+    pub struct AppCtx {
+        pub flush: BackgroundExecutor,
+    }
+
+    impl AppCtx {
+        pub fn new() -> Self {
+            Self {
+                flush: BackgroundExecutor::new("flush"),
+            }
+        }
+    }
+
+    // 2 + 3. Wire up at startup.
+    pub fn bootstrap(ctx: &AppCtx, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+        ctx.flush.register(Arc::new(FlushJob));
+        ctx.flush.start(logger);
+    }
+
+    // 4. Signal "there may be work" from anywhere — `trigger` takes `&self` and returns at once.
+    pub fn on_change(ctx: &AppCtx) {
+        ctx.flush.trigger();
+    }
+}
+```
+
+Key properties:
+
+- **Offloads the caller** — `trigger()` returns immediately; the job runs on a dedicated background task, so the calling thread is never blocked on the work.
+- **Single consumer** — at most one reader task is alive, so `execute()` never runs concurrently with itself.
+- **Idle triggers are fine** — `execute()` runs once per `trigger()` and is expected to be cheap when there is nothing to do; the reader drains the counter back to zero before exiting.
+- **Lock-free hot path** — `trigger()` only takes a lock on the 0 → 1 transition (to spawn the reader); subsequent triggers are a single atomic add.
+- **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the loop keeps draining.
+- **One-shot lifecycle** — a second `register` panics, `start` without a prior `register` panics, and `trigger` before `start` panics.
 
 ## IO, logging, misc
 
