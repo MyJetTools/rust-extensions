@@ -232,6 +232,48 @@ impl Into<IntervalKey<Minute5Key>> for &'_ u64 {
     }
 }
 
+impl Into<IntervalKey<Minute15Key>> for i64 {
+    fn into(self) -> IntervalKey<Minute15Key> {
+        IntervalKey::from_i64(self)
+    }
+}
+
+impl TryInto<IntervalKey<Minute15Key>> for IntervalKey<MinuteKey> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute15Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute15Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<MinuteKey>> for IntervalKey<Minute15Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<MinuteKey>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<MinuteKey> = dt.into();
+        Ok(result)
+    }
+}
+
+impl Into<IntervalKey<Minute15Key>> for &'_ i64 {
+    fn into(self) -> IntervalKey<Minute15Key> {
+        IntervalKey::from_i64(*self)
+    }
+}
+
+impl Into<IntervalKey<Minute15Key>> for u64 {
+    fn into(self) -> IntervalKey<Minute15Key> {
+        IntervalKey::from_i64(self as i64)
+    }
+}
+
+impl Into<IntervalKey<Minute15Key>> for &'_ u64 {
+    fn into(self) -> IntervalKey<Minute15Key> {
+        IntervalKey::from_i64(*self as i64)
+    }
+}
+
 impl Into<IntervalKey<YearKey>> for DateTimeAsMicroseconds {
     fn into(self) -> IntervalKey<YearKey> {
         IntervalKey::new(self)
@@ -306,6 +348,19 @@ impl TryInto<DateTimeAsMicroseconds> for IntervalKey<Minute5Key> {
 
 impl Into<IntervalKey<Minute5Key>> for DateTimeAsMicroseconds {
     fn into(self) -> IntervalKey<Minute5Key> {
+        IntervalKey::new(self)
+    }
+}
+
+impl TryInto<DateTimeAsMicroseconds> for IntervalKey<Minute15Key> {
+    type Error = String;
+    fn try_into(self) -> Result<DateTimeAsMicroseconds, Self::Error> {
+        Minute15Key::to_date_time(self.value)
+    }
+}
+
+impl Into<IntervalKey<Minute15Key>> for DateTimeAsMicroseconds {
+    fn into(self) -> IntervalKey<Minute15Key> {
         IntervalKey::new(self)
     }
 }
@@ -390,5 +445,18 @@ mod tests {
         let d_result: DateTimeAsMicroseconds = minute_key.try_into().unwrap();
 
         assert_eq!("2021-03-05T01:10:00", &d_result.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_minute_fifteen_key() {
+        let d = DateTimeAsMicroseconds::from_str("2021-03-05T01:22:32.000000Z").unwrap();
+
+        let minute_key: super::IntervalKey<Minute15Key> = d.into();
+
+        assert_eq!(minute_key.value, 202103050115);
+
+        let d_result: DateTimeAsMicroseconds = minute_key.try_into().unwrap();
+
+        assert_eq!("2021-03-05T01:15:00", &d_result.to_rfc3339()[..19]);
     }
 }

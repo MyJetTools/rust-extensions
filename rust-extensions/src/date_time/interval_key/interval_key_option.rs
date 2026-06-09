@@ -107,3 +107,20 @@ impl IntervalKeyOption for Minute5Key {
         DateTimeInterval::Min5(value)
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Minute15Key;
+
+impl IntervalKeyOption for Minute15Key {
+    fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+        super::interval_utils::min15::to_date_time(value)
+    }
+
+    fn to_value(src: DateTimeAsMicroseconds) -> i64 {
+        super::interval_utils::min15::to_value(src)
+    }
+
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Min15(value)
+    }
+}

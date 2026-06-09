@@ -4,6 +4,7 @@ use crate::date_time::DateTimeAsMicroseconds;
 pub enum DateTimeInterval {
     Minute(i64),
     Min5(i64),
+    Min15(i64),
     Hour(i64),
     Day(i64),
     Month(i64),
@@ -30,6 +31,11 @@ impl DateTimeInterval {
         Self::Min5(value)
     }
 
+    pub fn from_dt_to_min15(dt: DateTimeAsMicroseconds) -> Self {
+        let value = super::interval_utils::min15::to_value(dt);
+        Self::Min15(value)
+    }
+
     pub fn from_dt_to_hour(dt: DateTimeAsMicroseconds) -> Self {
         let value = super::interval_utils::hour::to_value(dt);
         Self::Hour(value)
@@ -54,6 +60,7 @@ impl DateTimeInterval {
         match self {
             Self::Minute(value) => super::interval_utils::minute::to_date_time(*value),
             Self::Min5(value) => super::interval_utils::min5::to_date_time(*value),
+            Self::Min15(value) => super::interval_utils::min15::to_date_time(*value),
             Self::Hour(value) => super::interval_utils::hour::to_date_time(*value),
             Self::Day(value) => super::interval_utils::day::to_date_time(*value),
             Self::Month(value) => super::interval_utils::month::to_date_time(*value),
@@ -65,6 +72,7 @@ impl DateTimeInterval {
         match self {
             Self::Minute(value) => *value,
             Self::Min5(value) => *value,
+            Self::Min15(value) => *value,
             Self::Hour(value) => *value,
             Self::Day(value) => *value,
             Self::Month(value) => *value,
