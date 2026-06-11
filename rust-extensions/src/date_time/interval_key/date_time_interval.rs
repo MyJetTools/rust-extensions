@@ -1,6 +1,6 @@
 use crate::date_time::DateTimeAsMicroseconds;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DateTimeInterval {
     Minute(i64),
     Min5(i64),
@@ -9,15 +9,6 @@ pub enum DateTimeInterval {
     Day(i64),
     Month(i64),
     Year(i64),
-}
-
-impl std::fmt::Debug for DateTimeInterval {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let value = self.to_i64();
-        f.debug_struct("IntervalKeyValue")
-            .field("value", &value)
-            .finish()
-    }
 }
 
 impl DateTimeInterval {

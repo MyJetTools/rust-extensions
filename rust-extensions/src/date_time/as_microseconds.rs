@@ -177,13 +177,6 @@ impl DateTimeAsMicroseconds {
         result.add_minutes(-difference.difference_in_half_hours() * 30);
         result
     }
-
-
-    pub unsafe  fn update_unsafe(&self, new_value: DateTimeAsMicroseconds){
-      let value = &self.unix_microseconds as *const i64 as *mut i64;
-      value.write(new_value.unix_microseconds);
-    }
-  
 }
 
 
@@ -217,16 +210,20 @@ impl std::ops::Sub<DateTimeAsMicroseconds> for DateTimeAsMicroseconds {
 
 impl From<i64> for DateTimeAsMicroseconds {
     fn from(src: i64) -> Self {
-        //Seconds946677600000
-        if src < 4733514061 {
-            return DateTimeAsMicroseconds::new(src * 1000_000);
+        // Unit is detected by magnitude so that pre-1970 (negative) timestamps
+        // resolve to the same unit as their positive counterparts.
+        let magnitude = src.unsigned_abs();
+
+        //Seconds up to [Mon Jan 01 2120 01:01:01]
+        if magnitude < 4733514061 {
+            return DateTimeAsMicroseconds::new(src * 1_000_000);
         }
-        //Milliseconds From  to [Mon Jan 01 2120 01:01:01]
-        if src < 4733514061000 {
+        //Milliseconds up to [Mon Jan 01 2120 01:01:01]
+        if magnitude < 4733514061000 {
             return DateTimeAsMicroseconds::new(src * 1000);
         }
-        //Microseconds From  to [Mon Jan 01 2120 01:01:01]
-        if src < 4733514061000000 {
+        //Microseconds up to [Mon Jan 01 2120 01:01:01]
+        if magnitude < 4733514061000000 {
             return DateTimeAsMicroseconds::new(src);
         }
 
@@ -449,6 +446,28 @@ mod tests {
         assert_eq!("2023-03-17T13:31:16", &value.to_rfc3339()[..19]);
         let value: DateTimeAsMicroseconds = 315525600i64.into();
         assert_eq!("1979-12-31T22:00:00", &value.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_from_negative_timestamps() {
+        // A negative timestamp is the same unit as its positive counterpart,
+        // pointing before the unix epoch.
+
+        //seconds
+        let value: DateTimeAsMicroseconds = (-1679059876i64).into();
+        assert_eq!(-1679059876_000000, value.unix_microseconds);
+
+        //milliseconds
+        let value: DateTimeAsMicroseconds = (-315525600123i64).into();
+        assert_eq!(-315525600123_000, value.unix_microseconds);
+
+        //microseconds
+        let value: DateTimeAsMicroseconds = (-315525600123456i64).into();
+        assert_eq!(-315525600123456, value.unix_microseconds);
+
+        //nanoseconds
+        let value: DateTimeAsMicroseconds = (-315525600123456000i64).into();
+        assert_eq!(-315525600123456, value.unix_microseconds);
     }
 
     #[test]

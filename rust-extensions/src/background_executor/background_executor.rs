@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicI64, Ordering},
+    atomic::{AtomicBool, AtomicI64, Ordering},
     Arc,
 };
 
@@ -20,6 +20,7 @@ pub struct BackgroundExecutor {
     counter: Arc<AtomicI64>,
     pending_job: Mutex<Option<Arc<dyn BackgroundJob + Send + Sync + 'static>>>,
     inner: Mutex<Option<Arc<BackgroundExecutorInner>>>,
+    started: AtomicBool,
     name: Arc<String>,
 }
 
@@ -31,6 +32,7 @@ impl BackgroundExecutor {
             counter: Arc::new(AtomicI64::new(0)),
             pending_job: Mutex::new(None),
             inner: Mutex::new(None),
+            started: AtomicBool::new(false),
             name,
         }
     }
@@ -66,9 +68,16 @@ impl BackgroundExecutor {
         });
 
         *self.inner.lock() = Some(inner);
+        self.started.store(true, Ordering::SeqCst);
     }
 
     pub fn trigger(&self) {
+        // Checked before touching the counter: a leftover increment from a
+        // not-started panic would prevent the reader from ever being spawned.
+        if !self.started.load(Ordering::SeqCst) {
+            panic!("Background executor {} is not started.", self.name);
+        }
+
         let prev = self.counter.fetch_add(1, Ordering::SeqCst);
         if prev == 0 {
             let inner = self.inner.lock();
@@ -196,6 +205,29 @@ mod tests {
             let expected = TASKS * PER_TASK;
             wait_for(&runs, expected).await;
             assert_eq!(runs.load(Ordering::SeqCst), expected);
+        });
+    }
+
+    #[test]
+    fn trigger_before_start_panics_but_does_not_wedge_executor() {
+        rt().block_on(async {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let executor = Arc::new(BackgroundExecutor::new("test-early-trigger"));
+
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                executor.trigger();
+            }));
+            assert!(panicked.is_err());
+
+            executor.register(Arc::new(CountingJob {
+                runs: runs.clone(),
+                in_flight: Arc::new(AtomicUsize::new(0)),
+            }));
+            executor.start(Arc::new(TestLogger));
+
+            executor.trigger();
+            wait_for(&runs, 1).await;
+            assert_eq!(runs.load(Ordering::SeqCst), 1);
         });
     }
 

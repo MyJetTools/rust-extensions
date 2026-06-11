@@ -209,7 +209,10 @@ pub mod minute {
 
         match result {
             Some(value) => Ok(value),
-            None => Err(format!("{} is not a valid year+month+day+hour key", value)),
+            None => Err(format!(
+                "{} is not a valid year+month+day+hour+minute key",
+                value
+            )),
         }
     }
 
@@ -231,7 +234,9 @@ pub mod min5 {
         let month = (value % 100000000) / 1000000;
         let day = (value % 1000000) / 10000;
         let hour = (value % 10000) / 100;
-        let min = value % 100;
+        // Normalize to the slot start, so a raw value with an off-slot minute
+        // round-trips the same way as a key produced by to_value.
+        let min = (value % 100) / 5 * 5;
 
         DateTimeStruct {
             year: year as i32,
@@ -253,7 +258,7 @@ pub mod min5 {
 
         match result {
             Some(value) => Ok(value),
-            None => Err(format!("{} is not a valid year+month+day+hour key", value)),
+            None => Err(format!("{} is not a valid 5-minute interval key", value)),
         }
     }
 
@@ -277,7 +282,9 @@ pub mod min15 {
         let month = (value % 100000000) / 1000000;
         let day = (value % 1000000) / 10000;
         let hour = (value % 10000) / 100;
-        let min = value % 100;
+        // Normalize to the slot start, so a raw value with an off-slot minute
+        // round-trips the same way as a key produced by to_value.
+        let min = (value % 100) / 15 * 15;
 
         DateTimeStruct {
             year: year as i32,
@@ -299,7 +306,7 @@ pub mod min15 {
 
         match result {
             Some(value) => Ok(value),
-            None => Err(format!("{} is not a valid year+month+day+hour key", value)),
+            None => Err(format!("{} is not a valid 15-minute interval key", value)),
         }
     }
 

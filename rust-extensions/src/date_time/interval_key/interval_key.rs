@@ -4,8 +4,6 @@ use crate::date_time::DateTimeAsMicroseconds;
 
 use super::{IntervalKeyOption, *};
 
-// Hour key formatted YYYYMMDDHH
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IntervalKey<TOption: IntervalKeyOption + Copy + Clone> {
     value: i64,
@@ -256,6 +254,24 @@ impl TryInto<IntervalKey<MinuteKey>> for IntervalKey<Minute15Key> {
     }
 }
 
+impl TryInto<IntervalKey<Minute15Key>> for IntervalKey<Minute5Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute15Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute15Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<Minute5Key>> for IntervalKey<Minute15Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute5Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute5Key> = dt.into();
+        Ok(result)
+    }
+}
+
 impl Into<IntervalKey<Minute15Key>> for &'_ i64 {
     fn into(self) -> IntervalKey<Minute15Key> {
         IntervalKey::from_i64(*self)
@@ -458,5 +474,31 @@ mod tests {
         let d_result: DateTimeAsMicroseconds = minute_key.try_into().unwrap();
 
         assert_eq!("2021-03-05T01:15:00", &d_result.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_off_slot_raw_value_is_normalized() {
+        // minute 17 is not a valid slot start - it has to be cut to the slot
+        let key: super::IntervalKey<Minute15Key> = super::IntervalKey::from_i64(202103050117);
+        let d: DateTimeAsMicroseconds = key.try_to_date_time().unwrap();
+        assert_eq!("2021-03-05T01:15:00", &d.to_rfc3339()[..19]);
+
+        let key: super::IntervalKey<Minute5Key> = super::IntervalKey::from_i64(202103050117);
+        let d: DateTimeAsMicroseconds = key.try_to_date_time().unwrap();
+        assert_eq!("2021-03-05T01:15:00", &d.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_min5_min15_conversions() {
+        let d = DateTimeAsMicroseconds::from_str("2021-03-05T01:22:32.000000Z").unwrap();
+
+        let min5_key: super::IntervalKey<Minute5Key> = d.into();
+        assert_eq!(min5_key.value, 202103050120);
+
+        let min15_key: super::IntervalKey<Minute15Key> = min5_key.try_into().unwrap();
+        assert_eq!(min15_key.value, 202103050115);
+
+        let min5_key: super::IntervalKey<Minute5Key> = min15_key.try_into().unwrap();
+        assert_eq!(min5_key.value, 202103050115);
     }
 }
