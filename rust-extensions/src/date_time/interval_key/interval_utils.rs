@@ -222,6 +222,20 @@ pub mod hour2 {
             + date_time_struct.day as i64 * 100
             + hour_slot * 2
     }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn test_dt_struct_floors_off_slot_hour() {
+            // hour 03 floors to the 2-hour slot start 02; date digits intact.
+            let s = super::to_date_time_struct(2021030503);
+            assert_eq!(s.year, 2021);
+            assert_eq!(s.month, 3);
+            assert_eq!(s.day, 5);
+            assert_eq!(s.time.hour, 2);
+            assert_eq!(s.time.min, 0);
+        }
+    }
 }
 
 pub mod hour4 {
@@ -266,6 +280,20 @@ pub mod hour4 {
             + date_time_struct.month as i64 * 10000
             + date_time_struct.day as i64 * 100
             + hour_slot * 4
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn test_dt_struct_floors_off_slot_hour() {
+            // hour 13 floors to the 4-hour slot start 12; date digits intact.
+            let s = super::to_date_time_struct(2021030513);
+            assert_eq!(s.year, 2021);
+            assert_eq!(s.month, 3);
+            assert_eq!(s.day, 5);
+            assert_eq!(s.time.hour, 12);
+            assert_eq!(s.time.min, 0);
+        }
     }
 }
 
@@ -457,6 +485,20 @@ pub mod min30 {
             + date_time_struct.day as i64 * 10000
             + date_time_struct.time.hour as i64 * 100
             + minute_slot * 30
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn test_dt_struct_floors_off_slot_minute() {
+            // minute 42 floors to the 30-minute slot start 30; other digits intact.
+            let s = super::to_date_time_struct(202103050142);
+            assert_eq!(s.year, 2021);
+            assert_eq!(s.month, 3);
+            assert_eq!(s.day, 5);
+            assert_eq!(s.time.hour, 1);
+            assert_eq!(s.time.min, 30);
+        }
     }
 }
 

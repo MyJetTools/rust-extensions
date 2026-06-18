@@ -1,6 +1,6 @@
 use crate::date_time::DateTimeAsMicroseconds;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum DateTimeInterval {
     Minute(i64),
     Min5(i64),

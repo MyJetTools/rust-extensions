@@ -4,7 +4,7 @@ use crate::date_time::DateTimeAsMicroseconds;
 
 use super::{IntervalKeyOption, *};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntervalKey<TOption: IntervalKeyOption + Copy + Clone> {
     value: i64,
     _phantom: std::marker::PhantomData<TOption>,
@@ -26,6 +26,11 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
         }
     }
 
+    /// Wraps a raw `i64` as a key **without validation**. The value must be a
+    /// correctly-encoded key of this exact type — normally one previously produced
+    /// by [`Self::to_i64`] / [`Self::new`] for the same `TOption`. A value encoded
+    /// for a different key type (e.g. a minute key fed to a `DayKey`) silently
+    /// mis-decodes. Off-slot values are normalized to the slot start on decode.
     pub fn from_i64(value: i64) -> Self {
         Self {
             value,
@@ -45,6 +50,13 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
         TOption::to_dt_interval(self.value)
     }
 
+    /// Shifts the key by `duration` (applied to the slot-start timestamp) and
+    /// re-snaps to the slot start.
+    ///
+    /// This is **not** slot-aware: a `duration` smaller than one slot width
+    /// returns the **same** key — e.g. for a week key
+    /// `key.add(Duration::from_secs(60))` is a no-op; advance by a full week to
+    /// reach the next bucket. To step exactly one bucket, add the slot's own width.
     pub fn add(&self, duration: Duration) -> Self {
         let dt: DateTimeAsMicroseconds = TOption::to_date_time(self.value).unwrap();
         let dt = dt.add(duration);
@@ -54,6 +66,8 @@ impl<TOption: IntervalKeyOption + Clone + Copy> IntervalKey<TOption> {
         }
     }
 
+    /// Shifts the key back by `duration` and re-snaps to the slot start. Like
+    /// [`Self::add`], this is not slot-aware (see its note).
     pub fn sub(&self, duration: Duration) -> Self {
         let dt: DateTimeAsMicroseconds = TOption::to_date_time(self.value).unwrap();
         let dt = dt.sub(duration);
@@ -415,6 +429,61 @@ impl TryInto<DateTimeAsMicroseconds> for IntervalKey<Minute30Key> {
     type Error = String;
     fn try_into(self) -> Result<DateTimeAsMicroseconds, Self::Error> {
         Minute30Key::to_date_time(self.value)
+    }
+}
+
+// Cross-conversions within the minute family, mirroring Minute/Minute5/Minute15.
+impl TryInto<IntervalKey<Minute30Key>> for IntervalKey<MinuteKey> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute30Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute30Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<MinuteKey>> for IntervalKey<Minute30Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<MinuteKey>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<MinuteKey> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<Minute30Key>> for IntervalKey<Minute5Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute30Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute30Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<Minute5Key>> for IntervalKey<Minute30Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute5Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute5Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<Minute30Key>> for IntervalKey<Minute15Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute30Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute30Key> = dt.into();
+        Ok(result)
+    }
+}
+
+impl TryInto<IntervalKey<Minute15Key>> for IntervalKey<Minute30Key> {
+    type Error = String;
+    fn try_into(self) -> Result<IntervalKey<Minute15Key>, Self::Error> {
+        let dt: DateTimeAsMicroseconds = self.try_to_date_time()?;
+        let result: IntervalKey<Minute15Key> = dt.into();
+        Ok(result)
     }
 }
 
@@ -797,5 +866,200 @@ mod tests {
 
         let min5_key: super::IntervalKey<Minute5Key> = min15_key.try_into().unwrap();
         assert_eq!(min5_key.value, 202103050115);
+    }
+
+    #[test]
+    fn test_date_time_interval_dispatch() {
+        // Exercises the runtime DateTimeInterval enum: from_dt_to_*, to_i64, and
+        // to_date_time — the hand-maintained 12-arm dispatch that the compiler
+        // cannot check for wrong-module wiring.
+        let d = DateTimeAsMicroseconds::from_str("2021-03-05T01:42:32.000000Z").unwrap();
+
+        // from_dt_to_* + to_value wiring (variant & packed value).
+        assert_eq!(DateTimeInterval::from_dt_to_year(d), DateTimeInterval::Year(2021));
+        assert_eq!(DateTimeInterval::from_dt_to_month(d), DateTimeInterval::Month(202103));
+        assert_eq!(DateTimeInterval::from_dt_to_day(d), DateTimeInterval::Day(20210305));
+        assert_eq!(
+            DateTimeInterval::from_dt_to_week_monday(d),
+            DateTimeInterval::WeekMonday(20210301)
+        );
+        assert_eq!(
+            DateTimeInterval::from_dt_to_week_sunday(d),
+            DateTimeInterval::WeekSunday(20210228)
+        );
+        assert_eq!(DateTimeInterval::from_dt_to_hour(d), DateTimeInterval::Hour(2021030501));
+        assert_eq!(DateTimeInterval::from_dt_to_hour2(d), DateTimeInterval::Hour2(2021030500));
+        assert_eq!(DateTimeInterval::from_dt_to_hour4(d), DateTimeInterval::Hour4(2021030500));
+        assert_eq!(
+            DateTimeInterval::from_dt_to_minute(d),
+            DateTimeInterval::Minute(202103050142)
+        );
+        assert_eq!(DateTimeInterval::from_dt_to_min5(d), DateTimeInterval::Min5(202103050140));
+        assert_eq!(DateTimeInterval::from_dt_to_min15(d), DateTimeInterval::Min15(202103050130));
+        assert_eq!(DateTimeInterval::from_dt_to_min30(d), DateTimeInterval::Min30(202103050130));
+
+        // to_i64 arm (new variants).
+        assert_eq!(DateTimeInterval::Min30(202103050130).to_i64(), 202103050130);
+        assert_eq!(DateTimeInterval::Hour2(2021030500).to_i64(), 2021030500);
+        assert_eq!(DateTimeInterval::Hour4(2021030500).to_i64(), 2021030500);
+        assert_eq!(DateTimeInterval::WeekMonday(20210301).to_i64(), 20210301);
+        assert_eq!(DateTimeInterval::WeekSunday(20210228).to_i64(), 20210228);
+
+        // to_date_time arm (slot start) — pins each arm to the right utils module.
+        let chk = |iv: DateTimeInterval, expected: &str| {
+            assert_eq!(&iv.to_date_time().unwrap().to_rfc3339()[..19], expected, "{:?}", iv);
+        };
+        chk(DateTimeInterval::from_dt_to_year(d), "2021-01-01T00:00:00");
+        chk(DateTimeInterval::from_dt_to_month(d), "2021-03-01T00:00:00");
+        chk(DateTimeInterval::from_dt_to_day(d), "2021-03-05T00:00:00");
+        chk(DateTimeInterval::from_dt_to_week_monday(d), "2021-03-01T00:00:00");
+        chk(DateTimeInterval::from_dt_to_week_sunday(d), "2021-02-28T00:00:00");
+        chk(DateTimeInterval::from_dt_to_hour(d), "2021-03-05T01:00:00");
+        chk(DateTimeInterval::from_dt_to_hour2(d), "2021-03-05T00:00:00");
+        chk(DateTimeInterval::from_dt_to_hour4(d), "2021-03-05T00:00:00");
+        chk(DateTimeInterval::from_dt_to_minute(d), "2021-03-05T01:42:00");
+        chk(DateTimeInterval::from_dt_to_min5(d), "2021-03-05T01:40:00");
+        chk(DateTimeInterval::from_dt_to_min15(d), "2021-03-05T01:30:00");
+        chk(DateTimeInterval::from_dt_to_min30(d), "2021-03-05T01:30:00");
+    }
+
+    #[test]
+    fn test_to_dt_interval_and_cross_path() {
+        // IntervalKey::to_dt_interval must map to the matching DateTimeInterval
+        // variant and agree with the typed value and DateTimeInterval::from_dt_to_*.
+        let d = DateTimeAsMicroseconds::from_str("2021-03-05T01:42:32.000000Z").unwrap();
+
+        let h2: super::IntervalKey<Hour2Key> = d.into();
+        assert_eq!(h2.to_dt_interval(), DateTimeInterval::Hour2(2021030500));
+        assert_eq!(h2.to_dt_interval().to_i64(), h2.to_i64());
+        assert_eq!(h2.to_dt_interval(), DateTimeInterval::from_dt_to_hour2(d));
+
+        let h4: super::IntervalKey<Hour4Key> = d.into();
+        assert_eq!(h4.to_dt_interval(), DateTimeInterval::Hour4(2021030500));
+        assert_eq!(h4.to_dt_interval(), DateTimeInterval::from_dt_to_hour4(d));
+
+        let m30: super::IntervalKey<Minute30Key> = d.into();
+        assert_eq!(m30.to_dt_interval(), DateTimeInterval::Min30(202103050130));
+        assert_eq!(m30.to_dt_interval(), DateTimeInterval::from_dt_to_min30(d));
+
+        let wm: super::IntervalKey<WeekMondayKey> = d.into();
+        assert_eq!(wm.to_dt_interval(), DateTimeInterval::WeekMonday(20210301));
+        assert_eq!(wm.to_dt_interval(), DateTimeInterval::from_dt_to_week_monday(d));
+
+        let ws: super::IntervalKey<WeekSundayKey> = d.into();
+        assert_eq!(ws.to_dt_interval(), DateTimeInterval::WeekSunday(20210228));
+        assert_eq!(ws.to_dt_interval(), DateTimeInterval::from_dt_to_week_sunday(d));
+    }
+
+    #[test]
+    fn test_week_keys_across_boundaries() {
+        // 2021-01-01 is a Friday; its week start falls in the previous YEAR.
+        let d = DateTimeAsMicroseconds::from_str("2021-01-01T08:00:00.000000Z").unwrap();
+        let wm: super::IntervalKey<WeekMondayKey> = d.into();
+        let ws: super::IntervalKey<WeekSundayKey> = d.into();
+        assert_eq!(wm.value, 20201228); // Mon 2020-12-28
+        assert_eq!(ws.value, 20201227); // Sun 2020-12-27
+
+        // 2020-01-01 is a Wednesday; Monday week start crosses the year boundary.
+        let d = DateTimeAsMicroseconds::from_str("2020-01-01T00:00:00.000000Z").unwrap();
+        let wm: super::IntervalKey<WeekMondayKey> = d.into();
+        assert_eq!(wm.value, 20191230); // Mon 2019-12-30
+
+        // Leap year: 2024-03-01 is a Friday; Monday week start crosses Feb 29.
+        let d = DateTimeAsMicroseconds::from_str("2024-03-01T12:00:00.000000Z").unwrap();
+        let wm: super::IntervalKey<WeekMondayKey> = d.into();
+        assert_eq!(wm.value, 20240226); // Mon 2024-02-26
+        let d_result: DateTimeAsMicroseconds = wm.try_into().unwrap();
+        assert_eq!("2024-02-26T00:00:00", &d_result.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_week_start_lands_on_correct_weekday() {
+        use crate::date_time::interval_key::interval_utils::{week_monday, week_sunday};
+        use chrono::Datelike;
+
+        for s in [
+            "2021-03-01T00:00:00.000000Z", // Mon
+            "2021-03-04T10:00:00.000000Z", // Thu
+            "2021-03-07T23:59:59.000000Z", // Sun
+            "2024-02-29T12:00:00.000000Z", // leap day (Thu)
+            "2021-01-01T08:00:00.000000Z", // Fri (year boundary)
+        ] {
+            let d = DateTimeAsMicroseconds::from_str(s).unwrap();
+
+            let wm = week_monday::to_week_start(d);
+            assert_eq!(wm.to_chrono_utc().weekday(), chrono::Weekday::Mon, "monday start for {s}");
+
+            let ws = week_sunday::to_week_start(d);
+            assert_eq!(ws.to_chrono_utc().weekday(), chrono::Weekday::Sun, "sunday start for {s}");
+        }
+    }
+
+    #[test]
+    fn test_numeric_into_for_new_keys() {
+        let m30: super::IntervalKey<Minute30Key> = 202103050130i64.into();
+        assert_eq!(m30.to_i64(), 202103050130);
+        let m30: super::IntervalKey<Minute30Key> = (&202103050130i64).into();
+        assert_eq!(m30.to_i64(), 202103050130);
+        let m30: super::IntervalKey<Minute30Key> = 202103050130u64.into();
+        assert_eq!(m30.to_i64(), 202103050130);
+        let m30: super::IntervalKey<Minute30Key> = (&202103050130u64).into();
+        assert_eq!(m30.to_i64(), 202103050130);
+
+        let h2: super::IntervalKey<Hour2Key> = 2021030500i64.into();
+        assert_eq!(h2.to_i64(), 2021030500);
+        let h4: super::IntervalKey<Hour4Key> = 2021030500u64.into();
+        assert_eq!(h4.to_i64(), 2021030500);
+        let wm: super::IntervalKey<WeekMondayKey> = 20210301i64.into();
+        assert_eq!(wm.to_i64(), 20210301);
+        let ws: super::IntervalKey<WeekSundayKey> = (&20210228u64).into();
+        assert_eq!(ws.to_i64(), 20210228);
+    }
+
+    #[test]
+    fn test_pre_1970_timestamps() {
+        // 1969-12-31 22:37:15 UTC (negative unix micros). Wall-clock fields are
+        // derived via chrono and stay non-negative, so slots floor toward the slot
+        // start (not toward zero).
+        let d = DateTimeAsMicroseconds::from_str("1969-12-31T22:37:15.000000Z").unwrap();
+
+        let m30: super::IntervalKey<Minute30Key> = d.into();
+        assert_eq!(m30.value, 196912312230); // min 37 -> slot 30
+
+        let h2: super::IntervalKey<Hour2Key> = d.into();
+        assert_eq!(h2.value, 1969123122); // hour 22 (even slot)
+
+        // 1969-12-31 is a Wednesday.
+        let wm: super::IntervalKey<WeekMondayKey> = d.into();
+        assert_eq!(wm.value, 19691229); // Mon 1969-12-29
+        let ws: super::IntervalKey<WeekSundayKey> = d.into();
+        assert_eq!(ws.value, 19691228); // Sun 1969-12-28
+
+        let back: DateTimeAsMicroseconds = m30.try_into().unwrap();
+        assert_eq!("1969-12-31T22:30:00", &back.to_rfc3339()[..19]);
+    }
+
+    #[test]
+    fn test_min30_cross_conversions() {
+        let d = DateTimeAsMicroseconds::from_str("2021-03-05T01:42:32.000000Z").unwrap();
+
+        let min30: super::IntervalKey<Minute30Key> = d.into();
+        assert_eq!(min30.value, 202103050130);
+
+        let minute: super::IntervalKey<MinuteKey> = d.into();
+        let from_minute: super::IntervalKey<Minute30Key> = minute.try_into().unwrap();
+        assert_eq!(from_minute.value, 202103050130);
+
+        let min5: super::IntervalKey<Minute5Key> = min30.try_into().unwrap();
+        assert_eq!(min5.value, 202103050130);
+
+        let min15: super::IntervalKey<Minute15Key> = min30.try_into().unwrap();
+        assert_eq!(min15.value, 202103050130);
+
+        let back_to_min30: super::IntervalKey<Minute30Key> = min15.try_into().unwrap();
+        assert_eq!(back_to_min30.value, 202103050130);
+
+        let back_to_minute: super::IntervalKey<MinuteKey> = min30.try_into().unwrap();
+        assert_eq!(back_to_minute.value, 202103050130);
     }
 }

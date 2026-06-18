@@ -37,7 +37,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 
 - Time point + interval keys:
   - `date_time::DateTimeAsMicroseconds` for UTC timestamps with µs precision.
-  - `date_time::interval_key::*` for rounding/grouping into year/month/day/hour/minute/minute5 buckets.
+  - `date_time::interval_key::*` for rounding/grouping into year/month/week/day/hour (1h/2h/4h)/minute (1m/5m/15m/30m) buckets.
 - High-performance strings:
   - `ShortString` (Pascal-style, single-byte length, max 255 bytes on stack) with `Display`, `Serialize`, `Eq`, hashing.
 - `MaybeShortString` keeps data inline as `ShortString` when length ≤ 255 bytes; seamlessly upgrades to `String` when longer.
@@ -63,9 +63,10 @@ Constructors include `new(unix_microseconds)`, `now()`, `create(...)`, `from_str
 `From<i64>` (`let dt: DateTimeAsMicroseconds = value.into()`) auto-detects the unit of a Unix timestamp by magnitude — seconds, milliseconds, microseconds, or nanoseconds — and normalizes it to microseconds.
 
 Interval keys let you cut timestamps to buckets:
-- Compile-time typed: `IntervalKey<YearKey | MonthKey | DayKey | HourKey | MinuteKey | Minute5Key>`.
-- Runtime enum: `DateTimeInterval::{Year, Month, Day, Hour, Minute, Min5}`.
-- Conversions are zero-cost wrappers over `i64` values; you can go from `DateTimeAsMicroseconds` to an interval key and back.
+- Compile-time typed: `IntervalKey<YearKey | MonthKey | WeekMondayKey | WeekSundayKey | DayKey | HourKey | Hour2Key | Hour4Key | MinuteKey | Minute5Key | Minute15Key | Minute30Key>`.
+- Runtime enum: `DateTimeInterval::{Year, Month, WeekMonday, WeekSunday, Day, Hour, Hour2, Hour4, Minute, Min5, Min15, Min30}`.
+- Each key is encoded as an `i64` whose numeric order matches chronological order **within a given key type**: calendar fields packed as digits (e.g. `YYYYMMDDHHmm`), with sub-hour/sub-day keys normalized to the slot start. Week keys encode the `YYYYMMDD` date of the week start (Monday- or Sunday-based), so a week key shares the `DayKey` layout — values of different key types are not mutually comparable.
+- Conversions are zero-cost wrappers over `i64` values; you can go from `DateTimeAsMicroseconds` to an interval key and back. `from_i64` is unchecked, so pass only a value previously produced for the same key type.
 
 Minimal example:
 
