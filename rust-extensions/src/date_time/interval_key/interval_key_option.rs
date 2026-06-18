@@ -58,6 +58,40 @@ impl IntervalKeyOption for DayKey {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct WeekMondayKey;
+
+impl IntervalKeyOption for WeekMondayKey {
+    fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+        super::interval_utils::week_monday::to_date_time(value)
+    }
+
+    fn to_value(src: DateTimeAsMicroseconds) -> i64 {
+        super::interval_utils::week_monday::to_value(src)
+    }
+
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::WeekMonday(value)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct WeekSundayKey;
+
+impl IntervalKeyOption for WeekSundayKey {
+    fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+        super::interval_utils::week_sunday::to_date_time(value)
+    }
+
+    fn to_value(src: DateTimeAsMicroseconds) -> i64 {
+        super::interval_utils::week_sunday::to_value(src)
+    }
+
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::WeekSunday(value)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct HourKey;
 
 impl IntervalKeyOption for HourKey {
@@ -71,6 +105,40 @@ impl IntervalKeyOption for HourKey {
 
     fn to_dt_interval(value: i64) -> DateTimeInterval {
         DateTimeInterval::Hour(value)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Hour2Key;
+
+impl IntervalKeyOption for Hour2Key {
+    fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+        super::interval_utils::hour2::to_date_time(value)
+    }
+
+    fn to_value(src: DateTimeAsMicroseconds) -> i64 {
+        super::interval_utils::hour2::to_value(src)
+    }
+
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Hour2(value)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Hour4Key;
+
+impl IntervalKeyOption for Hour4Key {
+    fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+        super::interval_utils::hour4::to_date_time(value)
+    }
+
+    fn to_value(src: DateTimeAsMicroseconds) -> i64 {
+        super::interval_utils::hour4::to_value(src)
+    }
+
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Hour4(value)
     }
 }
 
@@ -122,5 +190,22 @@ impl IntervalKeyOption for Minute15Key {
 
     fn to_dt_interval(value: i64) -> DateTimeInterval {
         DateTimeInterval::Min15(value)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Minute30Key;
+
+impl IntervalKeyOption for Minute30Key {
+    fn to_date_time(value: i64) -> Result<DateTimeAsMicroseconds, String> {
+        super::interval_utils::min30::to_date_time(value)
+    }
+
+    fn to_value(src: DateTimeAsMicroseconds) -> i64 {
+        super::interval_utils::min30::to_value(src)
+    }
+
+    fn to_dt_interval(value: i64) -> DateTimeInterval {
+        DateTimeInterval::Min30(value)
     }
 }
