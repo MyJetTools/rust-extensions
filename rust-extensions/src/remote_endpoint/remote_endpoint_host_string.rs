@@ -94,4 +94,31 @@ mod tests {
         assert!(owned.get_scheme().unwrap().is_https());
         assert_eq!(owned.get_host_port().as_str(), "oauth2.googleapis.com:443");
     }
+
+    #[test]
+    fn test_unix_socket_via_host_string() {
+        // flurl passes `unix:///var/run/docker.sock` straight into
+        // RemoteEndpointHostString::try_parse — all spellings must parse and give
+        // the same direct unix-socket endpoint.
+        for form in [
+            "unix:///var/run/docker.sock",
+            "unix://var/run/docker.sock",
+            "unix+http://var/run/docker.sock",
+            "http+unix://var/run/docker.sock",
+        ] {
+            let parsed = RemoteEndpointHostString::try_parse(form)
+                .unwrap_or_else(|e| panic!("{form} should parse, got {e}"));
+
+            match parsed {
+                RemoteEndpointHostString::Direct(endpoint) => {
+                    assert!(
+                        endpoint.get_scheme().unwrap().is_unix_socket(),
+                        "{form} must be a unix socket"
+                    );
+                    assert_eq!(endpoint.get_host(), "/var/run/docker.sock", "host for {form}");
+                }
+                RemoteEndpointHostString::ViaSsh { .. } => panic!("Unexpected ViaSsh for {form}"),
+            }
+        }
+    }
 }

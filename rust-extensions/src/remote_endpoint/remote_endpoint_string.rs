@@ -19,7 +19,10 @@ impl Scheme {
             Some(Self::Ws)
         } else if src.eq_ignore_ascii_case("wss") {
             Some(Self::Wss)
-        } else if src.eq_ignore_ascii_case("http+unix") {
+        } else if src.eq_ignore_ascii_case("http+unix")
+            || src.eq_ignore_ascii_case("unix+http")
+            || src.eq_ignore_ascii_case("unix")
+        {
             Some(Self::UnixSocket)
         } else {
             None
@@ -75,6 +78,25 @@ enum ReadingEndpointMode {
     ReadingPort,
 }
 
+/// Returns the byte offset of the last '/' in the run of slashes that immediately
+/// follows the scheme separator (`:`). Slicing the source from here yields the
+/// unix socket path with exactly one leading slash, no matter whether the URL was
+/// written with one, two or three slashes after the scheme.
+///
+/// `colon_position` is the byte offset of the ':' that terminates the scheme name
+/// (always an ASCII byte). A unix-socket scheme is only detected when at least one
+/// '/' follows the ':', so the returned offset always points at a '/'.
+fn unix_socket_host_position(src: &str, colon_position: usize) -> usize {
+    let bytes = src.as_bytes();
+    let mut position = colon_position + 1;
+    let mut last_slash = position;
+    while position < bytes.len() && bytes[position] == b'/' {
+        last_slash = position;
+        position += 1;
+    }
+    last_slash
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct RemoteEndpointInner {
     scheme: Option<Scheme>,
@@ -94,7 +116,11 @@ impl RemoteEndpointInner {
 
         let mut reading_mode = ReadingEndpointMode::LookingForSchemeEnd;
 
-        for (pos, c) in src.chars().enumerate() {
+        // `char_indices` yields the byte offset of each char, so every position we
+        // record and later slice with is a valid UTF-8 boundary even when the host
+        // or path contains multi-byte characters. All the reference chars we do
+        // arithmetic against (`:`, `/`) are ASCII, so `pos - 1` stays byte-safe.
+        for (pos, c) in src.char_indices() {
             match reading_mode {
                 ReadingEndpointMode::LookingForSchemeEnd => {
                     if c == ':' {
@@ -164,9 +190,20 @@ impl RemoteEndpointInner {
         let scheme = &src[..scheme_name_end_position];
 
         if let Some(scheme) = Scheme::try_parse(scheme) {
+            let host_position = if scheme.is_unix_socket() {
+                // A unix-socket URL carries an absolute socket path where the host
+                // would normally be. Keep exactly one leading '/' regardless of how
+                // many slashes follow the scheme separator, so `unix://path`,
+                // `unix:///path`, `unix+http://path` and `http+unix://path` all
+                // resolve to the very same socket path.
+                unix_socket_host_position(src, scheme_name_end_position)
+            } else {
+                scheme_name_end_position + scheme.host_postfix_len()
+            };
+
             return Ok(Self {
                 scheme: Some(scheme),
-                host_position: scheme_name_end_position + scheme.host_postfix_len(),
+                host_position,
                 port_position,
                 http_path_and_query_position,
                 default_port: None,
@@ -213,12 +250,21 @@ impl RemoteEndpointInner {
             return None;
         }
 
-        let port_str = self.get_port_str(src)?;
-
-        match port_str.parse() {
-            Ok(port) => Some(port),
-            Err(_) => panic!("Invalid port string {port_str}"),
+        if let Some(port_str) = self.get_port_str(src) {
+            return match port_str.parse() {
+                Ok(port) => Some(port),
+                Err(_) => panic!("Invalid port string {port_str}"),
+            };
         }
+
+        // No explicit port: fall back to the default the same way `get_host_port`
+        // does — a known scheme supplies its own default (80/443/…), otherwise the
+        // port configured via `set_default_port` is used.
+        if let Some(scheme) = self.scheme {
+            return scheme.get_default_port();
+        }
+
+        self.default_port
     }
 
     pub fn get_host_port(&self, src: &str) -> ShortString {
@@ -521,5 +567,121 @@ mod test {
         assert_eq!(owned.get_host_port().as_str(), "/var/run/docker.sock");
 
         assert!(owned.get_http_path_and_query().is_none());
+    }
+
+    #[test]
+    fn test_unix_socket_scheme_aliases_are_equivalent() {
+        // Every documented spelling of a unix-socket URL must resolve to the same
+        // endpoint, including the natural `unix:///...` form with three slashes.
+        for form in [
+            "unix:///var/run/docker.sock",
+            "unix://var/run/docker.sock",
+            "unix+http://var/run/docker.sock",
+            "http+unix://var/run/docker.sock",
+        ] {
+            let ep = RemoteEndpoint::try_parse(form)
+                .unwrap_or_else(|e| panic!("{form} should parse, got {e}"));
+
+            assert!(
+                ep.get_scheme().unwrap().is_unix_socket(),
+                "{form} must be a unix socket"
+            );
+            assert_eq!(ep.get_host(), "/var/run/docker.sock", "host for {form}");
+            assert_eq!(
+                ep.get_host_port().as_str(),
+                "/var/run/docker.sock",
+                "host_port for {form}"
+            );
+            assert_eq!(ep.get_port(), None, "port for {form}");
+            assert!(
+                ep.get_http_path_and_query().is_none(),
+                "path for {form}"
+            );
+
+            // The owned copy must round-trip to the same values.
+            let owned = ep.to_owned();
+            assert_eq!(owned.get_host(), "/var/run/docker.sock", "owned host for {form}");
+            assert!(owned.get_scheme().unwrap().is_unix_socket());
+        }
+    }
+
+    #[test]
+    fn test_get_port_falls_back_to_default() {
+        // A known scheme supplies its own default port even without set_default_port.
+        let ep = RemoteEndpoint::try_parse("http://host").unwrap();
+        assert_eq!(ep.get_port(), Some(80));
+
+        // ...and supplying HTTP_DEFAULT_PORT via set_default_port keeps it Some(80).
+        let mut ep = RemoteEndpoint::try_parse("http://host").unwrap();
+        ep.set_default_port(80);
+        assert_eq!(ep.get_port(), Some(80));
+
+        // The scheme default wins over a mismatched configured default.
+        let mut ep = RemoteEndpoint::try_parse("https://host").unwrap();
+        ep.set_default_port(80);
+        assert_eq!(ep.get_port(), Some(443));
+
+        // No scheme: the configured default is used.
+        let mut ep = RemoteEndpoint::try_parse("host").unwrap();
+        ep.set_default_port(80);
+        assert_eq!(ep.get_port(), Some(80));
+
+        // No scheme and no default configured: still None.
+        let ep = RemoteEndpoint::try_parse("host").unwrap();
+        assert_eq!(ep.get_port(), None);
+
+        // An explicit port always wins over any default.
+        let mut ep = RemoteEndpoint::try_parse("http://host:9000").unwrap();
+        ep.set_default_port(80);
+        assert_eq!(ep.get_port(), Some(9000));
+    }
+
+    #[test]
+    fn test_non_ascii_host_and_path() {
+        // Multi-byte characters in the host and the path must not panic or corrupt
+        // the parsed slices (positions are byte offsets, so slicing stays on
+        // UTF-8 boundaries).
+        let ep = RemoteEndpoint::try_parse("http://münchen.example/pàth/reçu").unwrap();
+        assert!(ep.get_scheme().unwrap().is_http());
+        assert_eq!(ep.get_host(), "münchen.example");
+        assert_eq!(ep.get_http_path_and_query(), Some("/pàth/reçu"));
+        assert_eq!(ep.get_host_port().as_str(), "münchen.example:80");
+
+        // Multi-byte host with an explicit port and a multi-byte path.
+        let ep = RemoteEndpoint::try_parse("https://münchen.example:8443/pàth").unwrap();
+        assert_eq!(ep.get_host(), "münchen.example");
+        assert_eq!(ep.get_port(), Some(8443));
+        assert_eq!(ep.get_port_str(), Some("8443"));
+        assert_eq!(ep.get_http_path_and_query(), Some("/pàth"));
+
+        // Multi-byte host, no scheme, explicit port (this exact case used to panic
+        // because the ':' byte offset differed from its char index).
+        let ep = RemoteEndpoint::try_parse("münchen.example:8080").unwrap();
+        assert!(ep.get_scheme().is_none());
+        assert_eq!(ep.get_host(), "münchen.example");
+        assert_eq!(ep.get_port(), Some(8080));
+
+        // Non-ascii unix socket path.
+        let ep = RemoteEndpoint::try_parse("unix:///var/run/société.sock").unwrap();
+        assert!(ep.get_scheme().unwrap().is_unix_socket());
+        assert_eq!(ep.get_host(), "/var/run/société.sock");
+    }
+
+    #[test]
+    fn test_plain_ascii_http_https_regression() {
+        // No behaviour change for plain ASCII http/https endpoints.
+        let ep = RemoteEndpoint::try_parse("http://localhost:8000/path?q=1").unwrap();
+        assert!(ep.get_scheme().unwrap().is_http());
+        assert_eq!(ep.get_host(), "localhost");
+        assert_eq!(ep.get_port(), Some(8000));
+        assert_eq!(ep.get_port_str(), Some("8000"));
+        assert_eq!(ep.get_http_path_and_query(), Some("/path?q=1"));
+        assert_eq!(ep.get_host_port().as_str(), "localhost:8000");
+
+        let ep = RemoteEndpoint::try_parse("https://example.com").unwrap();
+        assert!(ep.get_scheme().unwrap().is_https());
+        assert_eq!(ep.get_host(), "example.com");
+        assert_eq!(ep.get_port_str(), None);
+        assert_eq!(ep.get_host_port().as_str(), "example.com:443");
     }
 }
