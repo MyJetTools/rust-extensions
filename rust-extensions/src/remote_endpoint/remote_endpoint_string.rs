@@ -251,10 +251,10 @@ impl RemoteEndpointInner {
         }
 
         if let Some(port_str) = self.get_port_str(src) {
-            return match port_str.parse() {
-                Ok(port) => Some(port),
-                Err(_) => panic!("Invalid port string {port_str}"),
-            };
+            // The port comes straight from user URL input. A malformed one yields
+            // `None` (not a panic, and without silently substituting a default) so
+            // callers can decide how to handle it.
+            return port_str.parse().ok();
         }
 
         // No explicit port: fall back to the default the same way `get_host_port`
@@ -634,6 +634,34 @@ mod test {
         let mut ep = RemoteEndpoint::try_parse("http://host:9000").unwrap();
         ep.set_default_port(80);
         assert_eq!(ep.get_port(), Some(9000));
+    }
+
+    #[test]
+    fn test_get_port_with_malformed_port_does_not_panic() {
+        // A non-numeric port comes straight from user URL input and must yield
+        // `None` instead of aborting the process.
+        let ep = RemoteEndpoint::try_parse("http://host:abc").unwrap();
+        assert_eq!(ep.get_port(), None);
+
+        // Same with a trailing path after the malformed port.
+        let ep = RemoteEndpoint::try_parse("http://host:abc/path").unwrap();
+        assert_eq!(ep.get_port(), None);
+
+        // Out-of-range (overflows u16) is also just `None`, not a panic.
+        let ep = RemoteEndpoint::try_parse("http://host:99999").unwrap();
+        assert_eq!(ep.get_port(), None);
+
+        // A valid explicit port still parses.
+        let ep = RemoteEndpoint::try_parse("http://host:8080").unwrap();
+        assert_eq!(ep.get_port(), Some(8080));
+
+        // A portless endpoint still returns the scheme default.
+        let ep = RemoteEndpoint::try_parse("http://host").unwrap();
+        assert_eq!(ep.get_port(), Some(80));
+
+        // Owned variant behaves identically.
+        let owned = RemoteEndpoint::try_parse("http://host:abc").unwrap().to_owned();
+        assert_eq!(owned.get_port(), None);
     }
 
     #[test]
