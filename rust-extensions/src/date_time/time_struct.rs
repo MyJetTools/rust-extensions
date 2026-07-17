@@ -150,11 +150,16 @@ impl TimeStruct {
     }
 
     pub fn parse_rfc_3339_time(src: &[u8]) -> Option<Self> {
+        if src.len() < 5 {
+            return None;
+        }
+
         let hour = super::utils::parse_two_digits(&src[0..2])?;
 
         let min = super::utils::parse_two_digits(&src[3..5])?;
 
-        if src.len() < 6 {
+        // Seconds are read from src[6..8], so anything shorter is an hh:mm value.
+        if src.len() < 8 {
             return Self {
                 hour,
                 min,
@@ -183,6 +188,10 @@ impl TimeStruct {
     }
 
     pub fn parse_rfc_3339_url_encoded_time(src: &[u8]) -> Option<Self> {
+        if src.len() < 12 {
+            return None;
+        }
+
         let hour = super::utils::parse_two_digits(&src[0..2])?;
 
         let min = super::utils::parse_two_digits(&src[5..7])?;
@@ -191,9 +200,8 @@ impl TimeStruct {
 
         let mut micros = 0;
 
-        if src.len() > 12 {
+        if src.len() > 13 {
             let d = &src[13..];
-            println!("ms:{}", std::str::from_utf8(d).unwrap());
             micros = parse_microseconds(d)
         }
 
@@ -245,6 +253,41 @@ mod tests {
         assert_eq!(time.min, 5);
         assert_eq!(time.sec, 9);
         assert_eq!(time.micros, 0);
+    }
+
+    /// hour/min/sec are read from fixed offsets, so short buffers used to panic.
+    #[test]
+    pub fn parse_rfc_3339_time_too_short_returns_none() {
+        for src in ["", "1", "12", "12:", "12:0"] {
+            assert!(
+                TimeStruct::parse_rfc_3339_time(src.as_bytes()).is_none(),
+                "expected None for {}",
+                src
+            );
+        }
+    }
+
+    /// `hh:mm` is a valid RFC 3339 time; seconds default to zero.
+    #[test]
+    pub fn parse_rfc_3339_time_without_seconds() {
+        for src in ["12:05", "12:05:", "12:05:0"] {
+            let time = TimeStruct::parse_rfc_3339_time(src.as_bytes()).unwrap();
+            assert_eq!(time.hour, 12);
+            assert_eq!(time.min, 5);
+            assert_eq!(time.sec, 0);
+            assert_eq!(time.micros, 0);
+        }
+    }
+
+    #[test]
+    pub fn parse_rfc_3339_url_encoded_time_too_short_returns_none() {
+        for src in ["", "12", "12%3A05", "12%3A05%3A"] {
+            assert!(
+                TimeStruct::parse_rfc_3339_url_encoded_time(src.as_bytes()).is_none(),
+                "expected None for {}",
+                src
+            );
+        }
     }
 
     #[test]

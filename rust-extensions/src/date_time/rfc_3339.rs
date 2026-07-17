@@ -8,6 +8,10 @@ use super::{DateTimeAsMicroseconds, DateTimeStruct, TimeStruct};
 
 impl DateTimeStruct {
     pub fn parse_rfc3339_str(src: &[u8]) -> Option<Self> {
+        if src.len() < 10 {
+            return None;
+        }
+
         let year = super::utils::parse_four_digits(&src[0..4])? as i32;
 
         let month = super::utils::parse_two_digits(&src[5..7])?;
@@ -30,6 +34,10 @@ impl DateTimeStruct {
     }
 
     pub fn parse_rfc3339_url_encoded_str(src: &[u8]) -> Option<Self> {
+        if src.len() < 10 {
+            return None;
+        }
+
         let year = super::utils::parse_four_digits(&src[0..4])?;
 
         let month = super::utils::parse_two_digits(&src[5..7])?;
@@ -150,6 +158,56 @@ mod tests {
         let dest = dt.to_rfc3339();
 
         assert_eq!("2021-04-25T17:30:43.602432", &dest[0..26]);
+    }
+
+    /// Both parsers index fixed offsets, so a short buffer used to panic.
+    #[test]
+    pub fn test_parse_rfc3339_str_too_short_returns_none() {
+        for src in ["", "2", "20", "202", "2021", "2021-", "2021-0", "2021-04-2"] {
+            assert!(
+                DateTimeStruct::parse_rfc3339_str(src.as_bytes()).is_none(),
+                "expected None for {}",
+                src
+            );
+        }
+    }
+
+    #[test]
+    pub fn test_parse_rfc3339_url_encoded_str_too_short_returns_none() {
+        for src in ["", "2021", "2021-04-2"] {
+            assert!(
+                DateTimeStruct::parse_rfc3339_url_encoded_str(src.as_bytes()).is_none(),
+                "expected None for {}",
+                src
+            );
+        }
+    }
+
+    /// `parse_iso_string` reaches the time parser directly, so a value truncated
+    /// inside the time part must come back as None rather than panic.
+    #[test]
+    pub fn test_parse_iso_string_truncated_time_returns_none() {
+        for src in [
+            "2021-04-25T1",
+            "2021-04-25T17",
+            "2021-04-25T17:",
+            "2021-04-25T17:3",
+            "2021-04-25T17:30:",
+            "2021-04-25T17:30:4",
+        ] {
+            let _ = DateTimeAsMicroseconds::parse_iso_string(src);
+        }
+    }
+
+    /// Zero offset is what my-http-utils' client writes via `to_rfc3339()`.
+    #[test]
+    pub fn test_parse_iso_string_with_numeric_zero_offset() {
+        let dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:43+00:00").unwrap();
+        assert_eq!("2021-04-25T17:30:43.000000Z", dt.to_rfc3339_utc());
+
+        let dt =
+            DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:43.605123+00:00").unwrap();
+        assert_eq!("2021-04-25T17:30:43.605123Z", dt.to_rfc3339_utc());
     }
 }
 

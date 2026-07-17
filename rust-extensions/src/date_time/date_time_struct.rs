@@ -35,7 +35,7 @@ impl DateTimeStruct {
     pub fn from_str(src: &str) -> Option<Self> {
         let as_bytes = src.as_bytes();
 
-        if as_bytes[4] == b'-' && as_bytes[7] == b'-' {
+        if as_bytes.len() >= 8 && as_bytes[4] == b'-' && as_bytes[7] == b'-' {
             if as_bytes.len() == 10 {
                 return DateTimeStruct::parse_rfc3339_str(as_bytes);
             }
@@ -51,7 +51,7 @@ impl DateTimeStruct {
             }
         }
 
-        if as_bytes[4] == b'-' && as_bytes.len() >= 19 {
+        if as_bytes.len() >= 19 && as_bytes[4] == b'-' {
             if as_bytes[13] == b'%' {
                 return DateTimeStruct::parse_rfc3339_url_encoded_str(as_bytes);
             } else {

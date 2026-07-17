@@ -56,11 +56,48 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 
 ## Time utilities in detail
 
-`DateTimeAsMicroseconds` is a single-field UTC timestamp (`unix_microseconds: i64`) with serde support and helpers to add/subtract durations, compare, format (RFC 3339/2822/5322/7231, compact), and convert to `chrono::DateTime<Utc>`.
+`DateTimeAsMicroseconds` is a single-field UTC timestamp (`unix_microseconds: i64`) with serde support (see [Serde format](#datetimeasmicroseconds-serde-format)) and helpers to add/subtract durations, compare, format (RFC 3339/2822/5322/7231, compact), and convert to `chrono::DateTime<Utc>`.
 
 Constructors include `new(unix_microseconds)`, `now()`, `create(...)`, `from_str`, `parse_iso_string`, and `from_nanos(value: i64)` — which converts a Unix nanoseconds timestamp to µs (valid range ~1677–2262).
 
 `From<i64>` (`let dt: DateTimeAsMicroseconds = value.into()`) auto-detects the unit of a Unix timestamp by magnitude — seconds, milliseconds, microseconds, or nanoseconds — and normalizes it to microseconds.
+
+### `DateTimeAsMicroseconds` serde format
+
+**The impls are hand-written and deliberately asymmetric. Do not "tidy" them into a symmetric pair, and do not restore `#[serde(transparent)]`.**
+
+- **Serialize → always RFC 3339**, UTC, `Z` suffix, fixed microsecond precision: `"2021-04-25T17:30:03.000000Z"`. Never a number. This is what OpenAPI/JSON Schema `format: date-time` promises, and what protobuf JSON, the Google API Design Guide, and my-http-utils' schema + client writer all already speak.
+- **Deserialize → tolerant, accepts both**:
+
+| JSON input | Read as |
+| --- | --- |
+| `"2021-04-25T17:30:03.000000Z"` | RFC 3339 (the format we now write) |
+| `"2021-04-25T17:30:03+00:00"` | RFC 3339 with a numeric zero offset — what the older `to_rfc3339()` emits |
+| `"1619371803000000"` | digits in a string → unix timestamp, unit sniffed by magnitude via `From<i64>` |
+| `1619371803000000` | **raw** unix microseconds, no magnitude sniffing |
+
+Why asymmetric: changing the *write* format is not an API break the compiler can catch — it is a break of **data already at rest**. Across the monorepo `DateTimeAsMicroseconds` sits in MyNoSql entities, settings files, Service Bus messages, jsonb columns and caches, where history is written as `1704164645000000`. A strict reader would make those unreadable, and rolling the deploy back would not heal them. Writing the new format while reading both (a *tolerant reader*) is the standard format-migration move.
+
+Two invariants worth stating explicitly, because both are easy to "fix" into a bug:
+
+- The **number** branch (`visit_i64`) is raw microseconds — `DateTimeAsMicroseconds::new(v)`, *not* `From<i64>`. It must reproduce the old `#[serde(transparent)]` behaviour byte for byte. Routing it through `From<i64>`'s magnitude detection would silently relocate small historical values (e.g. `1000000` means `1970-01-01T00:00:01`, not 1970-01-12).
+- The **string** branch goes through `from_str`, which sniffs the content itself — so a stringified number keeps `From<i64>`'s magnitude behaviour. The two branches differing is intentional, not an oversight.
+
+Deserialization uses `deserialize_any`, so it needs a **self-describing** format (JSON — what this monorepo uses). It would not work under bincode/postcard/rmp.
+
+`Display`, `Debug` and serde are three different renderings — don't reach for the wrong one:
+
+```rust
+let dt = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+
+dt.to_string();                     // Display  -> "1619371803000000"  (a number!)
+format!("{:?}", dt);                // Debug    -> "'2021-04-25T17:30:03+00:00'"
+serde_json::to_string(&dt).unwrap();// serde    -> "\"2021-04-25T17:30:03.000000Z\""
+```
+
+`to_rfc3339()` (chrono's default, renders the zero offset as `+00:00`) and `to_rfc3339_utc()` (`Z` suffix, fixed 6-digit fraction, the serde wire format) are both available; both parse back. Prefer `to_rfc3339_utc()` when the string gets stored or sorted — its fixed width makes lexicographic order match chronological order.
+
+Note the parsers ignore a **non-zero** timezone offset: `2024-01-02T03:04:05+03:00` reads as `03:04:05` UTC, not `00:04:05`. `Z` and `+00:00` are unaffected.
 
 Interval keys let you cut timestamps to buckets:
 - Compile-time typed: `IntervalKey<YearKey | MonthKey | WeekMondayKey | WeekSundayKey | DayKey | HourKey | Hour2Key | Hour4Key | MinuteKey | Minute5Key | Minute15Key | Minute30Key>`.

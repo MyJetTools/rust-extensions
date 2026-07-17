@@ -3,13 +3,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
 
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateTimeAsMicroseconds {
     pub unix_microseconds: i64,
 }
@@ -131,6 +130,16 @@ impl DateTimeAsMicroseconds {
         return chrono.to_rfc3339();
     }
 
+    /// RFC 3339 in UTC with a `Z` suffix and fixed microsecond precision:
+    /// `2021-04-25T17:30:03.000000Z`. This is the serde wire format.
+    ///
+    /// Unlike [`Self::to_rfc3339`] (which renders the zero offset as `+00:00`),
+    /// the width is fixed, so lexicographic order matches chronological order.
+    pub fn to_rfc3339_utc(&self) -> String {
+        let chrono = self.to_chrono_utc();
+        return chrono.to_rfc3339_opts(SecondsFormat::Micros, true);
+    }
+
     pub fn to_rfc5322(&self) -> String {
         let dt: DateTimeStruct = self.into();
         return dt.to_rfc5322();
@@ -181,6 +190,65 @@ impl DateTimeAsMicroseconds {
 
 
 
+
+/// Always writes RFC 3339 (`2021-04-25T17:30:03.000000Z`) - the format OpenAPI
+/// `format: date-time` promises and the one every other participant already speaks.
+impl Serialize for DateTimeAsMicroseconds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.to_rfc3339_utc().as_str())
+    }
+}
+
+/// Tolerant reader: accepts both the RFC 3339 string written above and the bare
+/// unix-microseconds number written by the previous `#[serde(transparent)]` impl.
+///
+/// The number branch must stay, and must stay raw: historical payloads (MyNoSql
+/// entities, settings files, Service Bus messages, jsonb columns) hold values like
+/// `1704164645000000`, and a reader that rejects or reinterprets them makes already
+/// persisted data unreadable - which no deploy rollback can undo.
+impl<'de> Deserialize<'de> for DateTimeAsMicroseconds {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(DateTimeAsMicrosecondsVisitor)
+    }
+}
+
+struct DateTimeAsMicrosecondsVisitor;
+
+impl<'de> serde::de::Visitor<'de> for DateTimeAsMicrosecondsVisitor {
+    type Value = DateTimeAsMicroseconds;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("an RFC 3339 date-time string or a unix microseconds number")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        // from_str itself sniffs the content: RFC 3339 date-time, or digits as a
+        // unix timestamp, so a stringified `"1704164645000000"` reads too.
+        match DateTimeAsMicroseconds::from_str(v) {
+            Some(result) => Ok(result),
+            None => Err(E::invalid_value(serde::de::Unexpected::Str(v), &self)),
+        }
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+        // Raw, no magnitude sniffing - this is exactly what `transparent` stored.
+        Ok(DateTimeAsMicroseconds::new(v))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+        match i64::try_from(v) {
+            Ok(v) => Ok(DateTimeAsMicroseconds::new(v)),
+            Err(_) => Err(E::invalid_value(serde::de::Unexpected::Unsigned(v), &self)),
+        }
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+        if !v.is_finite() || v < i64::MIN as f64 || v > i64::MAX as f64 {
+            return Err(E::invalid_value(serde::de::Unexpected::Float(v), &self));
+        }
+        Ok(DateTimeAsMicroseconds::new(v as i64))
+    }
+}
 
 impl Into<DateTimeAsMicroseconds> for SystemTime {
     fn into(self) -> DateTimeAsMicroseconds {
@@ -483,22 +551,300 @@ mod tests {
         assert_eq!(true, time.is_none());
     }
 
-    #[derive(Serialize)]
+    /// Anything shorter than 5 bytes used to index past the end of the buffer and panic.
+    /// Reachable from any JSON body once DateTime deserializes from a string.
+    #[test]
+    fn from_str_too_short_returns_none_instead_of_panicking() {
+        for src in ["x", "ab", "abc", "2024-", "2021-04", "-", "T", "::"] {
+            assert!(
+                DateTimeAsMicroseconds::from_str(src).is_none(),
+                "expected None for {}",
+                src
+            );
+        }
+    }
+
+    #[test]
+    fn from_str_garbage_returns_none() {
+        for src in [
+            "not-a-date",
+            "hello world",
+            "2021-04-25T",
+            "----------",
+            "@@@@@@@@@@@@@@@@@@@@",
+        ] {
+            assert!(
+                DateTimeAsMicroseconds::from_str(src).is_none(),
+                "expected None for {}",
+                src
+            );
+        }
+    }
+
+    /// A truncated RFC 3339 value must not index past the end of the time part.
+    #[test]
+    fn from_str_truncated_rfc3339_returns_none_instead_of_panicking() {
+        for src in [
+            "2021-04-25T",
+            "2021-04-25T1",
+            "2021-04-25T17",
+            "2021-04-25T17:",
+            "2021-04-25T17:3",
+            "2021-04-25T17:30:",
+            "2021-04-25T17:30:0",
+        ] {
+            let _ = DateTimeAsMicroseconds::from_str(src);
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
     struct TestStruct {
         a: DateTimeAsMicroseconds,
     }
 
+    // Mirrors the my-http-utils shape that broke: a DateTime nested inside an object.
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct NestedStruct {
+        inner: TestStruct,
+    }
+
+    const SAMPLE_ISO: &str = "2021-04-25T17:30:03.000Z";
+    const SAMPLE_MICROS: i64 = 1619371803000000;
+
+    fn sample() -> DateTimeAsMicroseconds {
+        DateTimeAsMicroseconds::parse_iso_string(SAMPLE_ISO).unwrap()
+    }
+
     #[test]
     fn check_serialize() {
-        let value = TestStruct {
-            a: DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap(),
-        };
+        let value = TestStruct { a: sample() };
 
         let json = serde_json::to_string(&value).unwrap();
 
-        println!("{}", json);
+        assert_eq!("{\"a\":\"2021-04-25T17:30:03.000000Z\"}", json.as_str());
+    }
 
-        //assert_eq!("{\"a\":\"2021-04-25T17:30:03.000000Z\"}", json.as_str());
+    #[test]
+    fn deserialize_from_rfc3339_string() {
+        let value: TestStruct =
+            serde_json::from_str("{\"a\":\"2021-04-25T17:30:03.000000Z\"}").unwrap();
+
+        assert_eq!(sample(), value.a);
+    }
+
+    /// The exact payload my-http-utils' client writer emits via `to_rfc3339()`.
+    /// This is the case that used to fail with `invalid type: string ..., expected i64`.
+    #[test]
+    fn deserialize_from_rfc3339_string_with_numeric_offset() {
+        let value: TestStruct =
+            serde_json::from_str("{\"a\":\"2021-04-25T17:30:03+00:00\"}").unwrap();
+
+        assert_eq!(sample(), value.a);
+    }
+
+    /// Historical data written by the previous `#[serde(transparent)]` impl must stay
+    /// readable, byte for byte, with no magnitude re-interpretation.
+    #[test]
+    fn deserialize_from_legacy_unix_microseconds_number() {
+        let value: TestStruct = serde_json::from_str("{\"a\":1619371803000000}").unwrap();
+
+        assert_eq!(sample(), value.a);
+        assert_eq!(SAMPLE_MICROS, value.a.unix_microseconds);
+    }
+
+    /// A small legacy value is still raw microseconds - never re-read as seconds.
+    #[test]
+    fn deserialize_legacy_number_stays_raw_microseconds() {
+        let value: TestStruct = serde_json::from_str("{\"a\":1000000}").unwrap();
+
+        assert_eq!(1000000, value.a.unix_microseconds);
+        assert_eq!("1970-01-01T00:00:01.000000Z", value.a.to_rfc3339_utc());
+    }
+
+    #[test]
+    fn deserialize_from_negative_legacy_number() {
+        let value: TestStruct = serde_json::from_str("{\"a\":-315525600123456}").unwrap();
+
+        assert_eq!(-315525600123456, value.a.unix_microseconds);
+    }
+
+    #[test]
+    fn deserialize_from_stringified_number() {
+        let value: TestStruct = serde_json::from_str("{\"a\":\"1619371803000000\"}").unwrap();
+
+        assert_eq!(sample(), value.a);
+    }
+
+    /// A bare numeric string is read as a unix timestamp, unit sniffed by magnitude -
+    /// this is `from_str`'s long-standing contract, unchanged here.
+    #[test]
+    fn deserialize_stringified_number_sniffs_the_unit() {
+        let from_seconds: TestStruct = serde_json::from_str("{\"a\":\"1619371803\"}").unwrap();
+        assert_eq!(sample(), from_seconds.a);
+
+        let from_millis: TestStruct = serde_json::from_str("{\"a\":\"1619371803000\"}").unwrap();
+        assert_eq!(sample(), from_millis.a);
+    }
+
+    /// Both RFC 3339 renderings this codebase has ever produced must read back:
+    /// the old `to_rfc3339()` (`+00:00` offset) and the new `to_rfc3339_utc()` (`Z`).
+    #[test]
+    fn deserialize_accepts_both_old_and_new_rfc3339_renderings() {
+        for dt in [
+            sample(),
+            DateTimeAsMicroseconds::new(1619371803123456),
+            DateTimeAsMicroseconds::new(1619371803000123),
+            DateTimeAsMicroseconds::from_str("1969-01-01").unwrap(),
+        ] {
+            let old_format = dt.to_rfc3339();
+            let new_format = dt.to_rfc3339_utc();
+
+            let from_old: DateTimeAsMicroseconds =
+                serde_json::from_str(&format!("\"{}\"", old_format)).unwrap();
+            let from_new: DateTimeAsMicroseconds =
+                serde_json::from_str(&format!("\"{}\"", new_format)).unwrap();
+
+            assert_eq!(dt, from_old, "old to_rfc3339() rendering: {}", old_format);
+            assert_eq!(dt, from_new, "new to_rfc3339_utc() rendering: {}", new_format);
+        }
+    }
+
+    /// Trailing `Z` and a `+00:00` offset denote the same instant.
+    #[test]
+    fn deserialize_z_and_zero_offset_agree() {
+        let with_z: DateTimeAsMicroseconds =
+            serde_json::from_str("\"2021-04-25T17:30:03.605123Z\"").unwrap();
+        let with_offset: DateTimeAsMicroseconds =
+            serde_json::from_str("\"2021-04-25T17:30:03.605123+00:00\"").unwrap();
+
+        assert_eq!(with_z, with_offset);
+    }
+
+    #[test]
+    fn round_trip_serialize_deserialize() {
+        let value = TestStruct { a: sample() };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let restored: TestStruct = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value, restored);
+    }
+
+    #[test]
+    fn round_trip_keeps_microsecond_precision() {
+        let value = TestStruct {
+            a: DateTimeAsMicroseconds::new(1619371803123456),
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        assert_eq!("{\"a\":\"2021-04-25T17:30:03.123456Z\"}", json.as_str());
+
+        let restored: TestStruct = serde_json::from_str(&json).unwrap();
+        assert_eq!(1619371803123456, restored.a.unix_microseconds);
+    }
+
+    #[test]
+    fn round_trip_negative_timestamp() {
+        let value = TestStruct {
+            a: DateTimeAsMicroseconds::from_str("1969-01-01").unwrap(),
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let restored: TestStruct = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value, restored);
+    }
+
+    #[test]
+    fn round_trip_nested_object() {
+        let value = NestedStruct {
+            inner: TestStruct { a: sample() },
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        assert_eq!("{\"inner\":{\"a\":\"2021-04-25T17:30:03.000000Z\"}}", json);
+
+        let restored: NestedStruct = serde_json::from_str(&json).unwrap();
+        assert_eq!(value, restored);
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct OptionStruct {
+        a: Option<DateTimeAsMicroseconds>,
+    }
+
+    #[test]
+    fn option_some_round_trip() {
+        let value = OptionStruct { a: Some(sample()) };
+
+        let json = serde_json::to_string(&value).unwrap();
+        assert_eq!("{\"a\":\"2021-04-25T17:30:03.000000Z\"}", json.as_str());
+
+        let restored: OptionStruct = serde_json::from_str(&json).unwrap();
+        assert_eq!(value, restored);
+    }
+
+    #[test]
+    fn option_none_round_trip() {
+        let value = OptionStruct { a: None };
+
+        let json = serde_json::to_string(&value).unwrap();
+        assert_eq!("{\"a\":null}", json.as_str());
+
+        let restored: OptionStruct = serde_json::from_str(&json).unwrap();
+        assert_eq!(value, restored);
+    }
+
+    #[test]
+    fn option_reads_both_formats() {
+        let from_number: OptionStruct = serde_json::from_str("{\"a\":1619371803000000}").unwrap();
+        assert_eq!(Some(sample()), from_number.a);
+
+        let from_string: OptionStruct =
+            serde_json::from_str("{\"a\":\"2021-04-25T17:30:03.000000Z\"}").unwrap();
+        assert_eq!(Some(sample()), from_string.a);
+    }
+
+    #[test]
+    fn vec_round_trip() {
+        let value = vec![sample(), sample().add(Duration::from_secs(1))];
+
+        let json = serde_json::to_string(&value).unwrap();
+        assert_eq!(
+            "[\"2021-04-25T17:30:03.000000Z\",\"2021-04-25T17:30:04.000000Z\"]",
+            json.as_str()
+        );
+
+        let restored: Vec<DateTimeAsMicroseconds> = serde_json::from_str(&json).unwrap();
+        assert_eq!(value, restored);
+    }
+
+    /// A tolerant reader has to cope with a collection mid-migration: old rows as
+    /// numbers, new rows as strings, in the same payload.
+    #[test]
+    fn vec_reads_mixed_legacy_and_new_formats() {
+        let restored: Vec<DateTimeAsMicroseconds> =
+            serde_json::from_str("[\"2021-04-25T17:30:03.000000Z\",1619371803000000]").unwrap();
+
+        assert_eq!(vec![sample(), sample()], restored);
+    }
+
+    #[test]
+    fn deserialize_garbage_string_is_an_error_not_a_panic() {
+        for bad in [
+            "{\"a\":\"\"}",
+            "{\"a\":\"x\"}",
+            "{\"a\":\"ab\"}",
+            "{\"a\":\"not-a-date\"}",
+            "{\"a\":\"2021-13-45T99:99:99Z\"}",
+            "{\"a\":true}",
+            "{\"a\":{}}",
+            "{\"a\":[]}",
+            "{\"a\":null}",
+        ] {
+            let result: Result<TestStruct, _> = serde_json::from_str(bad);
+            assert!(result.is_err(), "expected an error for {}", bad);
+        }
     }
 
     #[test]
