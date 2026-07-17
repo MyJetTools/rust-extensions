@@ -75,6 +75,43 @@ impl DateTimeAsMicroseconds {
         }
     }
 
+    /// Parses a **raw JSON value token**, exactly as a JSON parser hands it over: a quoted
+    /// string keeps its quotes (`"2021-04-25T17:30:03.000000Z"`), a number arrives bare
+    /// (`1619371803000000`). This is the single place that knows every spelling this type
+    /// accepts on the wire, so serde and any external deserializer (my-json, my-http-utils)
+    /// stay in agreement.
+    ///
+    /// | Token | Read as |
+    /// |---|---|
+    /// | `"2021-04-25T17:30:03.000000Z"` | RFC 3339, `Z` |
+    /// | `"2021-04-25T17:30:03+00:00"` | RFC 3339, numeric zero offset (older `to_rfc3339()`) |
+    /// | `"2021-04-25"` / `"2021-04-25T17:30"` | date, or date-time without seconds |
+    /// | `"1619371803000000"` | digits in a string -> unix timestamp, unit sniffed by magnitude |
+    /// | `1619371803000000` | bare number -> unix timestamp, unit sniffed by magnitude |
+    /// | `null` | `None` |
+    ///
+    /// Quotes are stripped when present and the content is parsed the same way either way,
+    /// so a number - quoted or bare - always goes through [`From<i64>`], which sniffs its unit
+    /// (seconds / millis / micros / nanos) by magnitude. If you have already stripped the
+    /// quotes yourself, calling [`Self::from_str`] directly is equivalent.
+    ///
+    /// Escapes are not resolved (no RFC 3339 spelling contains one), and single quotes are
+    /// accepted alongside double ones, matching my-json's own tolerance.
+    pub fn from_json_value_str(src: &str) -> Option<Self> {
+        let src = src.trim();
+
+        if src.is_empty() || src == "null" {
+            return None;
+        }
+
+        // Quoted or bare, the content is parsed identically: from_str sniffs it itself -
+        // an RFC 3339 date-time, or digits handed to `From<i64>` for unit detection.
+        match strip_json_quotes(src) {
+            Some(inner) => Self::from_str(inner),
+            None => Self::from_str(src),
+        }
+    }
+
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {
         DateTimeStruct::parse_rfc3339_str(iso_string.as_bytes())?.to_date_time_as_microseconds()
     }
@@ -206,6 +243,12 @@ impl Serialize for DateTimeAsMicroseconds {
 /// entities, settings files, Service Bus messages, jsonb columns) hold values like
 /// `1704164645000000`, and a reader that rejects or reinterprets them makes already
 /// persisted data unreadable - which no deploy rollback can undo.
+///
+/// This mirrors [`DateTimeAsMicroseconds::from_json_value_str`], which is the same
+/// dispatch for deserializers that get a *raw* token. serde cannot call it directly -
+/// it hands the visitor an already-decoded value, having consumed the quotes - so both
+/// routes instead bottom out in the same primitives: `from_str` for a string, `From<i64>`
+/// for a number. `serde_and_from_json_value_str_agree` pins the two together.
 impl<'de> Deserialize<'de> for DateTimeAsMicroseconds {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_any(DateTimeAsMicrosecondsVisitor)
@@ -222,8 +265,8 @@ impl<'de> serde::de::Visitor<'de> for DateTimeAsMicrosecondsVisitor {
     }
 
     fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        // from_str itself sniffs the content: RFC 3339 date-time, or digits as a
-        // unix timestamp, so a stringified `"1704164645000000"` reads too.
+        // The string branch of `from_json_value_str`. from_str sniffs the content itself:
+        // an RFC 3339 date-time, or digits as a unix timestamp.
         match DateTimeAsMicroseconds::from_str(v) {
             Some(result) => Ok(result),
             None => Err(E::invalid_value(serde::de::Unexpected::Str(v), &self)),
@@ -231,13 +274,14 @@ impl<'de> serde::de::Visitor<'de> for DateTimeAsMicrosecondsVisitor {
     }
 
     fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
-        // Raw, no magnitude sniffing - this is exactly what `transparent` stored.
-        Ok(DateTimeAsMicroseconds::new(v))
+        // The number branch of `from_json_value_str`: `From<i64>` sniffs the unit
+        // (seconds / millis / micros / nanos) by magnitude.
+        Ok(v.into())
     }
 
     fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
         match i64::try_from(v) {
-            Ok(v) => Ok(DateTimeAsMicroseconds::new(v)),
+            Ok(v) => Ok(v.into()),
             Err(_) => Err(E::invalid_value(serde::de::Unexpected::Unsigned(v), &self)),
         }
     }
@@ -246,8 +290,27 @@ impl<'de> serde::de::Visitor<'de> for DateTimeAsMicrosecondsVisitor {
         if !v.is_finite() || v < i64::MIN as f64 || v > i64::MAX as f64 {
             return Err(E::invalid_value(serde::de::Unexpected::Float(v), &self));
         }
-        Ok(DateTimeAsMicroseconds::new(v as i64))
+        Ok((v as i64).into())
     }
+}
+
+/// Strips a single pair of matching surrounding quotes, marking the token as a JSON string.
+/// `None` means the token was not quoted.
+fn strip_json_quotes(src: &str) -> Option<&str> {
+    let as_bytes = src.as_bytes();
+
+    if as_bytes.len() < 2 {
+        return None;
+    }
+
+    let first = as_bytes[0];
+    let last = as_bytes[as_bytes.len() - 1];
+
+    if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+        return Some(&src[1..src.len() - 1]);
+    }
+
+    None
 }
 
 impl Into<DateTimeAsMicroseconds> for SystemTime {
@@ -643,7 +706,8 @@ mod tests {
     }
 
     /// Historical data written by the previous `#[serde(transparent)]` impl must stay
-    /// readable, byte for byte, with no magnitude re-interpretation.
+    /// readable: a real microseconds timestamp is in the microseconds magnitude band,
+    /// so `From<i64>` returns it unchanged.
     #[test]
     fn deserialize_from_legacy_unix_microseconds_number() {
         let value: TestStruct = serde_json::from_str("{\"a\":1619371803000000}").unwrap();
@@ -652,13 +716,25 @@ mod tests {
         assert_eq!(SAMPLE_MICROS, value.a.unix_microseconds);
     }
 
-    /// A small legacy value is still raw microseconds - never re-read as seconds.
+    /// A number carries no unit, so it goes through `From<i64>`'s magnitude sniffing -
+    /// the same rule the whole crate uses. Seconds, millis and micros land on one instant.
     #[test]
-    fn deserialize_legacy_number_stays_raw_microseconds() {
-        let value: TestStruct = serde_json::from_str("{\"a\":1000000}").unwrap();
+    fn deserialize_number_sniffs_the_unit() {
+        let from_micros: TestStruct = serde_json::from_str("{\"a\":1619371803000000}").unwrap();
+        let from_millis: TestStruct = serde_json::from_str("{\"a\":1619371803000}").unwrap();
+        let from_seconds: TestStruct = serde_json::from_str("{\"a\":1619371803}").unwrap();
 
-        assert_eq!(1000000, value.a.unix_microseconds);
-        assert_eq!("1970-01-01T00:00:01.000000Z", value.a.to_rfc3339_utc());
+        assert_eq!(sample(), from_micros.a);
+        assert_eq!(sample(), from_millis.a);
+        assert_eq!(sample(), from_seconds.a);
+    }
+
+    #[test]
+    fn deserialize_zero_number() {
+        let value: TestStruct = serde_json::from_str("{\"a\":0}").unwrap();
+
+        assert_eq!(0, value.a.unix_microseconds);
+        assert_eq!("1970-01-01T00:00:00.000000Z", value.a.to_rfc3339_utc());
     }
 
     #[test]
@@ -827,6 +903,137 @@ mod tests {
             serde_json::from_str("[\"2021-04-25T17:30:03.000000Z\",1619371803000000]").unwrap();
 
         assert_eq!(vec![sample(), sample()], restored);
+    }
+
+    #[test]
+    fn from_json_value_str_reads_quoted_tokens() {
+        for token in [
+            "\"2021-04-25T17:30:03.000000Z\"",
+            "\"2021-04-25T17:30:03+00:00\"",
+            "\"2021-04-25T17:30:03Z\"",
+            "\"1619371803000000\"",
+            "\"1619371803000\"",
+            "\"1619371803\"",
+            "'2021-04-25T17:30:03.000000Z'",
+        ] {
+            assert_eq!(
+                Some(sample()),
+                DateTimeAsMicroseconds::from_json_value_str(token),
+                "token {}",
+                token
+            );
+        }
+    }
+
+    #[test]
+    fn from_json_value_str_reads_bare_numbers() {
+        for token in ["1619371803000000", "1619371803000", "1619371803"] {
+            assert_eq!(
+                Some(sample()),
+                DateTimeAsMicroseconds::from_json_value_str(token),
+                "token {}",
+                token
+            );
+        }
+
+        assert_eq!(
+            -315525600123456,
+            DateTimeAsMicroseconds::from_json_value_str("-315525600123456")
+                .unwrap()
+                .unix_microseconds
+        );
+    }
+
+    /// Quotes are only packaging: strip them and the content parses identically, so the
+    /// same digits mean the same instant either way.
+    #[test]
+    fn from_json_value_str_quotes_do_not_change_the_meaning() {
+        for (quoted, bare) in [
+            ("\"1619371803\"", "1619371803"),
+            ("\"1619371803000\"", "1619371803000"),
+            ("\"1619371803000000\"", "1619371803000000"),
+            ("\"2021-04-25T17:30:03Z\"", "2021-04-25T17:30:03Z"),
+        ] {
+            assert_eq!(
+                DateTimeAsMicroseconds::from_json_value_str(quoted),
+                DateTimeAsMicroseconds::from_json_value_str(bare),
+                "quoted {} vs bare {}",
+                quoted,
+                bare
+            );
+        }
+    }
+
+    #[test]
+    fn from_json_value_str_handles_null_and_whitespace() {
+        assert_eq!(None, DateTimeAsMicroseconds::from_json_value_str("null"));
+        assert_eq!(None, DateTimeAsMicroseconds::from_json_value_str(""));
+        assert_eq!(None, DateTimeAsMicroseconds::from_json_value_str("   "));
+        assert_eq!(None, DateTimeAsMicroseconds::from_json_value_str("\"\""));
+
+        assert_eq!(
+            Some(sample()),
+            DateTimeAsMicroseconds::from_json_value_str("  \"2021-04-25T17:30:03.000000Z\"  ")
+        );
+        assert_eq!(
+            Some(sample()),
+            DateTimeAsMicroseconds::from_json_value_str(" 1619371803000000 ")
+        );
+    }
+
+    /// An unquoted date-time still reads - a parser that hands over bare tokens, or a
+    /// query/path/header value.
+    #[test]
+    fn from_json_value_str_reads_unquoted_date_time() {
+        assert_eq!(
+            Some(sample()),
+            DateTimeAsMicroseconds::from_json_value_str("2021-04-25T17:30:03.000000Z")
+        );
+    }
+
+    #[test]
+    fn from_json_value_str_rejects_garbage_without_panicking() {
+        for token in [
+            "\"x\"", "\"ab\"", "\"not-a-date\"", "x", "ab", "not-a-date", "\"", "'", "{}", "[]",
+            "true",
+        ] {
+            assert_eq!(
+                None,
+                DateTimeAsMicroseconds::from_json_value_str(token),
+                "token {}",
+                token
+            );
+        }
+    }
+
+    /// The guarantee that matters: the serde route and the raw-token route never drift.
+    /// For every spelling, feeding the token to serde_json and to `from_json_value_str`
+    /// yields the same instant.
+    #[test]
+    fn serde_and_from_json_value_str_agree() {
+        for token in [
+            "\"2021-04-25T17:30:03.000000Z\"",
+            "\"2021-04-25T17:30:03+00:00\"",
+            "\"2021-04-25T17:30:03Z\"",
+            "\"2021-04-25\"",
+            "\"1619371803000000\"",
+            "\"1619371803000\"",
+            "\"1619371803\"",
+            "1619371803000000",
+            "1619371803000",
+            "1619371803",
+            "1000000",
+            "0",
+            "-315525600123456",
+            "1679059876123456000",
+        ] {
+            let via_serde: DateTimeAsMicroseconds = serde_json::from_str(token)
+                .unwrap_or_else(|e| panic!("serde failed on {}: {}", token, e));
+            let via_raw = DateTimeAsMicroseconds::from_json_value_str(token)
+                .unwrap_or_else(|| panic!("from_json_value_str returned None on {}", token));
+
+            assert_eq!(via_serde, via_raw, "routes disagree on token {}", token);
+        }
     }
 
     #[test]

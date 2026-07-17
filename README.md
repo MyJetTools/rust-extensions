@@ -74,16 +74,29 @@ Constructors include `new(unix_microseconds)`, `now()`, `create(...)`, `from_str
 | `"2021-04-25T17:30:03.000000Z"` | RFC 3339 (the format we now write) |
 | `"2021-04-25T17:30:03+00:00"` | RFC 3339 with a numeric zero offset — what the older `to_rfc3339()` emits |
 | `"1619371803000000"` | digits in a string → unix timestamp, unit sniffed by magnitude via `From<i64>` |
-| `1619371803000000` | **raw** unix microseconds, no magnitude sniffing |
+| `1619371803000000` | number → unix timestamp, unit sniffed by magnitude via `From<i64>` |
 
 Why asymmetric: changing the *write* format is not an API break the compiler can catch — it is a break of **data already at rest**. Across the monorepo `DateTimeAsMicroseconds` sits in MyNoSql entities, settings files, Service Bus messages, jsonb columns and caches, where history is written as `1704164645000000`. A strict reader would make those unreadable, and rolling the deploy back would not heal them. Writing the new format while reading both (a *tolerant reader*) is the standard format-migration move.
 
-Two invariants worth stating explicitly, because both are easy to "fix" into a bug:
-
-- The **number** branch (`visit_i64`) is raw microseconds — `DateTimeAsMicroseconds::new(v)`, *not* `From<i64>`. It must reproduce the old `#[serde(transparent)]` behaviour byte for byte. Routing it through `From<i64>`'s magnitude detection would silently relocate small historical values (e.g. `1000000` means `1970-01-01T00:00:01`, not 1970-01-12).
-- The **string** branch goes through `from_str`, which sniffs the content itself — so a stringified number keeps `From<i64>`'s magnitude behaviour. The two branches differing is intentional, not an oversight.
+A **number carries no unit**, so — quoted or bare — it always goes through `From<i64>`, which sniffs seconds / millis / micros / nanos by magnitude. One rule for numbers everywhere in the crate; `deserialize_number_sniffs_the_unit` pins it. Data written by the old `#[serde(transparent)]` impl reads back unchanged, because a real microseconds timestamp (`1704164645000000` ≈ 1.7e15) sits in the microseconds band. The sniffing only reinterprets a bare number below ~4.7e9 — the first ~78 minutes after the epoch, where `0` maps to `0` regardless — so no realistic stored timestamp moves.
 
 Deserialization uses `deserialize_any`, so it needs a **self-describing** format (JSON — what this monorepo uses). It would not work under bincode/postcard/rmp.
+
+#### `from_json_value_str` — the entry point for non-serde deserializers
+
+`DateTimeAsMicroseconds::from_json_value_str(src: &str) -> Option<Self>` takes a **raw JSON value token**, exactly as a parser hands it over — a quoted string keeps its quotes, a number arrives bare (this is what my-json's `JsonValueRef::as_raw_str()` returns). Use it from any hand-written deserializer (my-json, my-http-utils) so every reader accepts the same spellings:
+
+```rust
+DateTimeAsMicroseconds::from_json_value_str("\"2021-04-25T17:30:03.000000Z\"");  // RFC 3339, Z
+DateTimeAsMicroseconds::from_json_value_str("\"2021-04-25T17:30:03+00:00\"");    // older to_rfc3339()
+DateTimeAsMicroseconds::from_json_value_str("\"1619371803\"");                   // quoted number
+DateTimeAsMicroseconds::from_json_value_str("1619371803000000");                 // bare number
+DateTimeAsMicroseconds::from_json_value_str("null");                             // -> None
+```
+
+The rule is simply: **quotes present → strip them; then parse the content**. Quotes are packaging, not meaning — `"1619371803"` and `1619371803` land on the same instant, because either way the digits go to `From<i64>` for unit sniffing. Single quotes are accepted alongside double ones (matching my-json), escapes are not resolved (no RFC 3339 spelling contains one), and `null` / empty / garbage give `None` rather than a panic. If you have already stripped the quotes, `from_str` is equivalent.
+
+serde does **not** call `from_json_value_str`, and cannot: a `Deserializer` hands the visitor an already-decoded value, having consumed the quotes. Instead both routes bottom out in the same primitives — `from_str` for a string, `From<i64>` for a number — and the test `serde_and_from_json_value_str_agree` pins them together across every spelling, so the two cannot drift.
 
 `Display`, `Debug` and serde are three different renderings — don't reach for the wrong one:
 
