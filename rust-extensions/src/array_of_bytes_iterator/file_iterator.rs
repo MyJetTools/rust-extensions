@@ -36,8 +36,7 @@ pub struct FileIterator {
 
 impl FileIterator {
     pub async fn new(file_name: &str, buffer_size: usize) -> std::io::Result<Self> {
-        let mut buffer = Vec::with_capacity(buffer_size);
-        unsafe { buffer.set_len(buffer_size) }
+        let buffer = vec![0u8; buffer_size];
 
         let mut buffer = Buffer {
             buffer,
@@ -70,9 +69,7 @@ impl FileIterator {
         file.seek(std::io::SeekFrom::Start(from_pos as u64)).await?;
 
         let size_to_load = to_pos - from_pos;
-        let mut result = Vec::with_capacity(size_to_load);
-
-        unsafe { result.set_len(size_to_load) }
+        let mut result = vec![0u8; size_to_load];
 
         file.read_exact(&mut result).await?;
 

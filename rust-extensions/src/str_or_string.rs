@@ -67,20 +67,6 @@ impl<'s> StrOrString<'s> {
         cut_data(result, self.from, self.to)
     }
 
-    pub fn to_string(&self) -> String {
-        let has_data_to_cut = self.has_data_to_cut();
-        match &self.data {
-            StrOrStringData::AsStr(s) => cut_data(s, self.from, self.to).to_string(),
-            StrOrStringData::AsString(s) => {
-                if has_data_to_cut {
-                    cut_data(&s, self.from, self.to).to_string()
-                } else {
-                    s.to_string()
-                }
-            }
-        }
-    }
-
     pub fn into_string(self) -> String {
         let has_data_to_cut = self.has_data_to_cut();
         match self.data {

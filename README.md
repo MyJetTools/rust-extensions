@@ -30,7 +30,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 - String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
 - Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
-- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
+- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `is_initialized`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
 - IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
 
 ## Quick recipes
@@ -50,7 +50,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
-  - `MyTimer` for tick-driven tasks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+  - `MyTimer` for tick-driven tasks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
 - File/IO:
   - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
 
@@ -183,6 +183,7 @@ assert_eq!(bytes.len(), 2 + 4);
 - `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel.
 - `MyTimer`: tick-based scheduling with graceful stop.
 - `TaskCompletion`: create awaitable completion sources with error support.
+- `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
 - `TokioQueue`: bounded async queue with backpressure.
 - `QueueToSave`: producer/consumer file-saving pipeline with retries.
 - `QueueToSaveWithId`: same producer/consumer batching as `QueueToSave`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone`; the handler receives a `Vec<T>` per tick. No ordering guarantee across IDs.
@@ -359,6 +360,56 @@ Key properties:
 - **Lock-free hot path** — `trigger()` only takes a lock on the 0 → 1 transition (to spawn the reader); subsequent triggers are a single atomic add.
 - **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the loop keeps draining.
 - **One-shot lifecycle** — a second `register` panics, `start` without a prior `register` panics, and `trigger` before `start` panics.
+
+### `IsInitialized` use case
+
+`IsInitialized` is a one-shot initialization gate. Any number of tasks can `await` `wait_until_initialized`, and they all stay parked until initialization happens exactly once. It is designed to live inside an `AppCtx` as a plain field — all methods take `&self`, no outer `Mutex` needed.
+
+The flow:
+
+1. **Construct** — `IsInitialized::new()` (or `Default::default()`); starts un-initialized.
+2. **Wait** — callers `wait_until_initialized().await`. While un-initialized, each subscribes (a `TaskCompletion` is parked in an internal `Vec`); once initialized, the call returns instantly via an `AtomicBool` fast path without touching the mutex.
+3. **Initialize** — `initialized().await` raises the flag and completes every parked awaiter, releasing them all at once.
+4. **Guard** — `panic_if_not_initialized()` panics with `"Not Initialized"` if called before initialization; `wait_some_time_and_panic(duration)` awaits initialization for at most `duration` and panics with `"Not Initialized"` if it does not arrive in time; `is_initialized()` returns the flag.
+
+```rust
+#[cfg(feature = "with-tokio")]
+mod example {
+    use std::sync::Arc;
+    use rust_extensions::IsInitialized;
+
+    // Keep it inside AppCtx as a plain field.
+    pub struct AppCtx {
+        pub is_initialized: IsInitialized,
+    }
+
+    impl AppCtx {
+        pub fn new() -> Self {
+            Self {
+                is_initialized: IsInitialized::new(),
+            }
+        }
+    }
+
+    // Any number of tasks can park here until initialization happens.
+    pub async fn handle_request(ctx: Arc<AppCtx>) {
+        ctx.is_initialized.wait_until_initialized().await;
+        // ... proceed, the app is ready ...
+    }
+
+    // Called once, when bootstrap finished wiring everything up.
+    pub async fn on_bootstrap_finished(ctx: &AppCtx) {
+        ctx.is_initialized.initialized().await;
+    }
+}
+```
+
+Key properties:
+
+- **Lock-free fast path** — once initialized, `wait_until_initialized` only reads an `AtomicBool` and returns; the `tokio::Mutex` is entered only while still un-initialized.
+- **No lost wake-ups** — the slow path re-checks the flag *after* taking the mutex, and `initialized` raises the flag and drains the waiter `Vec` under that same mutex, so a caller either observes the flag or is guaranteed to be completed.
+- **Idempotent `initialized`** — calling it again is a no-op (the waiter `Vec` is already drained).
+- **Cancel-safe** — if a waiter's future is dropped before completion, `initialized` skips the dead subscription without panicking.
 
 ## IO, logging, misc
 
