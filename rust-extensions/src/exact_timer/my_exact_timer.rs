@@ -173,12 +173,14 @@ async fn execute_timer(timer: Arc<dyn MyTimerTick + Send + Sync + 'static>) {
 /// with a coarse-to-fine ladder that re-measures the remaining time on every
 /// iteration. This keeps the loop responsive to shutdown (a long interval never
 /// blocks for more than 10 seconds); once under one second remains, a single
-/// exact sleep lands precisely on the mark.
+/// exact sleep lands precisely on the mark. A backward wall-clock jump is
+/// detected and the target re-aligned, so the total wait never exceeds one
+/// interval.
 async fn sleep_till_next_tick(
     interval_micros: u64,
     app_states: &(dyn ApplicationStates + Send + Sync + 'static),
 ) {
-    let target_micros = get_next_tick_micros(get_now_micros(), interval_micros);
+    let mut target_micros = get_next_tick_micros(get_now_micros(), interval_micros);
 
     loop {
         if app_states.is_shutting_down() {
@@ -191,9 +193,27 @@ async fn sleep_till_next_tick(
             return;
         }
 
+        // Guard against a backward wall-clock jump (NTP / suspend-resume): the
+        // fixed target must never be more than one interval away, otherwise the
+        // timer would go silent for the whole magnitude of the jump. Re-align to
+        // the next mark from the current time when that happens.
+        target_micros = realign_target_on_clock_jump(target_micros, now_micros, interval_micros);
+
         let remaining = Duration::from_micros(target_micros - now_micros);
 
         tokio::time::sleep(get_sleep_chunk(remaining)).await;
+    }
+}
+
+/// Keeps the wait bounded to one interval. In steady state the target stays
+/// fixed (so the mark is hit precisely). Only a backward wall-clock jump can
+/// push it more than one interval into the future, and then we re-derive the
+/// next aligned mark from `now_micros`.
+fn realign_target_on_clock_jump(target_micros: u64, now_micros: u64, interval_micros: u64) -> u64 {
+    if target_micros.saturating_sub(now_micros) > interval_micros {
+        get_next_tick_micros(now_micros, interval_micros)
+    } else {
+        target_micros
     }
 }
 
@@ -295,5 +315,38 @@ mod tests {
             let remaining = Duration::from_millis(ms);
             assert!(get_sleep_chunk(remaining) <= remaining);
         }
+    }
+
+    #[test]
+    fn steady_state_keeps_the_target_fixed() {
+        let d = ExactTimerInterval::Every30Minutes.get_duration_micros();
+        let target = get_next_tick_micros(1_000_000_000, d); // some future mark
+
+        // As `now` advances toward the mark, the target must not move.
+        for now in [1_000_000_000u64, 1_000_500_000, target - 1] {
+            assert_eq!(realign_target_on_clock_jump(target, now, d), target);
+        }
+        // Exactly one interval away is still legitimate (not a jump).
+        let now = target - d;
+        assert_eq!(realign_target_on_clock_jump(target, now, d), target);
+    }
+
+    #[test]
+    fn backward_clock_jump_realigns_to_a_near_mark() {
+        let d = ExactTimerInterval::Every30Minutes.get_duration_micros();
+        let now_before = 12 * 3_600_000_000u64; // 12:00:00 since epoch-ish origin
+        let target = get_next_tick_micros(now_before, d); // 12:30:00 mark
+
+        // Clock steps back 2 hours -> target is now > one interval away.
+        let now_after = now_before - 2 * 3_600_000_000u64; // 10:00:00
+        let realigned = realign_target_on_clock_jump(target, now_after, d);
+
+        assert!(realigned < target, "must re-align to a nearer mark");
+        assert!(
+            realigned - now_after <= d,
+            "wait must be bounded to one interval after a jump"
+        );
+        assert_eq!(realigned % d, 0, "re-aligned target stays on a mark");
+        assert_eq!(realigned, get_next_tick_micros(now_after, d));
     }
 }
