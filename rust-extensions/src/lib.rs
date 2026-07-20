@@ -12,6 +12,8 @@ pub mod linq;
 mod logger;
 #[cfg(feature = "with-tokio")]
 mod my_timer;
+#[cfg(feature = "with-tokio")]
+mod exact_timer;
 mod short_string;
 mod slice_or_vec;
 pub use short_string::*;
@@ -43,6 +45,8 @@ pub use binary_payload_builder::*;
 pub use logger::*;
 #[cfg(feature = "with-tokio")]
 pub use my_timer::{MyTimer, MyTimerTick};
+#[cfg(feature = "with-tokio")]
+pub use exact_timer::{ExactTimerInterval, MyExactTimer};
 pub use slice_or_vec::*;
 pub use str_or_string::*;
 pub mod auto_shrink;

@@ -50,7 +50,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
-  - `MyTimer` for tick-driven tasks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
 - File/IO:
   - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
 
@@ -182,6 +182,7 @@ assert_eq!(bytes.len(), 2 + 4);
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task.
 - `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel.
 - `MyTimer`: tick-based scheduling with graceful stop.
+- `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
 - `TokioQueue`: bounded async queue with backpressure.
@@ -410,6 +411,44 @@ Key properties:
 - **No lost wake-ups** — the slow path re-checks the flag *after* taking the mutex, and `initialized` raises the flag and drains the waiter `Vec` under that same mutex, so a caller either observes the flag or is guaranteed to be completed.
 - **Idempotent `initialized`** — calling it again is a no-op (the waiter `Vec` is already drained).
 - **Cancel-safe** — if a waiter's future is dropped before completion, `initialized` skips the dead subscription without panicking.
+
+### `MyExactTimer` use case
+
+`MyExactTimer` is the drift-free sibling of `MyTimer`. Where `MyTimer` sleeps `interval` *between* ticks (so ticks slowly drift and a slow tick pushes every later one back), `MyExactTimer` fires exactly on the **aligned wall-clock marks** of a fixed `ExactTimerInterval` — e.g. `Every5Seconds` fires at seconds `:00, :05, :10, … :55`, and `Every5Minutes` at minutes `:00, :05, … :55`.
+
+It reuses the exact same `MyTimerTick` trait, so an existing tick can be registered on either timer — you only swap which timer you register it on.
+
+```rust
+use std::sync::Arc;
+use rust_extensions::{MyExactTimer, ExactTimerInterval, MyTimerTick};
+
+struct MyTick;
+
+#[async_trait::async_trait]
+impl MyTimerTick for MyTick {
+    async fn tick(&self) {
+        // runs at :00, :05, :10 … of every minute
+    }
+}
+
+pub fn bootstrap(
+    app_states: Arc<dyn rust_extensions::ApplicationStates + Send + Sync + 'static>,
+    logger: Arc<dyn rust_extensions::Logger + Send + Sync + 'static>,
+) {
+    let mut timer = MyExactTimer::new(ExactTimerInterval::Every5Seconds);
+    timer.register_timer("my-tick", Arc::new(MyTick));
+    timer.start(app_states, logger);
+}
+```
+
+Available intervals: `Every1Second`, `Every5Seconds`, `Every10Seconds`, `Every15Seconds`, `Every20Seconds`, `Every30Seconds`, `Every1Minute`, `Every5Minutes`, `Every10Minutes`, `Every15Minutes`, `Every20Minutes`, `Every30Minutes`.
+
+How it stays exact:
+
+- **Epoch-aligned marks** — the next fire time is the next multiple of the interval since the Unix epoch. Because the epoch sits on a minute/hour boundary and every interval evenly divides a minute or an hour, those multiples land precisely on the natural wall-clock marks. No accumulated drift.
+- **Recomputed after every tick** — the next mark is computed from the moment the tick *finished*, so a slow tick simply skips to the next mark instead of pushing the whole schedule back. Finishing exactly on a mark advances to the following one (never a double fire).
+- **Coarse-to-fine wait** — the timer approaches the mark by sleeping in shrinking chunks (`10s → 5s → 1s`), re-measuring each loop; once under one second remains it does a single exact sleep and wakes right on the mark. A long interval therefore still notices `is_shutting_down()` within at most 10 seconds.
+- **Same lifecycle as `MyTimer`** — waits for `is_initialized()` before the first tick, stops on `is_shutting_down()`, supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
 
 ## IO, logging, misc
 
