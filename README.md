@@ -30,7 +30,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 - String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
 - Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
-- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `is_initialized`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
+- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `is_initialized`, `idempotency`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
 - IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
 
 ## Quick recipes
@@ -50,7 +50,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
-  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `IdempotencyCache` to make a retried request execute at most once, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
 - File/IO:
   - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
 
@@ -185,6 +185,7 @@ assert_eq!(bytes.len(), 2 + 4);
 - `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
+- `IdempotencyCache`: de-duplicates retries of the same request — the first caller executes, concurrent retries park on the same execution, later retries get the memorized result.
 - `TokioQueue`: bounded async queue with backpressure.
 - `QueueToSave`: producer/consumer file-saving pipeline with retries.
 - `QueueToSaveWithId`: same producer/consumer batching as `QueueToSave`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone`; the handler receives a `Vec<T>` per tick. No ordering guarantee across IDs.
@@ -411,6 +412,80 @@ Key properties:
 - **No lost wake-ups** — the slow path re-checks the flag *after* taking the mutex, and `initialized` raises the flag and drains the waiter `Vec` under that same mutex, so a caller either observes the flag or is guaranteed to be completed.
 - **Idempotent `initialized`** — calling it again is a no-op (the waiter `Vec` is already drained).
 - **Cancel-safe** — if a waiter's future is dropped before completion, `initialized` skips the dead subscription without panicking.
+
+### `IdempotencyCache` use case
+
+`IdempotencyCache` makes a retried request execute **at most once**. A request is identified by an idempotency key (a `String` — typically the client's request id); the actual work lives behind the `IdempotencyExecution` trait. For a given key:
+
+- **first call** — runs `IdempotencyExecution::execute` inline and memorizes its `Result`;
+- **a retry that arrives while the first call is still running** — executes nothing: it parks on a `TaskCompletion` and is released with the very same result;
+- **a retry that arrives after it finished** — gets the memorized result immediately, the execution is not touched.
+
+Like `EventsLoop` and `BackgroundExecutor`, it is designed to live inside an `AppCtx` as a plain field (all methods take `&self`), and the execution is registered separately so it is free to hold an `Arc` of the `AppCtx` that owns the cache.
+
+```rust
+#[cfg(feature = "with-tokio")]
+mod example {
+    use std::sync::Arc;
+    use std::time::Duration;
+    use rust_extensions::{IdempotencyCache, IdempotencyExecution, DEFAULT_MAX_AMOUNT};
+
+    pub struct ChargeParams {
+        pub client_id: String,
+        pub amount: f64,
+    }
+
+    // 1. Define the work that must not happen twice.
+    struct ChargeExecution;
+
+    #[async_trait::async_trait]
+    impl IdempotencyExecution<ChargeParams, String, String> for ChargeExecution {
+        async fn execute(&self, params: ChargeParams) -> Result<String, String> {
+            // Runs exactly once per idempotency key.
+            Ok(format!("charged {} for {}", params.amount, params.client_id))
+        }
+    }
+
+    // 2. Keep it inside AppCtx as a plain field.
+    pub struct AppCtx {
+        pub charges: IdempotencyCache<ChargeParams, String, String>,
+    }
+
+    impl AppCtx {
+        pub fn new() -> Self {
+            Self {
+                charges: IdempotencyCache::new_with_max_amount("charges", DEFAULT_MAX_AMOUNT)
+                    .set_execution_timeout(Duration::from_secs(5)),
+            }
+        }
+    }
+
+    // 3. Wire up at startup.
+    pub fn bootstrap(ctx: &AppCtx) {
+        ctx.charges.register_execution(Arc::new(ChargeExecution));
+    }
+
+    // 4. Handle a request — retrying it with the same key never charges twice.
+    pub async fn handle_request(ctx: &AppCtx, request_id: String, params: ChargeParams) {
+        match ctx.charges.execute(request_id, params).await {
+            Ok(receipt) => println!("{}", receipt.as_str()),
+            Err(err) => println!("failed: {}", err.as_str()),
+        }
+    }
+}
+```
+
+Key properties:
+
+- **At most one execution per key** — concurrent retries park on the first one instead of starting their own; only the caller that actually executes consumes its `params`, the others simply drop theirs.
+- **Errors are memorized too** — once a key produced an answer, every retry of that key gets that answer back, `Ok` or `Err` alike. There is no "retry the failure for free": a genuinely new attempt needs a new key.
+- **Shared as `Arc`** — the result is handed out as `Result<Arc<TOk>, Arc<TErr>>` (`IdempotencyResult`), so serving N retries costs N atomic increments, and neither `TOk` nor `TErr` has to be `Clone`.
+- **Last N, FIFO** — the last `max_amount` results are kept (`new` uses `DEFAULT_MAX_AMOUNT` = 1000, `new_with_max_amount` sets it), evicted oldest-completed-first; a cache hit does **not** refresh an entry. `max_amount == 0` is legal and means "de-duplicate concurrent retries, remember nothing afterwards".
+- **One flat queue, no index** — the whole state is a single `VecDeque`: push new keys to the back, drop the oldest results from the front, look up by linear scan. There is no second structure that could drift out of sync with it. Eviction steps **over** in-flight entries rather than dropping the front blindly — an `Executing` entry has awaiters parked on it — so `max_amount` caps the memorized answers and in-flight executions sit on top of that. The linear scan is the right shape at these sizes, not for a `max_amount` in the hundreds of thousands.
+- **Cancel-safe by design, loud about it** — the first caller owns the execution, so if its future is dropped (HTTP timeout) or the execution panics, a drop-guard removes the entry — the next retry executes from scratch — and everybody parked on it gets the standard `TaskCompletion` drop behaviour: their `get_result()` panics with `"Task is dropped"`. Nothing is memorized in that case, because we do not know whether the side effect happened.
+- **Bounded execution** — `execute` is wrapped in a timeout (`DEFAULT_EXECUTION_TIMEOUT` = 5s, builder `set_execution_timeout`). Overrunning it is simply the third way to not produce a result, so it is handled as a panic like the other two. Without it a hung execution would pin its key forever and every retry of that key would park forever, since an `Executing` entry is never evicted. Needs a Tokio runtime with time enabled.
+- **No lock held across `.await`** — a `parking_lot::Mutex` guards the map (`get`/`insert`/`remove` only); the execution and every completion happen outside it. `parking_lot` is also what makes the synchronous cancellation drop-guard possible.
+- **One-shot registration** — a second `register_execution` panics, and `execute` before registration panics (before it claims the key, so no entry is leaked). The registered handler lives in a `OnceLock`, so reading it on every `execute` is a single atomic load that hands back a reference — the hot path never touches the `Arc` refcount.
 
 ### `MyExactTimer` use case
 
