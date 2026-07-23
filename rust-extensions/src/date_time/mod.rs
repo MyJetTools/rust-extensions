@@ -3,12 +3,14 @@ mod as_microseconds_atomic;
 pub mod compact_date_time;
 mod date_time_duration;
 mod date_time_struct;
+mod date_time_with_time_zone;
 mod interval_key;
 pub mod rfc2822;
 pub mod rfc_3339;
 pub mod rfc_5322;
 mod time_difference;
 mod time_struct;
+mod time_zone;
 mod utils;
 
 pub use as_microseconds::DateTimeAsMicroseconds;
@@ -16,8 +18,10 @@ pub use as_microseconds_atomic::AtomicDateTimeAsMicroseconds;
 
 pub use date_time_duration::DateTimeDuration;
 pub use date_time_struct::*;
+pub use date_time_with_time_zone::*;
 pub use time_difference::*;
 pub use time_struct::*;
+pub use time_zone::*;
 pub use utils::*;
 pub mod rfc_7231;
 pub use interval_key::*;

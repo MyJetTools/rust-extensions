@@ -37,6 +37,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 
 - Time point + interval keys:
   - `date_time::DateTimeAsMicroseconds` for UTC timestamps with µs precision.
+  - `date_time::DateTimeAsMicrosecondsWithTimeZone` (+ `TimeZone`) to pair a UTC instant with an offset and render it as local wall-clock time.
   - `date_time::interval_key::*` for rounding/grouping into year/month/week/day/hour (1h/2h/4h)/minute (1m/5m/15m/30m) buckets.
 - High-performance strings:
   - `ShortString` (Pascal-style, single-byte length, max 255 bytes on stack) with `Display`, `Serialize`, `Eq`, hashing.
@@ -129,6 +130,44 @@ let now = DateTimeAsMicroseconds::now();
 let minute_key: IntervalKey<MinuteKey> = now.into();
 let next_minute = minute_key.add(Duration::from_secs(60));
 assert!(next_minute.to_i64() >= minute_key.to_i64());
+```
+
+### `DateTimeAsMicrosecondsWithTimeZone` — a UTC instant with a timezone
+
+`DateTimeAsMicroseconds` is always UTC. When you need to render a moment back into the **local wall-clock time** it was captured in, pair it with a `TimeZone`:
+
+```rust
+pub struct DateTimeAsMicrosecondsWithTimeZone {
+    pub date_time: DateTimeAsMicroseconds, // the instant, kept in UTC
+    pub time_zone: TimeZone,               // the offset to render it in
+}
+```
+
+`TimeZone` is a fixed offset from UTC stored **in minutes** — `UTC+1` = `60`, `UTC-5` = `-300`, `UTC+5:45` (Nepal) = `345`:
+
+- `TimeZone::utc()` / `TimeZone::from_minutes(i32)` — construct directly.
+- `TimeZone::from_server_and_local_time(server_utc, local)` — derive the offset as `local - server`, **rounded to the nearest 15 minutes** (15-minute steps exist in the wild, so `+58m` → `+60`, `+50m` → `+45`, `+7m` → `0`). `local` is the same moment as read on the local clock, encoded as a plain `DateTimeAsMicroseconds`.
+- `offset_in_minutes()` / `offset_in_seconds()` / `to_fixed_offset()` — read it back; `Debug` renders as `+01:00`.
+
+Human-visible renderings (all apply the offset first):
+
+- `to_local_date_time_struct() -> DateTimeStruct` — local `year`/`month`/`day`/`time`/`dow`, correct across midnight and for negative offsets.
+- `to_rfc3339()` — `2021-04-25T18:30:03.000000+01:00` (numeric offset, fixed µs precision). This is also the **serde wire format**: it serializes to that one string and reads it back (a trailing `Z` is `UTC+0`); a bare number or an offset-less string is rejected rather than silently misread.
+- `to_compact_string()` — `2021-04-25 18:30:03` (local time, no zone suffix).
+
+```rust
+use rust_extensions::date_time::*;
+
+let server = DateTimeAsMicroseconds::parse_iso_string("2021-04-25T17:30:03.000Z").unwrap();
+
+// Client reported its wall clock as 18:30 for the same moment -> derive UTC+1.
+let mut local = server;
+local.add_minutes(58); // a noisy +58m rounds to +60
+let dt = DateTimeAsMicrosecondsWithTimeZone::from_server_and_local_time(server, local);
+
+assert_eq!(60, dt.time_zone.offset_in_minutes());
+assert_eq!("2021-04-25 18:30:03", dt.to_compact_string());
+assert_eq!("2021-04-25T18:30:03.000000+01:00", dt.to_rfc3339());
 ```
 
 ## Strings in detail
