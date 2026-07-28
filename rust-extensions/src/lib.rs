@@ -48,7 +48,7 @@ pub mod grouped_data;
 pub use binary_payload_builder::*;
 pub use logger::*;
 #[cfg(feature = "with-tokio")]
-pub use my_timer::{MyTimer, MyTimerTick};
+pub use my_timer::{MyTimer, MyTimerTick, RepeatTimerIteration};
 #[cfg(feature = "with-tokio")]
 pub use exact_timer::{ExactTimerInterval, MyExactTimer};
 pub use slice_or_vec::*;

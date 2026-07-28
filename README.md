@@ -219,8 +219,8 @@ assert_eq!(bytes.len(), 2 + 4);
 ## Async & Tokio (feature `with-tokio`)
 
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task.
-- `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel.
-- `MyTimer`: tick-based scheduling with graceful stop.
+- `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
+- `MyTimer`: tick-based scheduling with graceful stop; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
 - `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
@@ -353,7 +353,7 @@ A typical example is on-demand persistence: callers mutate state and `trigger()`
 mod example {
     use std::sync::Arc;
     use rust_extensions::{
-        background_executor::{BackgroundExecutor, BackgroundJob},
+        background_executor::{BackgroundExecutor, BackgroundJob, RepeatIteration},
         Logger,
     };
 
@@ -362,8 +362,12 @@ mod example {
 
     #[async_trait::async_trait]
     impl BackgroundJob for FlushJob {
-        async fn execute(&self) {
+        async fn execute(&self) -> RepeatIteration {
             // lock shared state, take what is pending, persist it (no-op if nothing changed).
+
+            // Still more to flush, but we do not want to keep this iteration
+            // running — leave it and ask to be started again.
+            RepeatIteration::Yes
         }
     }
 
@@ -398,8 +402,9 @@ Key properties:
 - **Offloads the caller** — `trigger()` returns immediately; the job runs on a dedicated background task, so the calling thread is never blocked on the work.
 - **Single consumer** — at most one reader task is alive, so `execute()` never runs concurrently with itself.
 - **Idle triggers are fine** — `execute()` runs once per `trigger()` and is expected to be cheap when there is nothing to do; the reader drains the counter back to zero before exiting.
+- **The job can ask for another iteration** — `execute()` returns `RepeatIteration`. `No` means "this iteration is done": the trigger being served is consumed, and the reader exits once the counter is drained. `Yes` means "there is more to do, but not in this call": the reader runs `execute()` again **without consuming the trigger**, so the work continues on a fresh iteration and no trigger is lost. That is the way out for a job which discovers mid-flight that it needs another pass and would rather leave the iteration than sit inside one long call — an external timeout, a batch limit, a fairness cap. A job that always answers `Yes` never lets the reader exit, exactly as an `execute()` that never returns would; the decision to stop belongs to the job.
 - **Lock-free hot path** — `trigger()` only takes a lock on the 0 → 1 transition (to spawn the reader); subsequent triggers are a single atomic add.
-- **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the loop keeps draining.
+- **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the loop keeps draining. A panic answers nothing, so it consumes the trigger like a `No` — a job that panics every time cannot spin the reader forever.
 - **One-shot lifecycle** — a second `register` panics, `start` without a prior `register` panics, and `trigger` before `start` panics.
 
 ### `IsInitialized` use case
@@ -534,14 +539,15 @@ It reuses the exact same `MyTimerTick` trait, so an existing tick can be registe
 
 ```rust
 use std::sync::Arc;
-use rust_extensions::{MyExactTimer, ExactTimerInterval, MyTimerTick};
+use rust_extensions::{MyExactTimer, ExactTimerInterval, MyTimerTick, RepeatTimerIteration};
 
 struct MyTick;
 
 #[async_trait::async_trait]
 impl MyTimerTick for MyTick {
-    async fn tick(&self) {
+    async fn tick(&self) -> RepeatTimerIteration {
         // runs at :00, :05, :10 … of every minute
+        RepeatTimerIteration::WithInterval
     }
 }
 
@@ -563,6 +569,36 @@ How it stays exact:
 - **Recomputed after every tick** — the next mark is computed from the moment the tick *finished*, so a slow tick simply skips to the next mark instead of pushing the whole schedule back. Finishing exactly on a mark advances to the following one (never a double fire).
 - **Coarse-to-fine wait** — the timer approaches the mark by sleeping in shrinking chunks (`10s → 5s → 1s`), re-measuring each loop; once under one second remains it does a single exact sleep and wakes right on the mark. A long interval therefore still notices `is_shutting_down()` within at most 10 seconds.
 - **Same lifecycle as `MyTimer`** — waits for `is_initialized()` before the first tick, stops on `is_shutting_down()`, supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
+
+### `RepeatTimerIteration` — leaving a tick early to reset the timeout
+
+Both timers wrap every `tick()` in `iteration_timeout` (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s). A tick with more work than fits in that window does not have to race it: it returns **`RepeatTimerIteration::Immediately`** and is started again straight away — **with the timeout window reset** — instead of being cut off mid-flight. `WithInterval` is the normal answer: the iteration is done, wait for the next scheduled tick.
+
+```rust
+#[async_trait::async_trait]
+impl MyTimerTick for FlushTick {
+    async fn tick(&self) -> RepeatTimerIteration {
+        let batch = take_next_batch().await;
+
+        if batch.is_empty() {
+            return RepeatTimerIteration::WithInterval;
+        }
+
+        flush(batch).await;
+
+        // More is waiting — leave this iteration and get a fresh timeout budget
+        // for the next portion, rather than doing it all in one long call.
+        RepeatTimerIteration::Immediately
+    }
+}
+```
+
+- **Only the tick that asked is repeated** — with several ticks registered on one timer, a neighbour that answered `WithInterval` keeps its own schedule and is not dragged into the extra passes.
+- **A panic or a timeout answered nothing** — neither is repeated, so a tick that always panics cannot spin the loop.
+- **Shutdown wins** — the repeat loop re-checks `is_shutting_down()` between passes.
+- **The schedule does not shift** — on `MyExactTimer` the next mark is computed once the extra passes are finished, exactly as it is after a single slow tick; on `MyTimer` the interval is slept once they are done.
+- **A tick that always answers `Immediately` never lets the timer sleep** — same as one that never returns; the decision to stop belongs to the tick.
+- **`execute_timer(name)`** (the manual, out-of-schedule call on either timer) has no interval to wait for, so it hands the `RepeatTimerIteration` back to the caller instead of acting on it.
 
 ## IO, logging, misc
 

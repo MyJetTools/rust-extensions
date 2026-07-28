@@ -3,4 +3,4 @@ mod background_executor_reader;
 mod background_job;
 
 pub use background_executor::BackgroundExecutor;
-pub use background_job::BackgroundJob;
+pub use background_job::{BackgroundJob, RepeatIteration};

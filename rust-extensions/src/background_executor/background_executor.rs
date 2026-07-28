@@ -100,6 +100,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::background_executor::RepeatIteration;
     use crate::Logger;
 
     use super::{BackgroundExecutor, BackgroundJob};
@@ -128,13 +129,49 @@ mod tests {
 
     #[async_trait::async_trait]
     impl BackgroundJob for CountingJob {
-        async fn execute(&self) {
+        async fn execute(&self) -> RepeatIteration {
             // No two jobs may run at the same time (single consumer invariant).
             let in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst);
             assert_eq!(in_flight, 0, "two jobs executed in parallel");
             tokio::time::sleep(Duration::from_millis(1)).await;
             self.runs.fetch_add(1, Ordering::SeqCst);
             self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            RepeatIteration::No
+        }
+    }
+
+    /// Asks for `repeats` extra iterations - as a job which left the iteration
+    /// early would - and then finishes the trigger it is serving.
+    struct RepeatingJob {
+        runs: Arc<AtomicUsize>,
+        in_flight: Arc<AtomicUsize>,
+        repeats_left: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl BackgroundJob for RepeatingJob {
+        async fn execute(&self) -> RepeatIteration {
+            let in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(in_flight, 0, "two jobs executed in parallel");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            self.runs.fetch_add(1, Ordering::SeqCst);
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+
+            if self
+                .repeats_left
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                    if left == 0 {
+                        None
+                    } else {
+                        Some(left - 1)
+                    }
+                })
+                .is_ok()
+            {
+                return RepeatIteration::Yes;
+            }
+
+            RepeatIteration::No
         }
     }
 
@@ -228,6 +265,54 @@ mod tests {
             executor.trigger();
             wait_for(&runs, 1).await;
             assert_eq!(runs.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn repeat_iteration_yes_runs_again_without_consuming_the_trigger() {
+        rt().block_on(async {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let executor = Arc::new(BackgroundExecutor::new("test-repeat"));
+            executor.register(Arc::new(RepeatingJob {
+                runs: runs.clone(),
+                in_flight: Arc::new(AtomicUsize::new(0)),
+                repeats_left: AtomicUsize::new(3),
+            }));
+            executor.start(Arc::new(TestLogger));
+
+            // A single trigger, but the job asks for 3 extra iterations.
+            executor.trigger();
+            wait_for(&runs, 4).await;
+
+            // The counter is drained now - the reader exited after the last
+            // `No`, so a fresh trigger has to spawn a new reader and run once.
+            executor.trigger();
+            wait_for(&runs, 5).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(runs.load(Ordering::SeqCst), 5);
+        });
+    }
+
+    #[test]
+    fn repeats_do_not_swallow_the_triggers_arrived_meanwhile() {
+        rt().block_on(async {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let executor = Arc::new(BackgroundExecutor::new("test-repeat-and-trigger"));
+            executor.register(Arc::new(RepeatingJob {
+                runs: runs.clone(),
+                in_flight: Arc::new(AtomicUsize::new(0)),
+                repeats_left: AtomicUsize::new(2),
+            }));
+            executor.start(Arc::new(TestLogger));
+
+            // 3 triggers + 2 repeats = 5 iterations, and not one less.
+            executor.trigger();
+            executor.trigger();
+            executor.trigger();
+
+            wait_for(&runs, 5).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(runs.load(Ordering::SeqCst), 5);
         });
     }
 

@@ -1,8 +1,9 @@
-use std::{collections::HashMap, panic::AssertUnwindSafe, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use futures::FutureExt;
-
-use crate::{ApplicationStates, Logger, MyTimerTick};
+use crate::{
+    my_timer::timers_iteration::{execute_timer, execute_timers_iteration, RegisteredTimer},
+    ApplicationStates, Logger, MyTimerTick, RepeatTimerIteration,
+};
 
 use super::ExactTimerInterval;
 
@@ -19,7 +20,7 @@ use super::ExactTimerInterval;
 /// of accumulating drift.
 pub struct MyExactTimer {
     interval: ExactTimerInterval,
-    timers: Vec<(String, Arc<dyn MyTimerTick + Send + Sync + 'static>)>,
+    timers: Vec<RegisteredTimer>,
     iteration_timeout: Duration,
 }
 
@@ -76,13 +77,15 @@ impl MyExactTimer {
         ));
     }
 
-    pub async fn execute_timer(&self, timer_name: &str) {
+    /// Executes the named tick once, out of schedule. There is no mark to wait
+    /// for here, so a `RepeatTimerIteration::Immediately` is handed back to the
+    /// caller rather than acted upon.
+    pub async fn execute_timer(&self, timer_name: &str) -> RepeatTimerIteration {
         for (timer_id, timer_tick) in &self.timers {
             if timer_id == timer_name {
-                tokio::spawn(execute_timer(timer_tick.clone()))
+                return tokio::spawn(execute_timer(timer_tick.clone()))
                     .await
                     .unwrap();
-                return;
             }
         }
 
@@ -91,7 +94,7 @@ impl MyExactTimer {
 }
 
 async fn exact_timer_loop(
-    timers: Vec<(String, Arc<dyn MyTimerTick + Send + Sync + 'static>)>,
+    timers: Vec<RegisteredTimer>,
     interval: ExactTimerInterval,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
@@ -118,53 +121,20 @@ async fn exact_timer_loop(
             break;
         }
 
-        if timers.len() == 1 {
-            let (timer_id, timer) = &timers[0];
-            let tick_future = AssertUnwindSafe(execute_timer(timer.clone())).catch_unwind();
+        let mut to_execute: Vec<&RegisteredTimer> = timers.iter().collect();
 
-            match tokio::time::timeout(iteration_timeout, tick_future).await {
-                Ok(Ok(_)) => {}
-                Ok(Err(_panic)) => {
-                    let message = format!("Timer {} is panicked", timer_id);
-                    println!("{}", message);
-                    logger.write_error(timer_id.to_string().into(), message.into(), None.into());
-                }
-                Err(err) => {
-                    println!("Timer {} is time outed with err: {:?}", timer_id, err);
-                }
-            }
-        } else {
-            let mut timer_handles = HashMap::new();
-            for (timer_id, timer) in &timers {
-                let handle = tokio::spawn(execute_timer(timer.clone()));
-                timer_handles.insert(timer_id, handle);
-            }
+        loop {
+            to_execute = execute_timers_iteration(&to_execute, &logger, iteration_timeout).await;
 
-            for (timer_id, timer_handler) in timer_handles {
-                match tokio::time::timeout(iteration_timeout, timer_handler).await {
-                    Ok(result) => {
-                        if let Err(err) = result {
-                            let message = format!("Timer {} is panicked. Err: {:?}", timer_id, err);
-                            let timer_id = timer_id.to_string();
-                            let logger = logger.clone();
-
-                            tokio::spawn(async move {
-                                println!("{}", message);
-                                logger.write_error(timer_id.into(), message.into(), None.into());
-                            });
-                        }
-                    }
-                    Err(err) => {
-                        println!("Timer {} is time outed with err: {:?}", timer_id, err);
-                    }
-                }
+            // Ticks which left their iteration on purpose are restarted right
+            // away - each with a fresh timeout window. The extra passes do not
+            // shift the schedule: the next mark is computed from the moment they
+            // all finished, exactly as it is after a single slow tick.
+            if to_execute.is_empty() || app_states.is_shutting_down() {
+                break;
             }
         }
     }
-}
-
-async fn execute_timer(timer: Arc<dyn MyTimerTick + Send + Sync + 'static>) {
-    timer.tick().await;
 }
 
 /// Sleeps until the next wall-clock mark aligned to `interval_micros`.
