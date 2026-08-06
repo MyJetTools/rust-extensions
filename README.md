@@ -29,7 +29,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
 - Time: `date_time`, `duration_utils`, `stop_watch`, `atomic_stop_watch`, `atomic_duration`.
 - String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
-- Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
+- Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `sized_chunks`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
 - Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `is_initialized`, `idempotency`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `application_states`, `sortable_id`.
 - IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
 
@@ -215,6 +215,48 @@ assert_eq!(bytes.len(), 2 + 4);
 - `VecMaybeStack` (feature `vec-maybe-stack`) for small-buffer-optimized vectors.
 - Iteration helpers: `array_of_bytes_iterator::{SliceIterator, VecIterator, FileIterator}`, `slice_of_u8_utils` for safe chunking.
 - `Lazy<T>` for deferred construction guarded by `OnceLock`-like behavior.
+- `split_into_sized_chunks` / `SizeBudget` cut a collection into batches by MEASURED size instead of item count — see below.
+
+### Batching by size, not by count
+
+Every real batching limit is expressed in **bytes**: a gRPC message, a request body, a datagram, a row batch handed to a driver. Cutting such a batch every N items is therefore a guess about the average item, and the guess fails exactly when items are unusually large — the case nobody has test data for, and the one that shows up in production as a batch that can never be delivered.
+
+`split_into_sized_chunks` takes the cost function from the caller, so the crate stays free of any serialisation dependency and **the same helper serves a client and a server**: pass `prost::Message::encoded_len`, `serde_json::to_vec(..).len()`, a `str`'s `len`, or your own estimate — it is all just `usize`.
+
+```rust
+use rust_extensions::split_into_sized_chunks;
+
+// One protobuf message per chunk, each safely under a 4 MiB decode limit.
+for page in split_into_sized_chunks(rows, 3 * 1024 * 1024, |row| row.encoded_len() + 8) {
+    producer.send(Response { page }).await?;
+}
+```
+
+Two behaviours worth knowing, both deliberate:
+
+- **An item bigger than the whole limit becomes a chunk of one** rather than being refused forever. Flushing cannot make it fit, so the choice is between passing it on — letting the real boundary reject it with its own error — and spinning. It is passed on.
+- **An empty input yields no chunks at all**, so a caller that sends one message per chunk sends nothing rather than an empty message.
+
+When a single batch must hold items of **several types** — two `repeated` fields of one protobuf message, say — drive `SizeBudget` directly instead, so the types share a batch rather than getting one each:
+
+```rust
+use rust_extensions::SizeBudget;
+
+let mut budget = SizeBudget::new(3 * 1024 * 1024);
+
+for deal in deals {
+    let cost = deal.encoded_len() + 8;
+    if budget.needs_flush(cost) {
+        send(std::mem::take(&mut page)).await?;
+        budget.reset();
+    }
+    budget.add(cost);
+    page.deals.push(deal);
+}
+// ... same loop for `orders`, filling the same page ...
+```
+
+`needs_flush` always answers `false` on an empty batch, which is what makes the over-sized-item rule above fall out rather than needing a special case at every call site.
 
 ## Async & Tokio (feature `with-tokio`)
 

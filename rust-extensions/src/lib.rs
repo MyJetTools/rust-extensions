@@ -106,3 +106,6 @@ pub extern crate macros;
 mod queue_to_save_with_id;
 #[cfg(feature = "with-tokio")]
 pub use queue_to_save_with_id::*;
+
+mod sized_chunks;
+pub use sized_chunks::*;
