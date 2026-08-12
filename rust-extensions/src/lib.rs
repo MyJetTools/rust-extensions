@@ -7,6 +7,8 @@ pub mod duration_utils;
 pub mod events_loop;
 #[cfg(feature = "with-tokio")]
 pub mod background_executor;
+#[cfg(feature = "with-tokio")]
+pub mod background_executor_with_multi_threads;
 pub mod lazy;
 pub mod linq;
 mod logger;

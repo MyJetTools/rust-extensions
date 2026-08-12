@@ -51,7 +51,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
-  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `IdempotencyCache` to make a retried request execute at most once, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `BackgroundExecutorWithMultiThreads` to do the same per `thread_id` — sequentially within one id, in parallel across ids, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `IdempotencyCache` to make a retried request execute at most once, `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
 - File/IO:
   - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
 
@@ -262,6 +262,7 @@ for deal in deals {
 
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task.
 - `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
+- `BackgroundExecutorWithMultiThreads<TThreadId>`: the same, but split into independent threads by the `thread_id` given to `trigger()` — one thread id is served by one background task (sequentially, and the id is passed to `execute()`), different thread ids are served in parallel, and the task of a thread id is spawned on its first trigger and removed once its triggers are drained.
 - `MyTimer`: tick-based scheduling with graceful stop; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
 - `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
@@ -449,6 +450,72 @@ Key properties:
 - **Lock-free hot path** — `trigger()` only takes a lock on the 0 → 1 transition (to spawn the reader); subsequent triggers are a single atomic add.
 - **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the loop keeps draining. A panic answers nothing, so it consumes the trigger like a `No` — a job that panics every time cannot spin the reader forever.
 - **One-shot lifecycle** — a second `register` panics, `start` without a prior `register` panics, and `trigger` before `start` panics.
+
+### `BackgroundExecutorWithMultiThreads` use case
+
+`BackgroundExecutorWithMultiThreads<TThreadId>` is the same component, but the work is split into independent threads by the `thread_id` given to `trigger()`. The rule is: **one thread id — one background task**. Triggers of the same thread id are served strictly one by one, triggers of different thread ids are served in parallel, and the thread id itself is handed to `execute()` so a single job instance can serve all of them.
+
+That is the shape for per-entity work: flush the state of an account, of a trading instrument, of a connection. Entities must not step on each other's toes, yet each of them alone has to be persisted in the order the changes happened.
+
+The lifecycle is the same as of `BackgroundExecutor` — `new` → `register` → `start(logger)` → `trigger(thread_id)` — with one addition: the background task of a thread id is created by the trigger which created the thread, and it is **removed** as soon as the triggers of that thread id are drained. Nothing is kept alive for an idle thread id, and the next trigger of it spawns a fresh task.
+
+```rust
+#[cfg(feature = "with-tokio")]
+mod example {
+    use std::sync::Arc;
+    use rust_extensions::{
+        background_executor_with_multi_threads::{
+            BackgroundExecutorWithMultiThreads, BackgroundJobWithMultiThreads, RepeatIteration,
+        },
+        Logger,
+    };
+
+    // 1. Define the work. The same job instance serves every thread id.
+    struct FlushAccountJob;
+
+    #[async_trait::async_trait]
+    impl BackgroundJobWithMultiThreads<u64> for FlushAccountJob {
+        async fn execute(&self, account_id: &u64) -> RepeatIteration {
+            // take what is pending for this account only and persist it.
+            let _ = account_id;
+            RepeatIteration::No
+        }
+    }
+
+    // Keep it inside AppCtx as a plain field.
+    pub struct AppCtx {
+        pub flush: BackgroundExecutorWithMultiThreads<u64>,
+    }
+
+    impl AppCtx {
+        pub fn new() -> Self {
+            Self {
+                flush: BackgroundExecutorWithMultiThreads::new("flush-accounts"),
+            }
+        }
+    }
+
+    // 2 + 3. Wire up at startup.
+    pub fn bootstrap(ctx: &AppCtx, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+        ctx.flush.register(Arc::new(FlushAccountJob));
+        ctx.flush.start(logger);
+    }
+
+    // 4. Signal "there may be work" for a certain account — returns at once.
+    pub fn on_account_changed(ctx: &AppCtx, account_id: u64) {
+        ctx.flush.trigger(account_id);
+    }
+}
+```
+
+Key properties on top of the ones `BackgroundExecutor` gives:
+
+- **Sequential per thread id** — every thread id has at most one reader task alive, so two iterations of the same id never overlap and they run in the order the triggers arrived.
+- **Parallel across thread ids** — readers of different thread ids are independent Tokio tasks; a slow id does not hold the others back.
+- **The id is a part of the callback** — `execute(&self, thread_id: &TThreadId)`, so one registered job serves all the threads and decides what to do out of the id.
+- **Tasks are created and removed within the thread id** — the trigger which creates a thread id spawns its reader; the reader which drains the counter of that thread id removes it and exits. Both happen under one lock, so a trigger arriving at a draining thread either lands in the still-alive reader or spawns a new one — it is never lost.
+- **Any id type** — `TThreadId: Hash + Eq + Clone + Send + Sync + 'static` (`u64`, `String`, `Arc<String>`, a tuple key, …).
+- **`get_working_threads_amount()`** — how many thread ids have a reader alive right now.
 
 ### `IsInitialized` use case
 
