@@ -33,6 +33,10 @@ impl<T> QueueToSaveInnerAsBulk<T> {
         queue.1.wake();
     }
 
+    pub(crate) fn queue_len(&self) -> usize {
+        self.queue.lock().0.len()
+    }
+
     pub(crate) async fn dequeue(&self) -> Vec<T> {
         loop {
             match self.try_dequeue() {

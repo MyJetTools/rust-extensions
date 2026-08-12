@@ -42,6 +42,14 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
         self.inner.name.as_str()
     }
 
+    /// Amount of the items which are waiting in the queue right now.
+    ///
+    /// The chunk which is being handled at the moment is already dequeued - it
+    /// is not counted here.
+    pub fn queue_len(&self) -> usize {
+        self.inner.queue_len()
+    }
+
     pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
         let mut write_access = self.handler.lock();
 
