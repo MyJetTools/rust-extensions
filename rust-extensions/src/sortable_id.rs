@@ -18,7 +18,7 @@ impl SortableId {
             &mut result,
             "-{}",
 
-            uuid::Uuid::new_v4()
+            crate::uuid::generate_v4()
         }
         .unwrap();
 

@@ -88,9 +88,11 @@ pub use atomic_duration::*;
 mod min_key_value;
 pub use min_key_value::*;
 pub mod binary_search;
-#[cfg(feature = "with-tokio")]
+#[cfg(any(feature = "rnd", target_arch = "wasm32"))]
+pub mod uuid;
+#[cfg(any(feature = "rnd", target_arch = "wasm32"))]
 mod sortable_id;
-#[cfg(feature = "with-tokio")]
+#[cfg(any(feature = "rnd", target_arch = "wasm32"))]
 pub use sortable_id::*;
 mod uint32_variable_size;
 pub use uint32_variable_size::*;

@@ -1,6 +1,6 @@
 use std::{
     sync::atomic::AtomicI64,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, UNIX_EPOCH},
 };
 
 use chrono::{DateTime, Utc};
@@ -50,14 +50,7 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn now() -> Self {
-        let unix_microseconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as i64;
-
-        Self {
-            unix_microseconds: AtomicI64::new(unix_microseconds),
-        }
+        Self::new(DateTimeAsMicroseconds::now().unix_microseconds)
     }
 
     pub fn update(&self, value: DateTimeAsMicroseconds) {

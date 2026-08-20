@@ -54,8 +54,17 @@ impl DateTimeAsMicroseconds {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn now() -> Self {
         SystemTime::now().into()
+    }
+
+    /// `wasm32-unknown-unknown` has no system clock behind `SystemTime::now()` - it panics there,
+    /// so the reading comes from the JS `Date.now()`. Its resolution is a millisecond (and browsers
+    /// may coarsen it further), so the microseconds part is always a multiple of 1000.
+    #[cfg(target_arch = "wasm32")]
+    pub fn now() -> Self {
+        Self::new((js_sys::Date::now() * 1_000.0) as i64)
     }
 
     pub fn from_str(src: &str) -> Option<Self> {
