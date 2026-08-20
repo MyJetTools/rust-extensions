@@ -3,23 +3,24 @@ mod application_states;
 mod binary_payload_builder;
 pub mod date_time;
 pub mod duration_utils;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub mod events_loop;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub mod background_executor;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub mod background_executor_with_multi_threads;
 pub mod lazy;
 pub mod linq;
 mod logger;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod my_timer;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod exact_timer;
 mod short_string;
 mod slice_or_vec;
 pub use short_string::*;
-#[cfg(feature = "objects-pool")]
+// pooling native resources - nothing to pool in a browser, and it needs `tokio`
+#[cfg(all(feature = "objects-pool", not(target_arch = "wasm32")))]
 pub mod objects_pool;
 
 pub mod slice_of_u8_utils;
@@ -49,9 +50,9 @@ pub mod grouped_data;
 
 pub use binary_payload_builder::*;
 pub use logger::*;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use my_timer::{MyTimer, MyTimerTick, RepeatTimerIteration};
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use exact_timer::{ExactTimerInterval, MyExactTimer};
 pub use slice_or_vec::*;
 pub use str_or_string::*;
@@ -97,24 +98,24 @@ pub use sortable_id::*;
 mod uint32_variable_size;
 pub use uint32_variable_size::*;
 
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod queue_to_save;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use queue_to_save::*;
 mod as_str;
 pub use as_str::*;
 
 pub extern crate macros;
 
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod queue_to_save_with_id;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use queue_to_save_with_id::*;
 
 mod sized_chunks;
 pub use sized_chunks::*;
 
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod queue_to_save_or_delete_with_id;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use queue_to_save_or_delete_with_id::*;

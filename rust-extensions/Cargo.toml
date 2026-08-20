@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 default = []
-objects-pool = []
+objects-pool = ["tokio"]
 base64 = ["dep:base64"]
 hex = []
 # gates everything that needs a source of randomness: `uuid::generate_v4()` and `SortableId`
@@ -18,6 +18,22 @@ vec-maybe-stack = []
 
 
 [dependencies]
+futures = { version = "*", optional = true }
+chrono = "*"
+async-trait = "*"
+base64 = { version = "*", optional = true }
+serde = { version = "*", features = ["derive"] }
+macros = { path = "../macros" }
+parking_lot = "*"
+
+# Three deps have no wasm story at all, so they are kept out of the wasm graph entirely:
+#   * `signal-hook` pulls `errno`, which refuses to build for an "unknown" target OS - and POSIX
+#     signals do not exist in a browser anyway.
+#   * `tokio`'s `fs` feature is rejected on wasm ("Only features sync,macros,io-util,rt,time are
+#     supported"), so wasm gets the same dependency minus `fs`.
+#   * `uuid` fails with a `compile_error!` unless one of its randomness features is on, and
+#     `uuid::generate_v4()` does not go through it on wasm anyway.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "*", features = [
     "time",
     "sync",
@@ -25,23 +41,18 @@ tokio = { version = "*", features = [
     "io-util",
     "fs",
 ], optional = true }
-futures = { version = "*", optional = true }
-chrono = "*"
-async-trait = "*"
 signal-hook = { version = "*", optional = true }
-base64 = { version = "*", optional = true }
-serde = { version = "*", features = ["derive"] }
-macros = { path = "../macros" }
-parking_lot = "*"
-
-# `uuid` refuses to compile on `wasm32-unknown-unknown` without one of its randomness features, and
-# `uuid::generate_v4()` does not go through it there anyway - so keep it out of the wasm graph.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uuid = { version = "*", features = ["v4"], optional = true }
 
 # `chrono`'s default features already pull `js-sys` in on wasm - this makes the dependency explicit,
 # `uuid::generate_v4()` and `DateTimeAsMicroseconds::now()` need it there.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "*", features = [
+    "time",
+    "sync",
+    "rt",
+    "io-util",
+], optional = true }
 js-sys = "0.3"
 
 [dev-dependencies]

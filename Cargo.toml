@@ -1,2 +1,6 @@
 [workspace]
 members = ["rust-extensions", "macros"]
+# resolver "2" is what edition 2021 implies, and it is required here: under "1" the feature lists of
+# target-specific dependencies get unified across all targets, so wasm builds still asked `tokio` for
+# the `fs` feature and hit its `compile_error!`.
+resolver = "2"

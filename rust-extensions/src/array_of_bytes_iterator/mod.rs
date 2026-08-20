@@ -4,9 +4,10 @@ mod array_of_bytes_iterator_async;
 pub use array_of_bytes_iterator_async::*;
 mod slice_iterator;
 pub use slice_iterator::*;
-#[cfg(feature = "with-tokio")]
+// needs `tokio::fs`, which does not exist on wasm
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod file_iterator;
-#[cfg(feature = "with-tokio")]
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use file_iterator::*;
 mod vec_iterator;
 pub use vec_iterator::*;
