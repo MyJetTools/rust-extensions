@@ -2,9 +2,9 @@ mod events_loop;
 mod events_loop_tick;
 mod event_loop_reader;
 mod events_loop_publisher;
+mod repeat_iteration;
 
 pub use events_loop::{EventsLoop, EventsLoopMessage};
 pub use events_loop_tick::EventsLoopTick;
 pub use events_loop_publisher::EventsLoopPublisher;
-
-pub use crate::background_executor::RepeatIteration;
+pub use repeat_iteration::RepeatIteration;

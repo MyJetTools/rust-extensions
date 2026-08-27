@@ -260,7 +260,7 @@ for deal in deals {
 
 ## Async & Tokio (feature `with-tokio`)
 
-- `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task; `tick()` gets the event by reference and returns `RepeatIteration`, so the same event can be served again — on purpose, or because the iteration panicked / timed out.
+- `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task; `tick()` gets the event **by ownership** (no clone) and returns `RepeatIteration<TModel>`, so an unfinished iteration hands the very same model back via `Yes(model)` and is started again with it.
 - `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
 - `BackgroundExecutorWithMultiThreads<TThreadId>`: the same, but split into independent threads by the `thread_id` given to `trigger()` — one thread id is served by one background task (sequentially, and the id is passed to `execute()`), different thread ids are served in parallel, and the task of a thread id is spawned on its first trigger and removed once its triggers are drained.
 - `MyTimer`: tick-based scheduling with graceful stop; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
@@ -313,9 +313,10 @@ mod example {
         async fn started(&self) {
             println!("loop started");
         }
-        async fn tick(&self, model: &String) -> RepeatIteration {
+        async fn tick(&self, model: String) -> RepeatIteration<String> {
             println!("got message: {model}");
             // The event is served - the loop may go for the next one.
+            // To get one more iteration with it: RepeatIteration::Yes(model)
             RepeatIteration::No
         }
         async fn finished(&self) {
@@ -382,8 +383,8 @@ Key properties:
 - **One-shot registration** — a second `register_event_loop` panics; `start` without a prior register panics.
 - **Bounded lifecycle** — `stop` delivers `Shutdown` through the same channel, so in-flight messages ahead of it are processed first.
 - **Per-tick timeout** — `set_iteration_timeout(Duration)` caps a single `tick` call; overruns are logged via the provided `Logger` and the loop keeps running.
-- **The event is not lost** — `tick` only borrows the event (`&TModel`), the reader keeps it. Answering `RepeatIteration::Yes` leaves the current iteration and starts a new one **with the same event** and a fresh timeout window — the way to do a long job in portions. `TModel` therefore has to be `Send + Sync`.
-- **A panic / a timeout is not an answer** — the tick told nothing about the event, so the event is served again (and again) until the tick answers `RepeatIteration::No`. Which means a `tick` that panics on every attempt keeps the loop busy with that one event: log it and answer `No` if an event has to be dropped after N failures. Shutdown breaks out of such a loop.
+- **The event is moved into the tick, and comes back to repeat it** — `tick` takes `TModel` by value: nothing is cloned and nothing is borrowed, so `TModel` only has to be `Send`. An iteration which is not done with the event returns `RepeatIteration::Yes(model)` — the reader starts a new iteration **with that very model** and a fresh timeout window, the way to do a long job in portions. `RepeatIteration::No` consumes the model and the loop goes for the next event.
+- **A panic / a timeout drops the event** — the model was moved into the running future, so unwinding (or the timeout dropping that future) takes the model with it: there is nothing left to repeat with. Both cases are logged as an error via the provided `Logger` and the loop moves on to the next event instead of getting stuck. An event which must survive a failing tick has to be recoverable by the tick itself (catch the error inside `tick` and answer `Yes(model)`), or be held behind an `Arc` / a re-readable source.
 
 ### `BackgroundExecutor` use case
 

@@ -6,7 +6,7 @@ use super::{events_loop::EventsLoopInner, RepeatIteration};
 
 use futures::FutureExt;
 
-pub async fn events_loop_reader<TModel: Send + Sync + 'static>(
+pub async fn events_loop_reader<TModel: Send + 'static>(
     name: Arc<String>,
     inner: EventsLoopInner<TModel>,
     app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
@@ -39,38 +39,44 @@ pub async fn events_loop_reader<TModel: Send + Sync + 'static>(
             }
         };
 
-        // The event is owned here and is only lent to the tick - so it outlives
-        // a panicked or a timed out iteration and can be served again.
+        // The model is moved into the tick - not cloned, not borrowed. It comes
+        // back inside RepeatIteration::Yes when the tick wants one more go, and
+        // dies with the future when the iteration panicked or timed out.
+        let mut model = message;
+
         loop {
-            let timer_tick_future = AssertUnwindSafe(event_loop_tick.tick(&message)).catch_unwind();
+            let timer_tick_future = AssertUnwindSafe(event_loop_tick.tick(model)).catch_unwind();
 
             match tokio::time::timeout(iteration_timeout, timer_tick_future).await {
                 Ok(Ok(RepeatIteration::No)) => {
                     // The event is served - go for the next one.
                     break;
                 }
-                Ok(Ok(RepeatIteration::Yes)) => {
-                    // The tick left the iteration on purpose and asked for another
-                    // one - the event is not served yet, so it is not dropped.
+                Ok(Ok(RepeatIteration::Yes(the_same_model))) => {
+                    // The tick left the iteration on purpose and gave the event
+                    // back - the very same model goes into the next iteration.
+                    model = the_same_model;
                 }
                 Ok(Err(_panic)) => {
                     logger.write_error(
                         format!("EventLoop {} iteration", name.as_str()),
-                        format!("Iteration is panicked. Event is going to be executed again"),
+                        format!("Iteration is panicked. Event is lost"),
                         None.into(),
                     );
+                    break;
                 }
                 Err(_elapsed) => {
                     logger.write_error(
                         format!("EventLoop {} iteration", name.as_str()),
-                        format!("Iteration is time outed. Event is going to be executed again"),
+                        format!("Iteration is time outed. Event is lost"),
                         None.into(),
                     );
+                    break;
                 }
             }
 
-            // The only way out of an event which keeps panicking (or keeps asking
-            // for one more iteration) - otherwise the loop is stopped by the tick.
+            // The only way out of an event whose tick keeps asking for one more
+            // iteration - otherwise the loop is stopped by the tick itself.
             if app_states.is_shutting_down() {
                 break;
             }

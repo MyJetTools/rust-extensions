@@ -27,12 +27,12 @@ impl<TModel: 'static> EventsLoopMessage<TModel> {
     }
 }
 
-pub(super) struct EventsLoopInner<TModel: Send + Sync + 'static> {
+pub(super) struct EventsLoopInner<TModel: Send + 'static> {
     pub event_loop_tick: Arc<dyn EventsLoopTick<TModel> + Send + Sync + 'static>,
     pub receiver: tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>,
 }
 
-pub struct EventsLoop<TModel: Send + Sync + 'static> {
+pub struct EventsLoop<TModel: Send + 'static> {
     pending_receiver:
         Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<EventsLoopMessage<TModel>>>>,
     inner: Mutex<Option<EventsLoopInner<TModel>>>,
@@ -41,7 +41,7 @@ pub struct EventsLoop<TModel: Send + Sync + 'static> {
     iteration_timeout: Duration,
 }
 
-impl<TModel: Send + Sync + 'static> EventsLoop<TModel> {
+impl<TModel: Send + 'static> EventsLoop<TModel> {
     pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
@@ -169,17 +169,17 @@ mod tests {
     impl EventsLoopTick<String> for RecordingTick {
         async fn started(&self) {}
 
-        async fn tick(&self, model: &String) -> RepeatIteration {
+        async fn tick(&self, model: String) -> RepeatIteration<String> {
             let answer = {
                 let mut seen = self.seen.lock();
-                seen.push(model.to_string());
+                seen.push(model.clone());
                 let no = seen.len() - 1;
                 self.script[no.min(self.script.len() - 1)]
             };
 
             match answer {
                 Answer::Served => RepeatIteration::No,
-                Answer::RepeatIt => RepeatIteration::Yes,
+                Answer::RepeatIt => RepeatIteration::Yes(model),
                 Answer::Panic => panic!("Iteration is panicked on purpose"),
                 Answer::TimeOut => {
                     tokio::time::sleep(Duration::from_secs(60)).await;
@@ -267,32 +267,27 @@ mod tests {
     }
 
     #[test]
-    fn panicked_iteration_gets_the_very_same_event_again() {
+    fn panicked_iteration_drops_the_event() {
         rt().block_on(async {
             let seen = Arc::new(Mutex::new(Vec::new()));
-            let events_loop = start_events_loop(
-                "test-panic",
-                &seen,
-                vec![Answer::Panic, Answer::Panic, Answer::Served],
-            );
+            let events_loop =
+                start_events_loop("test-panic", &seen, vec![Answer::Panic, Answer::Served]);
 
             events_loop.send("event".to_string());
             events_loop.send("next-event".to_string());
 
-            wait_for(&seen, 4).await;
+            wait_for(&seen, 2).await;
             tokio::time::sleep(Duration::from_millis(50)).await;
 
-            // A panic is not an answer - the event is not lost and is executed
-            // again until the tick says it is served.
-            assert_eq!(
-                seen.lock().as_slice(),
-                &["event", "event", "event", "next-event"]
-            );
+            // The model was moved into the tick, so the panic took it with it -
+            // there is nothing left to repeat with. The event is logged and
+            // dropped, and the loop moves on instead of getting stuck on it.
+            assert_eq!(seen.lock().as_slice(), &["event", "next-event"]);
         });
     }
 
     #[test]
-    fn timed_out_iteration_gets_the_very_same_event_again() {
+    fn timed_out_iteration_drops_the_event() {
         rt().block_on(async {
             let seen = Arc::new(Mutex::new(Vec::new()));
             let events_loop =
@@ -301,10 +296,12 @@ mod tests {
             events_loop.send("event".to_string());
             events_loop.send("next-event".to_string());
 
-            wait_for(&seen, 3).await;
+            wait_for(&seen, 2).await;
             tokio::time::sleep(Duration::from_millis(50)).await;
 
-            assert_eq!(seen.lock().as_slice(), &["event", "event", "next-event"]);
+            // Same story as the panic: the timed out future is dropped together
+            // with the model it owns.
+            assert_eq!(seen.lock().as_slice(), &["event", "next-event"]);
         });
     }
 }
