@@ -1,25 +1,42 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicI64, Ordering},
-    Arc,
+    atomic::{AtomicBool, Ordering},
+    Arc, OnceLock,
 };
 
-use parking_lot::Mutex;
+use tokio::sync::Semaphore;
 
 use crate::{Logger, StrOrString};
 
 use super::BackgroundJob;
 
+/// Everything the reader task needs. It is handed over to the task by `start`
+/// and owned by it alone - there is nothing here the producer side reaches back
+/// into.
 pub(super) struct BackgroundExecutorInner {
-    pub counter: Arc<AtomicI64>,
+    pub triggers: Arc<Semaphore>,
     pub job: Arc<dyn BackgroundJob + Send + Sync + 'static>,
     pub logger: Arc<dyn Logger + Send + Sync + 'static>,
     pub name: Arc<String>,
 }
 
+/// Offloads work from the caller onto a single background Tokio task.
+///
+/// The reader task is spawned once, by `start`, and lives as long as the
+/// application does. A trigger is a permit added to a semaphore, so `trigger`
+/// spawns nothing, locks nothing and awaits nothing - **it is legal from any
+/// thread**: a Tokio one, a plain `std::thread`, or an OS thread owned by a C++
+/// host calling in through FFI. Only `start` has to be called from inside a
+/// runtime.
+///
+/// The semaphore is what counts the unserved triggers: permits accumulate, so N
+/// triggers are N iterations no matter how they interleave with the reader.
+///
+/// There is not a single mutex in the whole type - the job is registered into a
+/// `OnceLock`, which is also what makes a second `register` an error rather than
+/// a silent overwrite.
 pub struct BackgroundExecutor {
-    counter: Arc<AtomicI64>,
-    pending_job: Mutex<Option<Arc<dyn BackgroundJob + Send + Sync + 'static>>>,
-    inner: Mutex<Option<Arc<BackgroundExecutorInner>>>,
+    triggers: Arc<Semaphore>,
+    job: OnceLock<Arc<dyn BackgroundJob + Send + Sync + 'static>>,
     started: AtomicBool,
     name: Arc<String>,
 }
@@ -29,67 +46,67 @@ impl BackgroundExecutor {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
         Self {
-            counter: Arc::new(AtomicI64::new(0)),
-            pending_job: Mutex::new(None),
-            inner: Mutex::new(None),
+            triggers: Arc::new(Semaphore::new(0)),
+            job: OnceLock::new(),
             started: AtomicBool::new(false),
             name,
         }
     }
 
     pub fn register(&self, job: Arc<dyn BackgroundJob + Send + Sync + 'static>) {
-        let mut pending_job = self.pending_job.lock();
-
-        if pending_job.is_some() {
+        if self.job.set(job).is_err() {
             panic!(
                 "Background job is already registered for background executor {}",
                 self.name
             );
         }
-
-        *pending_job = Some(job);
     }
 
+    /// Spawns the one and only reader task. Must be called from inside a Tokio
+    /// runtime - that is the whole reason `trigger` does not have to be.
     pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
-        let job = self.pending_job.lock().take();
-
-        let Some(job) = job else {
-            panic!(
-                "Background executor {} is not registered or already started.",
-                self.name
-            );
+        let Some(job) = self.job.get() else {
+            panic!("Background executor {} is not registered.", self.name);
         };
 
-        let inner = Arc::new(BackgroundExecutorInner {
-            counter: self.counter.clone(),
-            job,
-            logger,
-            name: self.name.clone(),
-        });
+        // Claims the right to start before anything is spawned, so a second
+        // `start` can not put a second reader on the same semaphore. `Relaxed`
+        // is enough here too - what is needed is the atomicity of the swap, not
+        // an ordering against anything else.
+        if self
+            .started
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            panic!("Background executor {} is already started.", self.name);
+        }
 
-        *self.inner.lock() = Some(inner);
-        self.started.store(true, Ordering::SeqCst);
+        tokio::spawn(super::background_executor_reader::background_executor_reader(
+            BackgroundExecutorInner {
+                triggers: self.triggers.clone(),
+                job: job.clone(),
+                logger,
+                name: self.name.clone(),
+            },
+        ));
     }
 
+    /// Signals that there may be work to do.
+    ///
+    /// **Callable from any thread**, with or without a Tokio runtime around it.
+    /// The reader is already running, so this only hands it one more permit -
+    /// no lock, no await, no spawn.
     pub fn trigger(&self) {
-        // Checked before touching the counter: a leftover increment from a
-        // not-started panic would prevent the reader from ever being spawned.
-        if !self.started.load(Ordering::SeqCst) {
+        // `Relaxed` is enough: the flag carries no happens-before duty. It only
+        // catches "triggered before start", and the semaphore - the single thing
+        // this method touches - synchronizes itself. A stronger ordering would
+        // not even buy a sharper check: it does not make the store of `start`
+        // visible any sooner, it only orders it against other operations.
+        if !self.started.load(Ordering::Relaxed) {
             panic!("Background executor {} is not started.", self.name);
         }
 
-        let prev = self.counter.fetch_add(1, Ordering::SeqCst);
-        if prev == 0 {
-            let inner = self.inner.lock();
-
-            let Some(inner) = inner.as_ref() else {
-                panic!("Background executor {} is not started.", self.name);
-            };
-
-            tokio::spawn(
-                super::background_executor_reader::background_executor_reader(inner.clone()),
-            );
-        }
+        self.triggers.add_permits(1);
     }
 }
 
@@ -245,6 +262,46 @@ mod tests {
         });
     }
 
+    /// The FFI story: a C++ callback lands on an OS thread we do not own, with
+    /// no runtime around it, and the work still has to be done. `trigger` spawns
+    /// nothing - the reader is already up - so it does not care where it is
+    /// called from.
+    #[test]
+    fn triggered_from_a_thread_without_a_runtime() {
+        rt().block_on(async {
+            let runs = Arc::new(AtomicUsize::new(0));
+            let executor = make_executor(&runs, "test-foreign-thread");
+
+            let foreign_thread = {
+                let executor = executor.clone();
+                std::thread::spawn(move || {
+                    // No runtime here - not even an entered one. This is what an
+                    // FFI callback thread looks like.
+                    assert!(
+                        tokio::runtime::Handle::try_current().is_err(),
+                        "the test is meaningless if the thread is inside a runtime"
+                    );
+
+                    executor.trigger();
+                    executor.trigger();
+                })
+            };
+
+            wait_for(&runs, 2).await;
+            foreign_thread.join().unwrap();
+
+            // And the executor is not wedged afterwards - a later trigger is
+            // served like any other. This is the half which catches a trigger
+            // that failed to bring the reader up, rather than one that merely
+            // panicked on the foreign thread.
+            executor.trigger();
+            wait_for(&runs, 3).await;
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(runs.load(Ordering::SeqCst), 3);
+        });
+    }
+
     #[test]
     fn trigger_before_start_panics_but_does_not_wedge_executor() {
         rt().block_on(async {
@@ -284,8 +341,8 @@ mod tests {
             executor.trigger();
             wait_for(&runs, 4).await;
 
-            // The counter is drained now - the reader exited after the last
-            // `No`, so a fresh trigger has to spawn a new reader and run once.
+            // Every permit is used up now, so the reader is parked - a fresh
+            // trigger has to wake it and run exactly once.
             executor.trigger();
             wait_for(&runs, 5).await;
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -317,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_restarts_after_counter_drained() {
+    fn triggers_separated_by_an_idle_period_are_served() {
         rt().block_on(async {
             let runs = Arc::new(AtomicUsize::new(0));
             let executor = make_executor(&runs, "test-restart");
@@ -325,7 +382,7 @@ mod tests {
             executor.trigger();
             wait_for(&runs, 1).await;
 
-            // counter is drained back to 0 here; the next trigger must spawn a fresh reader
+            // no permits left here, the reader is parked; the next trigger must wake it
             executor.trigger();
             wait_for(&runs, 2).await;
             assert_eq!(runs.load(Ordering::SeqCst), 2);

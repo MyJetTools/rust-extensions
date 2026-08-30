@@ -261,8 +261,8 @@ for deal in deals {
 ## Async & Tokio (feature `with-tokio`)
 
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task; `tick()` gets the event **by ownership** (no clone) and returns `RepeatIteration<TModel>`, so an unfinished iteration hands the very same model back via `Yes(model)` and is started again with it.
-- `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free in steady state and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
-- `BackgroundExecutorWithMultiThreads<TThreadId>`: the same, but split into independent threads by the `thread_id` given to `trigger()` — one thread id is served by one background task (sequentially, and the id is passed to `execute()`), different thread ids are served in parallel, and the task of a thread id is spawned on its first trigger and removed once its triggers are drained.
+- `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free, callable from **any** thread (including one with no Tokio runtime around it), and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
+- `BackgroundExecutorWithMultiThreads<TThreadId>`: the same, but split into independent threads by the `thread_id` given to `trigger()` — one thread id is served by one background task (sequentially, and the id is passed to `execute()`), different thread ids are served in parallel, and the task of a thread id is spawned on its first trigger and removed once its triggers are drained. `trigger()` is likewise callable from any thread.
 - `MyTimer`: tick-based scheduling with graceful stop; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
 - `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
@@ -395,7 +395,7 @@ A typical example is on-demand persistence: callers mutate state and `trigger()`
 1. **Construct** — `BackgroundExecutor::new(name)`; the name is used in panic and log messages.
 2. **Register a job** (`BackgroundJob`) via `register` — one-shot; a second call panics.
 3. **Start** — `start(logger)` moves the registered job into the live state. Calling `start` without a prior `register` panics.
-4. **Trigger** — `trigger()` bumps an atomic counter; the first trigger (0 → 1) spawns the reader task, and further triggers while the reader is alive just increment the counter and stay lock-free.
+4. **Trigger** — `trigger()` adds one permit to a semaphore and returns. The reader task is already up (it was spawned by `start`), so a trigger spawns nothing, locks nothing and awaits nothing.
 
 ```rust
 #[cfg(feature = "with-tokio")]
@@ -450,10 +450,11 @@ Key properties:
 
 - **Offloads the caller** — `trigger()` returns immediately; the job runs on a dedicated background task, so the calling thread is never blocked on the work.
 - **Single consumer** — at most one reader task is alive, so `execute()` never runs concurrently with itself.
-- **Idle triggers are fine** — `execute()` runs once per `trigger()` and is expected to be cheap when there is nothing to do; the reader drains the counter back to zero before exiting.
-- **The job can ask for another iteration** — `execute()` returns `RepeatIteration`. `No` means "this iteration is done": the trigger being served is consumed, and the reader exits once the counter is drained. `Yes` means "there is more to do, but not in this call": the reader runs `execute()` again **without consuming the trigger**, so the work continues on a fresh iteration and no trigger is lost. That is the way out for a job which discovers mid-flight that it needs another pass and would rather leave the iteration than sit inside one long call — an external timeout, a batch limit, a fairness cap. A job that always answers `Yes` never lets the reader exit, exactly as an `execute()` that never returns would; the decision to stop belongs to the job.
-- **Lock-free hot path** — `trigger()` only takes a lock on the 0 → 1 transition (to spawn the reader); subsequent triggers are a single atomic add.
-- **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the loop keeps draining. A panic answers nothing, so it consumes the trigger like a `No` — a job that panics every time cannot spin the reader forever.
+- **Idle triggers are fine** — `execute()` runs once per `trigger()` and is expected to be cheap when there is nothing to do; the reader serves the permits one by one and parks once they are used up.
+- **The job can ask for another iteration** — `execute()` returns `RepeatIteration`. `No` means "this iteration is done": the trigger being served is consumed, and the reader goes for the next permit. `Yes` means "there is more to do, but not in this call": the reader runs `execute()` again **without consuming the trigger**, so the work continues on a fresh iteration and no trigger is lost. That is the way out for a job which discovers mid-flight that it needs another pass and would rather leave the iteration than sit inside one long call — an external timeout, a batch limit, a fairness cap. A job that always answers `Yes` never lets the reader move on, exactly as an `execute()` that never returns would; the decision to stop belongs to the job.
+- **Lock-free hot path** — `trigger()` takes no lock at all: it adds one permit to the semaphore and returns. `BackgroundExecutor` holds no mutex whatsoever — the job is registered into a `OnceLock`.
+- **`trigger()` is legal from any thread** — a Tokio one, a plain `std::thread`, or an OS thread owned by a C++ host calling in through FFI. The reader is spawned once, by `start`, so a trigger never touches the runtime: `Semaphore::add_permits` is a plain synchronous method. **Only `start` has to be called from inside a runtime.** Permits accumulate, so N triggers are N iterations no matter how they interleave with the reader, and a trigger which arrives before the reader gets going is simply served later.
+- **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the reader keeps serving. A panic answers nothing, so it consumes the trigger like a `No` — a job that panics every time cannot spin the reader forever.
 - **One-shot lifecycle** — a second `register` panics, `start` without a prior `register` panics, and `trigger` before `start` panics.
 
 ### `BackgroundExecutorWithMultiThreads` use case
@@ -518,7 +519,8 @@ Key properties on top of the ones `BackgroundExecutor` gives:
 - **Sequential per thread id** — every thread id has at most one reader task alive, so two iterations of the same id never overlap and they run in the order the triggers arrived.
 - **Parallel across thread ids** — readers of different thread ids are independent Tokio tasks; a slow id does not hold the others back.
 - **The id is a part of the callback** — `execute(&self, thread_id: &TThreadId)`, so one registered job serves all the threads and decides what to do out of the id.
-- **Tasks are created and removed within the thread id** — the trigger which creates a thread id spawns its reader; the reader which drains the counter of that thread id removes it and exits. Both happen under one lock, so a trigger arriving at a draining thread either lands in the still-alive reader or spawns a new one — it is never lost.
+- **Tasks are created and removed within the thread id** — the trigger which creates a thread id spawns its reader; the reader which drains the counter of that thread id removes it and exits. Both happen under one lock, so a trigger arriving at a draining thread either lands in the still-alive reader or spawns a new one — it is never lost. This is why the thread ids may be unbounded (an account id, an instrument): nothing is kept alive for an idle one.
+- **`trigger()` is legal from any thread** — same as for `BackgroundExecutor`, including an OS thread owned by a C++ host. Here the readers do come and go with the thread ids, so the runtime to spawn them on is captured by `start` and used from then on; a trigger never needs a runtime of its own. **Only `start` has to be called from inside a runtime.**
 - **Any id type** — `TThreadId: Hash + Eq + Clone + Send + Sync + 'static` (`u64`, `String`, `Arc<String>`, a tuple key, …).
 - **`get_working_threads_amount()`** — how many thread ids have a reader alive right now.
 

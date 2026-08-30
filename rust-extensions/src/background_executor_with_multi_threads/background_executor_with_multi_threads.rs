@@ -1,10 +1,7 @@
 use std::{
     collections::HashMap,
     hash::Hash,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::{Arc, OnceLock},
 };
 
 use parking_lot::Mutex;
@@ -24,6 +21,9 @@ where
     pub job: Arc<dyn BackgroundJobWithMultiThreads<TThreadId> + Send + Sync + 'static>,
     pub logger: Arc<dyn Logger + Send + Sync + 'static>,
     pub name: Arc<String>,
+    /// Where the reader of a thread id is spawned. Captured once, by `start`, so
+    /// `trigger` can spawn one without a runtime around the calling thread.
+    pub runtime: tokio::runtime::Handle,
 }
 
 impl<TThreadId> BackgroundExecutorWithMultiThreadsInner<TThreadId>
@@ -61,14 +61,22 @@ where
 /// reader task of that thread id; triggers of different thread ids are served
 /// in parallel. A reader is spawned by the trigger which created the thread and
 /// it lives only while its thread has not served triggers - as soon as they are
-/// drained the thread id is removed and the reader task is gone.
+/// drained the thread id is removed and the reader task is gone. Nothing is kept
+/// alive for an idle thread id, which is what makes an unbounded set of thread
+/// ids (an account id, an instrument) affordable.
+///
+/// **`trigger` is callable from any thread** - a Tokio one, a plain
+/// `std::thread`, or an OS thread owned by a C++ host calling in through FFI.
+/// The reader is spawned on the runtime captured by `start`, not on the one of
+/// the caller. Only `start` has to be called from inside a runtime.
 pub struct BackgroundExecutorWithMultiThreads<TThreadId>
 where
     TThreadId: Hash + Eq + Clone + Send + Sync + 'static,
 {
-    pending_job: Mutex<Option<Arc<dyn BackgroundJobWithMultiThreads<TThreadId> + Send + Sync>>>,
-    inner: Mutex<Option<Arc<BackgroundExecutorWithMultiThreadsInner<TThreadId>>>>,
-    started: AtomicBool,
+    job: OnceLock<Arc<dyn BackgroundJobWithMultiThreads<TThreadId> + Send + Sync + 'static>>,
+    /// Present exactly once `start` has run - which is also how `trigger` knows
+    /// the executor is started, without a flag and without a lock.
+    inner: OnceLock<Arc<BackgroundExecutorWithMultiThreadsInner<TThreadId>>>,
     name: Arc<String>,
 }
 
@@ -80,9 +88,8 @@ where
         let name: Arc<String> = Arc::new(name.into().to_string());
 
         Self {
-            pending_job: Mutex::new(None),
-            inner: Mutex::new(None),
-            started: AtomicBool::new(false),
+            job: OnceLock::new(),
+            inner: OnceLock::new(),
             name,
         }
     }
@@ -91,37 +98,33 @@ where
         &self,
         job: Arc<dyn BackgroundJobWithMultiThreads<TThreadId> + Send + Sync + 'static>,
     ) {
-        let mut pending_job = self.pending_job.lock();
-
-        if pending_job.is_some() {
+        if self.job.set(job).is_err() {
             panic!(
                 "Background job is already registered for background executor {}",
                 self.name
             );
         }
-
-        *pending_job = Some(job);
     }
 
+    /// Remembers the runtime the readers are to be spawned on. Must be called
+    /// from inside a Tokio runtime - that is the whole reason `trigger` does not
+    /// have to be.
     pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
-        let job = self.pending_job.lock().take();
-
-        let Some(job) = job else {
-            panic!(
-                "Background executor {} is not registered or already started.",
-                self.name
-            );
+        let Some(job) = self.job.get() else {
+            panic!("Background executor {} is not registered.", self.name);
         };
 
         let inner = Arc::new(BackgroundExecutorWithMultiThreadsInner {
             threads: Mutex::new(HashMap::new()),
-            job,
+            job: job.clone(),
             logger,
             name: self.name.clone(),
+            runtime: tokio::runtime::Handle::current(),
         });
 
-        *self.inner.lock() = Some(inner);
-        self.started.store(true, Ordering::SeqCst);
+        if self.inner.set(inner).is_err() {
+            panic!("Background executor {} is already started.", self.name);
+        }
     }
 
     /// Signals that there may be work to do within the given thread id.
@@ -129,16 +132,12 @@ where
     /// The very first trigger of a thread id spawns the reader of that thread
     /// id; while the reader is alive the trigger only bumps the counter of the
     /// thread.
+    ///
+    /// **Callable from any thread**, with or without a Tokio runtime around it:
+    /// the reader lands on the runtime captured by `start`, not on the one of
+    /// the caller.
     pub fn trigger(&self, thread_id: TThreadId) {
-        // Checked before touching the counter: a leftover increment from a
-        // not-started panic would prevent the reader from ever being spawned.
-        if !self.started.load(Ordering::SeqCst) {
-            panic!("Background executor {} is not started.", self.name);
-        }
-
-        let inner = self.inner.lock().clone();
-
-        let Some(inner) = inner else {
+        let Some(inner) = self.inner.get() else {
             panic!("Background executor {} is not started.", self.name);
         };
 
@@ -153,18 +152,16 @@ where
         threads.insert(thread_id.clone(), 1);
         drop(threads);
 
-        tokio::spawn(
+        inner.runtime.spawn(
             super::background_executor_with_multi_threads_reader::background_executor_with_multi_threads_reader(
-                inner, thread_id,
+                inner.clone(), thread_id,
             ),
         );
     }
 
     /// Amount of thread ids which have a reader alive right now.
     pub fn get_working_threads_amount(&self) -> usize {
-        let inner = self.inner.lock().clone();
-
-        match inner {
+        match self.inner.get() {
             Some(inner) => inner.threads.lock().len(),
             None => 0,
         }
@@ -456,6 +453,43 @@ mod tests {
 
             wait_for(&state, 3).await;
             wait_until_no_working_threads(&executor).await;
+
+            assert_eq!(state.runs_of(1), 2);
+            assert_eq!(state.runs_of(2), 1);
+        });
+    }
+
+    /// Same FFI story as of the single threaded executor - and the thread ids
+    /// still have to be released once they are drained, so that an unbounded set
+    /// of them stays affordable.
+    #[test]
+    fn triggered_from_a_thread_without_a_runtime() {
+        rt().block_on(async {
+            let state = Arc::new(TestState::default());
+            let executor = make_executor(&state, "test-foreign-thread");
+
+            let foreign_thread = {
+                let executor = executor.clone();
+                std::thread::spawn(move || {
+                    assert!(
+                        tokio::runtime::Handle::try_current().is_err(),
+                        "the test is meaningless if the thread is inside a runtime"
+                    );
+
+                    executor.trigger(1);
+                    executor.trigger(2);
+                })
+            };
+
+            wait_for(&state, 2).await;
+            foreign_thread.join().unwrap();
+
+            wait_until_no_working_threads(&executor).await;
+
+            // Neither thread id is wedged - a later trigger of the very same id
+            // spawns a fresh reader and is served.
+            executor.trigger(1);
+            wait_for(&state, 3).await;
 
             assert_eq!(state.runs_of(1), 2);
             assert_eq!(state.runs_of(2), 1);
