@@ -26,6 +26,7 @@ pub mod objects_pool;
 pub mod slice_of_u8_utils;
 mod stop_watch;
 mod str_or_string;
+mod secure_string_builder;
 mod string_builder;
 #[cfg(feature = "with-tokio")]
 mod is_initialized;
@@ -43,6 +44,7 @@ pub mod tokio_queue;
 #[cfg(feature = "with-tokio")]
 pub use application_states::*;
 pub use stop_watch::StopWatch;
+pub use secure_string_builder::SecureStringBuilder;
 pub use string_builder::StringBuilder;
 #[cfg(feature = "with-tokio")]
 pub use task_completion::{TaskCompletion, TaskCompletionAwaiter, TaskCompletionError};

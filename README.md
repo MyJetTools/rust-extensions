@@ -43,6 +43,7 @@ rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"]
   - `ShortString` (Pascal-style, single-byte length, max 255 bytes on stack) with `Display`, `Serialize`, `Eq`, hashing.
 - `MaybeShortString` keeps data inline as `ShortString` when length ≤ 255 bytes; seamlessly upgrades to `String` when longer.
   - `StringBuilder` for incremental push/format operations.
+  - `SecureStringBuilder` for the same, when the content is a secret: the buffer never re-allocates itself — every retired allocation, and the final one on `Drop`, is overwritten with zeroes.
 - Binary payloads:
   - `BinaryPayloadBuilder` to append scalars, slices, and length-prefixed data into a single `Vec<u8>`.
   - `Uint32VariableSize` for compact integer encoding/decoding.
@@ -176,6 +177,7 @@ assert_eq!("2021-04-25T18:30:03.000000+01:00", dt.to_rfc3339());
 - `MaybeShortString`: stores as `ShortString` while length ≤ 255 bytes; automatically promotes to `String` once it would overflow, so you can push without manual branching.
 - `StrOrString` / `SliceOrVec` for zero-copy borrow-or-own patterns.
 - `StringBuilder`: push bytes/strings/char, drain to `String` without realloc churn.
+- `SecureStringBuilder`: a `StringBuilder` for passwords, tokens, connection strings and private keys — see below.
 
 Example:
 
@@ -187,6 +189,38 @@ assert!(s.try_push('-'));
 s.push_str("there");
 assert_eq!(s.as_str(), "hi-there");
 ```
+
+### `SecureStringBuilder` — a builder that does not leave the secret behind
+
+A plain `String` grows by handing the old block back to the allocator **as-is**: `realloc` copies the bytes into the new block and frees the old one untouched, so a secret that grew from 8 to 16 to 32 bytes leaves three readable copies of itself in the heap's free lists — and dropping the string frees the last one just as untouched. Whatever reads that memory next (the next allocation, a core dump, a swapped-out page, a heap-scanning exploit) reads the secret.
+
+`SecureStringBuilder` never lets its inner `String` re-allocate. It watches every push, and the moment the next one would not fit it allocates a new buffer, copies the content over, **overwrites the whole old allocation with zeroes** — every byte of its `capacity()`, not only the `len()` that was in use — and only then frees it. `Drop` and `clear()` do the same to the current buffer.
+
+```rust
+use rust_extensions::SecureStringBuilder;
+
+let mut builder = SecureStringBuilder::new();
+
+builder.push_str("postgres://user:");
+builder.push_str("s3cr3t");
+builder.push('@');
+builder.push_str("localhost:5432");
+
+assert_eq!("postgres://user:s3cr3t@localhost:5432", builder.as_str());
+
+// connect(builder.as_str()) ...
+// Dropping here zeroes the whole allocation before freeing it.
+```
+
+- **The wipe cannot be optimised away** — it is a byte-by-byte `ptr::write_volatile` followed by a `compiler_fence`. A plain `memset` right before a free is dead code the optimiser is entitled to delete, and a `.fill(0)` that got deleted looks exactly like one that works.
+- **The whole capacity is zeroed, not just the length** — the bytes past `len` hold whatever a longer earlier content left there, and they are freed along with the rest.
+- **Nothing owned ever comes out** — the content is handed over by reference only, through `as_str()` and `as_slice()`. There is deliberately no `into_string()`, no `Clone` and no `Display` (which would hand out `.to_string()`): each of them would put a copy of the secret into a `String` nobody wipes. `Debug` prints the shape (`len`, `capacity`) and never the content.
+- **Pre-size when the length is known** — `with_capacity(n)` means the secret is only ever written to one address, so there is a single allocation to wipe instead of a chain of them. `reserve(n)` does the same mid-flight.
+- **`clear()` keeps the capacity** — it zeroes the allocation and empties the builder, so re-filling it does not allocate again.
+
+API: `new` / `with_capacity`, `push_str` / `push(char)` / `push_line` / `push_bytes` (UTF-8 checked), `as_str` / `as_slice`, `len` / `capacity` / `is_empty`, `reserve`, `clear`.
+
+Not a defence against an attacker who can read the process while the value is alive, and it does not lock pages into RAM — it stops the secret from **outliving its use** in memory the process no longer owns. Keep the builder short-lived.
 
 ## Binary helpers
 
