@@ -50,7 +50,7 @@ impl<ID, T> UpsertOrDelete<ID, T> {
     /// objects to insert-or-replace and IDs to delete.
     ///
     /// The two never intersect - a single ID is either in one state or in the other.
-    pub fn split(items: Vec<Self>) -> (Vec<T>, Vec<ID>) {
+    pub fn split(items: &[Self]) -> (Vec<&T>, Vec<&ID>) {
         let mut to_upsert = Vec::with_capacity(items.len());
         let mut to_delete = Vec::new();
 

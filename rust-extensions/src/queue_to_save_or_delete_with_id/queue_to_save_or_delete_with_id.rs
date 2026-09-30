@@ -1,5 +1,6 @@
-use std::{hash::Hash, sync::Arc};
+use std::{fmt::Debug, hash::Hash, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
+use futures::FutureExt;
 use parking_lot::Mutex;
 
 use crate::{Logger, StrOrString};
@@ -17,23 +18,31 @@ enum HandlerStatus<ID, T> {
 
 pub struct QueueToSaveOrDeleteWithId<ID, T>
 where
-    ID: Hash + Eq + Clone + Send + Sync + 'static,
+    ID: Hash + Eq + Clone + Debug + Send + Sync + 'static,
     T: PersistObjectId<ID> + Send + Sync + 'static,
 {
     inner: Arc<QueueToSaveOrDeleteInnerWithId<ID, T>>,
     handler: Mutex<HandlerStatus<ID, T>>,
+    retry_timeout: Duration,
 }
 
 impl<ID, T> QueueToSaveOrDeleteWithId<ID, T>
 where
-    ID: Hash + Eq + Clone + Send + Sync + 'static,
+    ID: Hash + Eq + Clone + Debug + Send + Sync + 'static,
     T: PersistObjectId<ID> + Send + Sync + 'static,
 {
     pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
         Self {
             inner: Arc::new(QueueToSaveOrDeleteInnerWithId::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
+            retry_timeout: Duration::from_secs(1),
         }
+    }
+
+    /// The pause before a chunk which was not saved is handed over again.
+    pub fn set_retry_timeout(mut self, retry_timeout: Duration) -> Self {
+        self.retry_timeout = retry_timeout;
+        self
     }
 
     pub fn enqueue(&self, items: impl Iterator<Item = T>) {
@@ -83,6 +92,7 @@ where
                     self.inner.clone(),
                     handler.clone(),
                     logger,
+                    self.retry_timeout,
                 ));
             }
             HandlerStatus::Working => {
@@ -100,15 +110,22 @@ where
 #[async_trait::async_trait]
 pub trait QueueToSaveOrDeleteWithIdEventsHandler<ID: Send + Sync + 'static, T: Send + Sync + 'static>
 {
-    async fn execute(&self, items: Vec<UpsertOrDelete<ID, T>>);
+    /// Returning means the items are saved. A panic or a timeout means they are
+    /// not - the very same items are handed over again after `retry_timeout`,
+    /// until it returns.
+    ///
+    /// `attempt_no` is 0 on the first attempt and grows by one on every retry of
+    /// the same items.
+    async fn execute(&self, items: &[UpsertOrDelete<ID, T>], attempt_no: usize);
 }
 
 async fn queue_to_save_or_delete_with_id_loop<ID, T>(
     inner: Arc<QueueToSaveOrDeleteInnerWithId<ID, T>>,
     handler: Arc<dyn QueueToSaveOrDeleteWithIdEventsHandler<ID, T> + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
+    retry_timeout: Duration,
 ) where
-    ID: Hash + Eq + Clone + Send + Sync + 'static,
+    ID: Hash + Eq + Clone + Debug + Send + Sync + 'static,
     T: PersistObjectId<ID> + Send + Sync + 'static,
 {
     println!(
@@ -118,43 +135,46 @@ async fn queue_to_save_or_delete_with_id_loop<ID, T>(
     let timeout = inner.timeout;
     loop {
         let events = inner.dequeue().await;
+        let mut attempt_no = 0;
 
-        let handler = handler.clone();
-        let feature = tokio::spawn(async move {
-            let future = handler.execute(events);
+        // The chunk is handed over by reference until the handler returns - a
+        // chunk it panicked on is not lost, it is saved again.
+        loop {
+            let future = AssertUnwindSafe(handler.execute(&events, attempt_no)).catch_unwind();
 
-            tokio::time::timeout(timeout, future).await
-        });
+            let msg = match tokio::time::timeout(timeout, future).await {
+                Ok(Ok(())) => break,
+                Ok(Err(_)) => {
+                    let ids: Vec<&ID> = events.iter().map(|itm| itm.get_id()).collect();
 
-        let result = match feature.await {
-            Ok(value) => value,
-            Err(_) => {
-                let msg = format!(
-                    "Panic at QueueToSaveOrDeleteWithIdEventsHandler named {}",
-                    inner.name.as_str()
-                );
+                    println!(
+                        "QueueToSaveOrDeleteWithId {}: handler panicked on the items with IDs: {:?}",
+                        inner.name.as_str(),
+                        ids
+                    );
 
-                logger.write_error(
-                    "QueueToSaveOrDeleteWithId.loop".to_string(),
-                    msg,
-                    None.into(),
-                );
-                continue;
-            }
-        };
-
-        if result.is_err() {
-            let msg = format!(
-                "Timeout {:?} at QueueToSaveOrDeleteWithIdEventsHandler named {}",
-                inner.timeout,
-                inner.name.as_str()
-            );
+                    format!(
+                        "Panic at QueueToSaveOrDeleteWithIdEventsHandler named {}. {} item(s) are going to be saved again",
+                        inner.name.as_str(),
+                        events.len()
+                    )
+                }
+                Err(_) => format!(
+                    "Timeout {:?} at QueueToSaveOrDeleteWithIdEventsHandler named {}. {} item(s) are going to be saved again",
+                    timeout,
+                    inner.name.as_str(),
+                    events.len()
+                ),
+            };
 
             logger.write_error(
                 "QueueToSaveOrDeleteWithId.loop".to_string(),
                 msg,
                 None.into(),
             );
+            attempt_no += 1;
+
+            tokio::time::sleep(retry_timeout).await;
         }
     }
 }
@@ -188,9 +208,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl QueueToSaveOrDeleteWithIdEventsHandler<u32, Obj> for CapturingHandler {
-        async fn execute(&self, items: Vec<UpsertOrDelete<u32, Obj>>) {
+        async fn execute(&self, items: &[UpsertOrDelete<u32, Obj>], _attempt_no: usize) {
             let mut guard = self.captured.lock().await;
-            guard.extend(items);
+            guard.extend(items.iter().map(|itm| match itm {
+                UpsertOrDelete::Upsert(obj) => UpsertOrDelete::Upsert(obj.clone()),
+                UpsertOrDelete::Delete(id) => UpsertOrDelete::Delete(*id),
+            }));
             self.notify.notify_one();
         }
     }

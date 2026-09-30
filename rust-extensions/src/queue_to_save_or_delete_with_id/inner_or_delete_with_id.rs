@@ -225,13 +225,13 @@ mod tests {
         queue.enqueue_delete(1);
         queue.enqueue_delete(3);
 
-        let (mut to_upsert, mut to_delete) =
-            UpsertOrDelete::split(queue.try_dequeue().ok().unwrap());
+        let chunk = queue.try_dequeue().ok().unwrap();
+        let (mut to_upsert, mut to_delete) = UpsertOrDelete::split(&chunk);
 
         to_upsert.sort_by_key(|itm| itm.id);
         to_delete.sort();
 
         assert_eq!(to_upsert.iter().map(|itm| itm.id).collect::<Vec<_>>(), [0, 2]);
-        assert_eq!(to_delete, [1, 3]);
+        assert_eq!(to_delete, [&1, &3]);
     }
 }
