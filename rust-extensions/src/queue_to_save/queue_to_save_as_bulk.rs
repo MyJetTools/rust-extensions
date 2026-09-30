@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
+use futures::FutureExt;
 use parking_lot::Mutex;
 
 use crate::{queue_to_save::inner_as_bulk::QueueToSaveInnerAsBulk, Logger, StrOrString};
@@ -13,6 +14,7 @@ enum HandlerStatus<T> {
 pub struct QueueToSaveAsBulk<T: Send + Sync + 'static> {
     inner: Arc<QueueToSaveInnerAsBulk<T>>,
     handler: Mutex<HandlerStatus<T>>,
+    retry_timeout: Duration,
 }
 
 impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
@@ -20,8 +22,16 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
         Self {
             inner: Arc::new(QueueToSaveInnerAsBulk::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
+            retry_timeout: Duration::from_secs(1),
         }
     }
+
+    /// The pause before a chunk which was not saved is handed over again.
+    pub fn set_retry_timeout(mut self, retry_timeout: Duration) -> Self {
+        self.retry_timeout = retry_timeout;
+        self
+    }
+
     pub fn enqueue(&self, items: impl Iterator<Item = T>) {
         self.inner.enqueue(items);
     }
@@ -65,6 +75,7 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
                     self.inner.clone(),
                     handler.clone(),
                     logger,
+                    self.retry_timeout,
                 ));
             }
             HandlerStatus::Working => {
@@ -78,47 +89,51 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
 
 #[async_trait::async_trait]
 pub trait QueueToSaveAsBulkEventsHandler<T: Send + Sync + 'static> {
-    async fn execute(&self, items: Vec<T>);
+    /// Returning means the items are saved. A panic or a timeout means they are
+    /// not - the very same items are handed over again after `retry_timeout`,
+    /// until it returns.
+    ///
+    /// `attempt_no` is 0 on the first attempt and grows by one on every retry of
+    /// the same items.
+    async fn execute(&self, items: &[T], attempt_no: usize);
 }
 
 async fn queue_to_save_loop<T: Send + Sync + 'static>(
     inner: Arc<QueueToSaveInnerAsBulk<T>>,
     handler: Arc<dyn QueueToSaveAsBulkEventsHandler<T> + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
+    retry_timeout: Duration,
 ) {
     println!("Queue to save {} is started", inner.name.as_str());
     let timeout = inner.timeout;
     loop {
         let events = inner.dequeue().await;
+        let mut attempt_no = 0;
 
-        let handler = handler.clone();
-        let feature = tokio::spawn(async move {
-            let future = handler.execute(events);
+        // The chunk is handed over by reference until the handler returns - a
+        // chunk it panicked on is not lost, it is saved again.
+        loop {
+            let future = AssertUnwindSafe(handler.execute(&events, attempt_no)).catch_unwind();
 
-            tokio::time::timeout(timeout, future).await
-        });
-
-        let result = match feature.await {
-            Ok(value) => value,
-            Err(_) => {
-                let msg = format!(
-                    "Panic at QueueToSaveEventsHandler named {}",
-                    inner.name.as_str()
-                );
-
-                logger.write_error("QueueToSave.loop".to_string(), msg, None.into());
-                continue;
-            }
-        };
-
-        if result.is_err() {
-            let msg = format!(
-                "Timeout {:?} at QueueToSaveEventsHandler named {}",
-                inner.timeout,
-                inner.name.as_str()
-            );
+            let msg = match tokio::time::timeout(timeout, future).await {
+                Ok(Ok(())) => break,
+                Ok(Err(_)) => format!(
+                    "Panic at QueueToSaveEventsHandler named {}. {} item(s) are going to be saved again",
+                    inner.name.as_str(),
+                    events.len()
+                ),
+                Err(_) => format!(
+                    "Timeout {:?} at QueueToSaveEventsHandler named {}. {} item(s) are going to be saved again",
+                    timeout,
+                    inner.name.as_str(),
+                    events.len()
+                ),
+            };
 
             logger.write_error("QueueToSave.loop".to_string(), msg, None.into());
+            attempt_no += 1;
+
+            tokio::time::sleep(retry_timeout).await;
         }
     }
 }
