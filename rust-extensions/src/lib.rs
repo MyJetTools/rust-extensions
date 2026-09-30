@@ -33,9 +33,7 @@ mod is_initialized;
 #[cfg(feature = "with-tokio")]
 pub use is_initialized::*;
 #[cfg(feature = "with-tokio")]
-mod idempotency;
-#[cfg(feature = "with-tokio")]
-pub use idempotency::*;
+pub mod idempotency;
 #[cfg(feature = "with-tokio")]
 mod task_completion;
 #[cfg(feature = "with-tokio")]

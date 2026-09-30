@@ -23,7 +23,9 @@ impl<TOk, TErr> IdempotencyEntry<TOk, TErr> {
     }
 }
 
-pub(crate) struct IdempotencyCacheItem<TOk, TErr> {
-    pub key: String,
+pub(crate) struct IdempotencyCacheItem<TKey, TOk, TErr> {
+    /// An `Arc` so the owner of an execution can hand the key to that execution without
+    /// the key type having to be `Clone` - the queue and the owner share this one copy.
+    pub key: Arc<TKey>,
     pub entry: IdempotencyEntry<TOk, TErr>,
 }
