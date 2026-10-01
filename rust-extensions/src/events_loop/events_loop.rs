@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
 
-use crate::{ApplicationStates, Logger, StrOrString};
+use crate::{ApplicationStates, Logger, Startable, StrOrString};
 
 use super::{EventsLoopPublisher, EventsLoopTick};
 
@@ -39,10 +39,16 @@ pub struct EventsLoop<TModel: Send + 'static> {
     publisher: EventsLoopPublisher<TModel>,
     name: Arc<String>,
     iteration_timeout: Duration,
+    app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl<TModel: Send + 'static> EventsLoop<TModel> {
-    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+    pub fn new(
+        name: impl Into<StrOrString<'static>>,
+        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -53,6 +59,8 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
             iteration_timeout: Duration::from_secs(30),
             pending_receiver: Mutex::new(Some(receiver)),
             inner: Mutex::new(None),
+            app_states,
+            logger,
         }
     }
 
@@ -81,11 +89,7 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
         });
     }
 
-    pub fn start(
-        &self,
-        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<dyn Logger + Send + Sync + 'static>,
-    ) {
+    pub fn start(&self) {
         let inner = self.inner.lock().take();
 
         let Some(inner) = inner else{
@@ -99,8 +103,8 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
         tokio::spawn(super::event_loop_reader::events_loop_reader(
             self.name.clone(),
             inner,
-            app_states,
-            logger,
+            self.app_states.clone(),
+            self.logger.clone(),
             self.iteration_timeout,
         ));
     }
@@ -115,6 +119,12 @@ impl<TModel: Send + 'static> EventsLoop<TModel> {
 
     pub fn stop(&self) {
         self.publisher.stop();
+    }
+}
+
+impl<TModel: Send + 'static> Startable for EventsLoop<TModel> {
+    fn start(&self) {
+        self.start();
     }
 }
 
@@ -196,15 +206,19 @@ mod tests {
         seen: &Arc<Mutex<Vec<String>>>,
         script: Vec<Answer>,
     ) -> EventsLoop<String> {
-        let events_loop =
-            EventsLoop::new(name).set_iteration_timeout(Duration::from_millis(100));
+        let events_loop = EventsLoop::new(
+            name,
+            Arc::new(AppStates::create_initialized()),
+            Arc::new(TestLogger),
+        )
+        .set_iteration_timeout(Duration::from_millis(100));
 
         events_loop.register_event_loop(Arc::new(RecordingTick {
             seen: seen.clone(),
             script,
         }));
 
-        events_loop.start(Arc::new(AppStates::create_initialized()), Arc::new(TestLogger));
+        events_loop.start();
 
         events_loop
     }

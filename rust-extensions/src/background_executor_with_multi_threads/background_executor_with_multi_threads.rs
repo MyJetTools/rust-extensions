@@ -6,7 +6,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{Logger, StrOrString};
+use crate::{Logger, Startable, StrOrString};
 
 use super::BackgroundJobWithMultiThreads;
 
@@ -77,6 +77,7 @@ where
     /// Present exactly once `start` has run - which is also how `trigger` knows
     /// the executor is started, without a flag and without a lock.
     inner: OnceLock<Arc<BackgroundExecutorWithMultiThreadsInner<TThreadId>>>,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
     name: Arc<String>,
 }
 
@@ -84,12 +85,16 @@ impl<TThreadId> BackgroundExecutorWithMultiThreads<TThreadId>
 where
     TThreadId: Hash + Eq + Clone + Send + Sync + 'static,
 {
-    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+    pub fn new(
+        name: impl Into<StrOrString<'static>>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
         Self {
             job: OnceLock::new(),
             inner: OnceLock::new(),
+            logger,
             name,
         }
     }
@@ -109,7 +114,7 @@ where
     /// Remembers the runtime the readers are to be spawned on. Must be called
     /// from inside a Tokio runtime - that is the whole reason `trigger` does not
     /// have to be.
-    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn start(&self) {
         let Some(job) = self.job.get() else {
             panic!("Background executor {} is not registered.", self.name);
         };
@@ -117,7 +122,7 @@ where
         let inner = Arc::new(BackgroundExecutorWithMultiThreadsInner {
             threads: Mutex::new(HashMap::new()),
             job: job.clone(),
-            logger,
+            logger: self.logger.clone(),
             name: self.name.clone(),
             runtime: tokio::runtime::Handle::current(),
         });
@@ -165,6 +170,15 @@ where
             Some(inner) => inner.threads.lock().len(),
             None => 0,
         }
+    }
+}
+
+impl<TThreadId> Startable for BackgroundExecutorWithMultiThreads<TThreadId>
+where
+    TThreadId: Hash + Eq + Clone + Send + Sync + 'static,
+{
+    fn start(&self) {
+        self.start();
     }
 }
 
@@ -301,11 +315,14 @@ mod tests {
         state: &Arc<TestState>,
         name: &'static str,
     ) -> Arc<BackgroundExecutorWithMultiThreads<u64>> {
-        let executor = Arc::new(BackgroundExecutorWithMultiThreads::new(name));
+        let executor = Arc::new(BackgroundExecutorWithMultiThreads::new(
+            name,
+            Arc::new(TestLogger),
+        ));
         executor.register(Arc::new(CountingJob {
             state: state.clone(),
         }));
-        executor.start(Arc::new(TestLogger));
+        executor.start();
         executor
     }
 
@@ -502,6 +519,7 @@ mod tests {
             let state = Arc::new(TestState::default());
             let executor = Arc::new(BackgroundExecutorWithMultiThreads::new(
                 "test-early-trigger",
+                Arc::new(TestLogger),
             ));
 
             let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -512,7 +530,7 @@ mod tests {
             executor.register(Arc::new(CountingJob {
                 state: state.clone(),
             }));
-            executor.start(Arc::new(TestLogger));
+            executor.start();
 
             executor.trigger(1);
             wait_for(&state, 1).await;
@@ -524,7 +542,10 @@ mod tests {
     fn repeat_iteration_yes_runs_again_within_the_same_thread() {
         rt().block_on(async {
             let state = Arc::new(TestState::default());
-            let executor = Arc::new(BackgroundExecutorWithMultiThreads::new("test-repeat"));
+            let executor = Arc::new(BackgroundExecutorWithMultiThreads::new(
+                "test-repeat",
+                Arc::new(TestLogger),
+            ));
 
             let mut repeats_left = HashMap::new();
             repeats_left.insert(1, 3);
@@ -534,7 +555,7 @@ mod tests {
                 state: state.clone(),
                 repeats_left: Mutex::new(repeats_left),
             }));
-            executor.start(Arc::new(TestLogger));
+            executor.start();
 
             // 2 triggers of the thread 1 + 3 repeats of it, 1 trigger of the
             // thread 2 + 1 repeat of it.
@@ -555,11 +576,14 @@ mod tests {
     fn panicking_job_consumes_the_trigger_and_releases_the_thread() {
         rt().block_on(async {
             let state = Arc::new(TestState::default());
-            let executor = Arc::new(BackgroundExecutorWithMultiThreads::new("test-panic"));
+            let executor = Arc::new(BackgroundExecutorWithMultiThreads::new(
+                "test-panic",
+                Arc::new(TestLogger),
+            ));
             executor.register(Arc::new(PanickingJob {
                 state: state.clone(),
             }));
-            executor.start(Arc::new(TestLogger));
+            executor.start();
 
             executor.trigger(1);
             executor.trigger(1);

@@ -306,6 +306,7 @@ for deal in deals {
 - `QueueToSave`: producer/consumer file-saving pipeline with retries.
 - `QueueToSaveWithId`: same producer/consumer batching as `QueueToSave`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone + Debug`; the handler receives `execute(&[T], attempt_no)` per tick. Returning means saved; a panic prints the IDs of the chunk to the console, and on a panic or a timeout the amount is logged and the same slice is handed over again after `retry_timeout` (1s, `set_retry_timeout`) with `attempt_no` + 1. No ordering guarantee across IDs.
 - `QueueToSaveOrDeleteWithId`: `QueueToSaveWithId` with two pending states per ID — upsert or delete. `enqueue_delete(id)` drops the pending object right there (there is nothing to save about an object which is about to be deleted) and leaves only the ID marked for deletion; a later `enqueue_single` of the same ID overwrites the delete back into an upsert. The handler receives `&[UpsertOrDelete<ID, T>]` with the same retry contract — `UpsertOrDelete::split(items)` cuts it into `(Vec<&T>, Vec<&ID>)` for a bulk insert-or-replace plus a bulk delete.
+- `Startable`: `fn start(&self)` — implemented by `EventsLoop`, `BackgroundExecutor`, `BackgroundExecutorWithMultiThreads`, `QueueToSave`, `QueueToSaveAsBulk`, `QueueToSaveWithId` and `QueueToSaveOrDeleteWithId` (not available on wasm). Each of them gets everything `start` needs in `new` — the `logger`, plus `app_states` for `EventsLoop` — so they can be collected as `Vec<Arc<dyn Startable + Send + Sync + 'static>>` while the app is being wired up and started in one loop. The same `start()` is also an inherent method, so starting a single one needs no import. `MyTimer` / `MyExactTimer` are not `Startable`: their `start` still takes `app_states` and `logger`.
 - `ApplicationStates`: async state machine with callbacks.
 - `SortableId`: monotonic sortable IDs backed by time + randomness.
 
@@ -364,23 +365,20 @@ mod example {
     }
 
     impl AppCtx {
-        pub fn new() -> Self {
+        pub fn new(
+            app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
+            logger: Arc<dyn Logger + Send + Sync + 'static>,
+        ) -> Self {
             Self {
-                events_loop: EventsLoop::new("my-loop"),
+                events_loop: EventsLoop::new("my-loop", app_states, logger),
             }
         }
     }
 
     // 3. Wire up at startup.
-    pub async fn bootstrap(
-        ctx: Arc<AppCtx>,
-        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<dyn Logger + Send + Sync + 'static>,
-    ) {
-        ctx.events_loop
-            .register_event_loop(Arc::new(MyHandler))
-            .await;
-        ctx.events_loop.start(app_states, logger).await;
+    pub fn bootstrap(ctx: Arc<AppCtx>) {
+        ctx.events_loop.register_event_loop(Arc::new(MyHandler));
+        ctx.events_loop.start();
     }
 
     // 4. Produce messages from anywhere — `send` takes `&self` and never locks.
@@ -426,9 +424,9 @@ Key properties:
 
 A typical example is on-demand persistence: callers mutate state and `trigger()`; the job locks the shared state, takes whatever is pending, and persists it. If nothing changed since the last run the job locks, sees an empty set, and returns — a cheap no-op.
 
-1. **Construct** — `BackgroundExecutor::new(name)`; the name is used in panic and log messages.
+1. **Construct** — `BackgroundExecutor::new(name, logger)`; the name is used in panic and log messages.
 2. **Register a job** (`BackgroundJob`) via `register` — one-shot; a second call panics.
-3. **Start** — `start(logger)` moves the registered job into the live state. Calling `start` without a prior `register` panics.
+3. **Start** — `start()` moves the registered job into the live state. Calling `start` without a prior `register` panics.
 4. **Trigger** — `trigger()` adds one permit to a semaphore and returns. The reader task is already up (it was spawned by `start`), so a trigger spawns nothing, locks nothing and awaits nothing.
 
 ```rust
@@ -460,17 +458,17 @@ mod example {
     }
 
     impl AppCtx {
-        pub fn new() -> Self {
+        pub fn new(logger: Arc<dyn Logger + Send + Sync + 'static>) -> Self {
             Self {
-                flush: BackgroundExecutor::new("flush"),
+                flush: BackgroundExecutor::new("flush", logger),
             }
         }
     }
 
     // 2 + 3. Wire up at startup.
-    pub fn bootstrap(ctx: &AppCtx, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn bootstrap(ctx: &AppCtx) {
         ctx.flush.register(Arc::new(FlushJob));
-        ctx.flush.start(logger);
+        ctx.flush.start();
     }
 
     // 4. Signal "there may be work" from anywhere — `trigger` takes `&self` and returns at once.
@@ -497,7 +495,7 @@ Key properties:
 
 That is the shape for per-entity work: flush the state of an account, of a trading instrument, of a connection. Entities must not step on each other's toes, yet each of them alone has to be persisted in the order the changes happened.
 
-The lifecycle is the same as of `BackgroundExecutor` — `new` → `register` → `start(logger)` → `trigger(thread_id)` — with one addition: the background task of a thread id is created by the trigger which created the thread, and it is **removed** as soon as the triggers of that thread id are drained. Nothing is kept alive for an idle thread id, and the next trigger of it spawns a fresh task.
+The lifecycle is the same as of `BackgroundExecutor` — `new(name, logger)` → `register` → `start()` → `trigger(thread_id)` — with one addition: the background task of a thread id is created by the trigger which created the thread, and it is **removed** as soon as the triggers of that thread id are drained. Nothing is kept alive for an idle thread id, and the next trigger of it spawns a fresh task.
 
 ```rust
 #[cfg(feature = "with-tokio")]
@@ -528,17 +526,17 @@ mod example {
     }
 
     impl AppCtx {
-        pub fn new() -> Self {
+        pub fn new(logger: Arc<dyn Logger + Send + Sync + 'static>) -> Self {
             Self {
-                flush: BackgroundExecutorWithMultiThreads::new("flush-accounts"),
+                flush: BackgroundExecutorWithMultiThreads::new("flush-accounts", logger),
             }
         }
     }
 
     // 2 + 3. Wire up at startup.
-    pub fn bootstrap(ctx: &AppCtx, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn bootstrap(ctx: &AppCtx) {
         ctx.flush.register(Arc::new(FlushAccountJob));
-        ctx.flush.start(logger);
+        ctx.flush.start();
     }
 
     // 4. Signal "there may be work" for a certain account — returns at once.

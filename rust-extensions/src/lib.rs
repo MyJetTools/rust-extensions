@@ -119,3 +119,8 @@ pub use sized_chunks::*;
 mod queue_to_save_or_delete_with_id;
 #[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use queue_to_save_or_delete_with_id::*;
+
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
+mod startable;
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
+pub use startable::*;

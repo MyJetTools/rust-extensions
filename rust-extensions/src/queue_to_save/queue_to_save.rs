@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::{queue_to_save::inner_as_single::QueueToSaveInnerAsSingle, Logger, StrOrString};
+use crate::{
+    queue_to_save::inner_as_single::QueueToSaveInnerAsSingle, Logger, Startable, StrOrString,
+};
 
 enum HandlerStatus<T> {
     None,
@@ -13,13 +15,18 @@ enum HandlerStatus<T> {
 pub struct QueueToSave<T: Send + Sync + 'static> {
     inner: Arc<QueueToSaveInnerAsSingle<T>>,
     handler: Mutex<HandlerStatus<T>>,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl<T: Send + Sync + 'static> QueueToSave<T> {
-    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+    pub fn new(
+        name: impl Into<StrOrString<'static>>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         Self {
             inner: Arc::new(QueueToSaveInnerAsSingle::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
+            logger,
         }
     }
     pub fn enqueue(&self, items: impl Iterator<Item = T>) {
@@ -50,7 +57,7 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
         self.inner.queue_len()
     }
 
-    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn start(&self) {
         let mut write_access = self.handler.lock();
 
         match &*write_access {
@@ -64,7 +71,7 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
                 tokio::spawn(queue_to_save_loop(
                     self.inner.clone(),
                     handler.clone(),
-                    logger,
+                    self.logger.clone(),
                 ));
             }
             HandlerStatus::Working => {
@@ -73,6 +80,12 @@ impl<T: Send + Sync + 'static> QueueToSave<T> {
         }
 
         *write_access = HandlerStatus::Working;
+    }
+}
+
+impl<T: Send + Sync + 'static> Startable for QueueToSave<T> {
+    fn start(&self) {
+        self.start();
     }
 }
 

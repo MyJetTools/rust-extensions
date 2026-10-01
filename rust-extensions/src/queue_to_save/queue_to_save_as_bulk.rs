@@ -3,7 +3,9 @@ use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use futures::FutureExt;
 use parking_lot::Mutex;
 
-use crate::{queue_to_save::inner_as_bulk::QueueToSaveInnerAsBulk, Logger, StrOrString};
+use crate::{
+    queue_to_save::inner_as_bulk::QueueToSaveInnerAsBulk, Logger, Startable, StrOrString,
+};
 
 enum HandlerStatus<T> {
     None,
@@ -15,14 +17,19 @@ pub struct QueueToSaveAsBulk<T: Send + Sync + 'static> {
     inner: Arc<QueueToSaveInnerAsBulk<T>>,
     handler: Mutex<HandlerStatus<T>>,
     retry_timeout: Duration,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
-    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+    pub fn new(
+        name: impl Into<StrOrString<'static>>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         Self {
             inner: Arc::new(QueueToSaveInnerAsBulk::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
             retry_timeout: Duration::from_secs(1),
+            logger,
         }
     }
 
@@ -60,7 +67,7 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
         self.inner.queue_len()
     }
 
-    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn start(&self) {
         let mut write_access = self.handler.lock();
 
         match &*write_access {
@@ -74,7 +81,7 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
                 tokio::spawn(queue_to_save_loop(
                     self.inner.clone(),
                     handler.clone(),
-                    logger,
+                    self.logger.clone(),
                     self.retry_timeout,
                 ));
             }
@@ -84,6 +91,12 @@ impl<T: Send + Sync + 'static> QueueToSaveAsBulk<T> {
         }
 
         *write_access = HandlerStatus::Working;
+    }
+}
+
+impl<T: Send + Sync + 'static> Startable for QueueToSaveAsBulk<T> {
+    fn start(&self) {
+        self.start();
     }
 }
 

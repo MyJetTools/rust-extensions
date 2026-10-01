@@ -3,7 +3,7 @@ use std::{fmt::Debug, hash::Hash, panic::AssertUnwindSafe, sync::Arc, time::Dura
 use futures::FutureExt;
 use parking_lot::Mutex;
 
-use crate::{Logger, StrOrString};
+use crate::{Logger, Startable, StrOrString};
 
 use super::{inner_with_id::QueueToSaveInnerWithId, persist_object_id::PersistObjectId};
 
@@ -21,6 +21,7 @@ where
     inner: Arc<QueueToSaveInnerWithId<ID, T>>,
     handler: Mutex<HandlerStatus<T>>,
     retry_timeout: Duration,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl<ID, T> QueueToSaveWithId<ID, T>
@@ -28,11 +29,15 @@ where
     ID: Hash + Eq + Clone + Debug + Send + Sync + 'static,
     T: PersistObjectId<ID> + Send + Sync + 'static,
 {
-    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+    pub fn new(
+        name: impl Into<StrOrString<'static>>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         Self {
             inner: Arc::new(QueueToSaveInnerWithId::new(name.into())),
             handler: Mutex::new(HandlerStatus::None),
             retry_timeout: Duration::from_secs(1),
+            logger,
         }
     }
 
@@ -62,7 +67,7 @@ where
         self.inner.name.as_str()
     }
 
-    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn start(&self) {
         let mut write_access = self.handler.lock();
 
         match &*write_access {
@@ -76,7 +81,7 @@ where
                 tokio::spawn(queue_to_save_with_id_loop(
                     self.inner.clone(),
                     handler.clone(),
-                    logger,
+                    self.logger.clone(),
                     self.retry_timeout,
                 ));
             }
@@ -89,6 +94,16 @@ where
         }
 
         *write_access = HandlerStatus::Working;
+    }
+}
+
+impl<ID, T> Startable for QueueToSaveWithId<ID, T>
+where
+    ID: Hash + Eq + Clone + Debug + Send + Sync + 'static,
+    T: PersistObjectId<ID> + Send + Sync + 'static,
+{
+    fn start(&self) {
+        self.start();
     }
 }
 
@@ -243,7 +258,8 @@ mod tests {
             .unwrap();
 
         runtime.block_on(async {
-            let queue: QueueToSaveWithId<u32, Obj> = QueueToSaveWithId::new("test");
+            let queue: QueueToSaveWithId<u32, Obj> =
+                QueueToSaveWithId::new("test", Arc::new(NoopLogger));
 
             let captured = Arc::new(Mutex::new(Vec::<Obj>::new()));
             let notify = Arc::new(tokio::sync::Notify::new());
@@ -258,7 +274,7 @@ mod tests {
             queue.enqueue_single(Obj { id: 2, value: "b" });
             queue.enqueue_single(Obj { id: 1, value: "c" });
 
-            queue.start(Arc::new(NoopLogger));
+            queue.start();
 
             notify.notified().await;
 

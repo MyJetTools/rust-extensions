@@ -5,7 +5,7 @@ use std::sync::{
 
 use tokio::sync::Semaphore;
 
-use crate::{Logger, StrOrString};
+use crate::{Logger, Startable, StrOrString};
 
 use super::BackgroundJob;
 
@@ -38,17 +38,22 @@ pub struct BackgroundExecutor {
     triggers: Arc<Semaphore>,
     job: OnceLock<Arc<dyn BackgroundJob + Send + Sync + 'static>>,
     started: AtomicBool,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
     name: Arc<String>,
 }
 
 impl BackgroundExecutor {
-    pub fn new(name: impl Into<StrOrString<'static>>) -> Self {
+    pub fn new(
+        name: impl Into<StrOrString<'static>>,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         let name: Arc<String> = Arc::new(name.into().to_string());
 
         Self {
             triggers: Arc::new(Semaphore::new(0)),
             job: OnceLock::new(),
             started: AtomicBool::new(false),
+            logger,
             name,
         }
     }
@@ -64,7 +69,7 @@ impl BackgroundExecutor {
 
     /// Spawns the one and only reader task. Must be called from inside a Tokio
     /// runtime - that is the whole reason `trigger` does not have to be.
-    pub fn start(&self, logger: Arc<dyn Logger + Send + Sync + 'static>) {
+    pub fn start(&self) {
         let Some(job) = self.job.get() else {
             panic!("Background executor {} is not registered.", self.name);
         };
@@ -85,7 +90,7 @@ impl BackgroundExecutor {
             BackgroundExecutorInner {
                 triggers: self.triggers.clone(),
                 job: job.clone(),
-                logger,
+                logger: self.logger.clone(),
                 name: self.name.clone(),
             },
         ));
@@ -107,6 +112,12 @@ impl BackgroundExecutor {
         }
 
         self.triggers.add_permits(1);
+    }
+}
+
+impl Startable for BackgroundExecutor {
+    fn start(&self) {
+        self.start();
     }
 }
 
@@ -193,12 +204,12 @@ mod tests {
     }
 
     fn make_executor(runs: &Arc<AtomicUsize>, name: &'static str) -> Arc<BackgroundExecutor> {
-        let executor = Arc::new(BackgroundExecutor::new(name));
+        let executor = Arc::new(BackgroundExecutor::new(name, Arc::new(TestLogger)));
         executor.register(Arc::new(CountingJob {
             runs: runs.clone(),
             in_flight: Arc::new(AtomicUsize::new(0)),
         }));
-        executor.start(Arc::new(TestLogger));
+        executor.start();
         executor
     }
 
@@ -306,7 +317,10 @@ mod tests {
     fn trigger_before_start_panics_but_does_not_wedge_executor() {
         rt().block_on(async {
             let runs = Arc::new(AtomicUsize::new(0));
-            let executor = Arc::new(BackgroundExecutor::new("test-early-trigger"));
+            let executor = Arc::new(BackgroundExecutor::new(
+                "test-early-trigger",
+                Arc::new(TestLogger),
+            ));
 
             let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 executor.trigger();
@@ -317,7 +331,7 @@ mod tests {
                 runs: runs.clone(),
                 in_flight: Arc::new(AtomicUsize::new(0)),
             }));
-            executor.start(Arc::new(TestLogger));
+            executor.start();
 
             executor.trigger();
             wait_for(&runs, 1).await;
@@ -329,13 +343,13 @@ mod tests {
     fn repeat_iteration_yes_runs_again_without_consuming_the_trigger() {
         rt().block_on(async {
             let runs = Arc::new(AtomicUsize::new(0));
-            let executor = Arc::new(BackgroundExecutor::new("test-repeat"));
+            let executor = Arc::new(BackgroundExecutor::new("test-repeat", Arc::new(TestLogger)));
             executor.register(Arc::new(RepeatingJob {
                 runs: runs.clone(),
                 in_flight: Arc::new(AtomicUsize::new(0)),
                 repeats_left: AtomicUsize::new(3),
             }));
-            executor.start(Arc::new(TestLogger));
+            executor.start();
 
             // A single trigger, but the job asks for 3 extra iterations.
             executor.trigger();
@@ -354,13 +368,16 @@ mod tests {
     fn repeats_do_not_swallow_the_triggers_arrived_meanwhile() {
         rt().block_on(async {
             let runs = Arc::new(AtomicUsize::new(0));
-            let executor = Arc::new(BackgroundExecutor::new("test-repeat-and-trigger"));
+            let executor = Arc::new(BackgroundExecutor::new(
+                "test-repeat-and-trigger",
+                Arc::new(TestLogger),
+            ));
             executor.register(Arc::new(RepeatingJob {
                 runs: runs.clone(),
                 in_flight: Arc::new(AtomicUsize::new(0)),
                 repeats_left: AtomicUsize::new(2),
             }));
-            executor.start(Arc::new(TestLogger));
+            executor.start();
 
             // 3 triggers + 2 repeats = 5 iterations, and not one less.
             executor.trigger();
