@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     my_timer::timers_iteration::{execute_timer, execute_timers_iteration, RegisteredTimer},
-    ApplicationStates, Logger, MyTimerTick, RepeatTimerIteration,
+    Logger, MyTimerTick, RepeatTimerIteration, Startable,
 };
 
 use super::ExactTimerInterval;
@@ -22,25 +22,32 @@ pub struct MyExactTimer {
     interval: ExactTimerInterval,
     timers: Vec<RegisteredTimer>,
     iteration_timeout: Duration,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl MyExactTimer {
-    pub fn new(interval: ExactTimerInterval) -> Self {
+    pub fn new(
+        interval: ExactTimerInterval,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         Self {
             interval,
             timers: Vec::new(),
             iteration_timeout: Duration::from_secs(60),
+            logger,
         }
     }
 
     pub fn new_with_execute_timeout(
         interval: ExactTimerInterval,
         iteration_timeout: Duration,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
     ) -> Self {
         Self {
             interval,
             timers: Vec::new(),
             iteration_timeout,
+            logger,
         }
     }
 
@@ -62,17 +69,12 @@ impl MyExactTimer {
         self.timers.push((name.to_string(), my_timer_tick));
     }
 
-    pub fn start(
-        &self,
-        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<dyn Logger + Send + Sync + 'static>,
-    ) {
+    pub fn start(&self) {
         let timers = self.timers.clone();
         tokio::spawn(exact_timer_loop(
             timers,
             self.interval,
-            app_states,
-            logger,
+            self.logger.clone(),
             self.iteration_timeout,
         ));
     }
@@ -93,18 +95,19 @@ impl MyExactTimer {
     }
 }
 
+impl Startable for MyExactTimer {
+    fn start(&self) {
+        self.start();
+    }
+}
+
 async fn exact_timer_loop(
     timers: Vec<RegisteredTimer>,
     interval: ExactTimerInterval,
-    app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
     iteration_timeout: Duration,
 ) {
     let interval_micros = interval.get_duration_micros();
-
-    while !app_states.is_initialized() {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
 
     for (timer_id, _) in &timers {
         let message = format!("Exact timer {} is started with interval {:?}", timer_id, interval);
@@ -112,14 +115,10 @@ async fn exact_timer_loop(
         logger.write_info(timer_id.to_string().into(), message.into(), None.into());
     }
 
-    while !app_states.is_shutting_down() {
+    loop {
         // Based on the moment we finished the previous iteration, compute the
         // next aligned mark and precisely sleep up to it.
-        sleep_till_next_tick(interval_micros, app_states.as_ref()).await;
-
-        if app_states.is_shutting_down() {
-            break;
-        }
+        sleep_till_next_tick(interval_micros).await;
 
         let mut to_execute: Vec<&RegisteredTimer> = timers.iter().collect();
 
@@ -130,7 +129,7 @@ async fn exact_timer_loop(
             // away - each with a fresh timeout window. The extra passes do not
             // shift the schedule: the next mark is computed from the moment they
             // all finished, exactly as it is after a single slow tick.
-            if to_execute.is_empty() || app_states.is_shutting_down() {
+            if to_execute.is_empty() {
                 break;
             }
         }
@@ -141,22 +140,15 @@ async fn exact_timer_loop(
 ///
 /// The target mark is computed once, from the current time, then approached
 /// with a coarse-to-fine ladder that re-measures the remaining time on every
-/// iteration. This keeps the loop responsive to shutdown (a long interval never
-/// blocks for more than 10 seconds); once under one second remains, a single
-/// exact sleep lands precisely on the mark. A backward wall-clock jump is
-/// detected and the target re-aligned, so the total wait never exceeds one
-/// interval.
-async fn sleep_till_next_tick(
-    interval_micros: u64,
-    app_states: &(dyn ApplicationStates + Send + Sync + 'static),
-) {
+/// iteration. This keeps the wait tied to the wall clock (a long interval never
+/// goes more than 10 seconds without looking at it); once under one second
+/// remains, a single exact sleep lands precisely on the mark. A backward
+/// wall-clock jump is detected and the target re-aligned, so the total wait
+/// never exceeds one interval.
+async fn sleep_till_next_tick(interval_micros: u64) {
     let mut target_micros = get_next_tick_micros(get_now_micros(), interval_micros);
 
     loop {
-        if app_states.is_shutting_down() {
-            return;
-        }
-
         let now_micros = get_now_micros();
 
         if now_micros >= target_micros {

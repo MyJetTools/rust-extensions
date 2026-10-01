@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::{ApplicationStates, Logger};
+use crate::{Logger, Startable};
 
 use super::{
     timers_iteration::{execute_timer, execute_timers_iteration, RegisteredTimer},
@@ -12,15 +12,17 @@ pub struct MyTimer {
     timers: Vec<RegisteredTimer>,
     iteration_timeout: Duration,
     delay_before_first_tick: bool,
+    logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
 impl MyTimer {
-    pub fn new(interval: Duration) -> Self {
+    pub fn new(interval: Duration, logger: Arc<dyn Logger + Send + Sync + 'static>) -> Self {
         Self {
             interval,
             timers: Vec::new(),
             iteration_timeout: Duration::from_secs(60),
             delay_before_first_tick: true,
+            logger,
         }
     }
 
@@ -28,12 +30,17 @@ impl MyTimer {
         self.iteration_timeout = iteration_timeout;
     }
 
-    pub fn new_with_execute_timeout(interval: Duration, iteration_timeout: Duration) -> Self {
+    pub fn new_with_execute_timeout(
+        interval: Duration,
+        iteration_timeout: Duration,
+        logger: Arc<dyn Logger + Send + Sync + 'static>,
+    ) -> Self {
         Self {
             interval,
             timers: Vec::new(),
             iteration_timeout,
             delay_before_first_tick: true,
+            logger,
         }
     }
 
@@ -55,17 +62,12 @@ impl MyTimer {
         self.timers.push((name.to_string(), my_timer_tick));
     }
 
-    pub fn start(
-        &self,
-        app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
-        logger: Arc<dyn Logger + Send + Sync + 'static>,
-    ) {
+    pub fn start(&self) {
         let timers = self.timers.clone();
         tokio::spawn(timer_loop(
             timers,
             self.interval,
-            app_states,
-            logger,
+            self.logger.clone(),
             self.iteration_timeout,
             self.delay_before_first_tick,
         ));
@@ -87,18 +89,19 @@ impl MyTimer {
     }
 }
 
+impl Startable for MyTimer {
+    fn start(&self) {
+        self.start();
+    }
+}
+
 async fn timer_loop(
     timers: Vec<RegisteredTimer>,
     interval: Duration,
-    app_states: Arc<dyn ApplicationStates + Send + Sync + 'static>,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
     iteration_timeout: Duration,
     delay_before_first_tick: bool,
 ) {
-    while !app_states.is_initialized() {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-
     for (timer_id, _) in &timers {
         let message = format!(
             "Timer {} is started with delay {} sec",
@@ -113,7 +116,7 @@ async fn timer_loop(
         tokio::time::sleep(interval).await;
     }
 
-    while !app_states.is_shutting_down() {
+    loop {
         let mut to_execute: Vec<&RegisteredTimer> = timers.iter().collect();
 
         loop {
@@ -122,7 +125,7 @@ async fn timer_loop(
             // Ticks which left their iteration on purpose are restarted right
             // away - each with a fresh timeout window - and the interval is not
             // slept until every one of them is done.
-            if to_execute.is_empty() || app_states.is_shutting_down() {
+            if to_execute.is_empty() {
                 break;
             }
         }
@@ -138,7 +141,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::{ApplicationStates, Logger};
+    use crate::Logger;
 
     use super::{MyTimer, MyTimerTick, RepeatTimerIteration};
 
@@ -162,17 +165,6 @@ mod tests {
         fn write_error(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
         fn write_fatal_error(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
         fn write_debug_info(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
-    }
-
-    struct TestAppStates;
-
-    impl ApplicationStates for TestAppStates {
-        fn is_initialized(&self) -> bool {
-            true
-        }
-        fn is_shutting_down(&self) -> bool {
-            false
-        }
     }
 
     /// Asks for `immediate_repeats` extra passes - as a tick which leaves the
@@ -239,10 +231,10 @@ mod tests {
         rt().block_on(async {
             let runs = Arc::new(AtomicUsize::new(0));
 
-            let mut timer = MyTimer::new(INTERVAL);
+            let mut timer = MyTimer::new(INTERVAL, Arc::new(TestLogger));
             timer.set_first_tick_before_delay();
             timer.register_timer("test", repeating_tick(&runs, 2));
-            timer.start(Arc::new(TestAppStates), Arc::new(TestLogger));
+            timer.start();
 
             // 1 scheduled tick + 2 immediate repeats, all well inside INTERVAL.
             wait_for(&runs, 3).await;
@@ -259,11 +251,11 @@ mod tests {
             let repeating_runs = Arc::new(AtomicUsize::new(0));
             let calm_runs = Arc::new(AtomicUsize::new(0));
 
-            let mut timer = MyTimer::new(INTERVAL);
+            let mut timer = MyTimer::new(INTERVAL, Arc::new(TestLogger));
             timer.set_first_tick_before_delay();
             timer.register_timer("repeating", repeating_tick(&repeating_runs, 2));
             timer.register_timer("calm", repeating_tick(&calm_runs, 0));
-            timer.start(Arc::new(TestAppStates), Arc::new(TestLogger));
+            timer.start();
 
             wait_for(&repeating_runs, 3).await;
             tokio::time::sleep(Duration::from_millis(200)).await;
@@ -280,13 +272,13 @@ mod tests {
         rt().block_on(async {
             let runs = Arc::new(AtomicUsize::new(0));
 
-            let mut timer = MyTimer::new(INTERVAL);
+            let mut timer = MyTimer::new(INTERVAL, Arc::new(TestLogger));
             timer.set_first_tick_before_delay();
             timer.register_timer(
                 "panicking",
                 Arc::new(PanickingTick { runs: runs.clone() }),
             );
-            timer.start(Arc::new(TestAppStates), Arc::new(TestLogger));
+            timer.start();
 
             wait_for(&runs, 1).await;
 

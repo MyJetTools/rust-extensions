@@ -1,5 +1,5 @@
-/// Something that is brought to life by a single `start()` call - a queue, an
-/// events loop, a background executor.
+/// Something that is brought to life by a single `start()` call - a timer, a
+/// queue, an events loop, a background executor.
 ///
 /// Everything `start` needs is handed over to `new`, so the things to start can
 /// be collected as `Arc<dyn Startable + Send + Sync + 'static>` while the
@@ -25,10 +25,11 @@ mod tests {
     };
     use crate::events_loop::{EventsLoop, EventsLoopTick};
     use crate::{
-        AppStates, Logger, PersistObjectId, QueueToSave, QueueToSaveAsBulk,
-        QueueToSaveAsBulkEventsHandler, QueueToSaveEventsHandler, QueueToSaveOrDeleteWithId,
+        AppStates, ExactTimerInterval, Logger, MyExactTimer, MyTimer, MyTimerTick,
+        PersistObjectId, QueueToSave, QueueToSaveAsBulk, QueueToSaveAsBulkEventsHandler,
+        QueueToSaveEventsHandler, QueueToSaveOrDeleteWithId,
         QueueToSaveOrDeleteWithIdEventsHandler, QueueToSaveWithId, QueueToSaveWithIdEventsHandler,
-        UpsertOrDelete,
+        RepeatTimerIteration, UpsertOrDelete,
     };
 
     use super::Startable;
@@ -58,8 +59,8 @@ mod tests {
         }
     }
 
-    /// The one handler of everything which is started here - it writes down who
-    /// was served, so it is seen that not a single one was left behind.
+    /// The one handler of everything which is published here - it writes down
+    /// who was served, so it is seen that not a single one was left behind.
     struct Recorder {
         served: Arc<Mutex<Vec<&'static str>>>,
     }
@@ -120,18 +121,42 @@ mod tests {
         }
     }
 
-    async fn wait_for(served: &Arc<Mutex<Vec<&'static str>>>, expected: usize) {
+    /// Both timers take the very same tick - so it carries the name of the
+    /// timer it is registered on.
+    struct TimerTick {
+        timer: &'static str,
+        served: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MyTimerTick for TimerTick {
+        async fn tick(&self) -> RepeatTimerIteration {
+            self.served.lock().push(self.timer);
+            RepeatTimerIteration::WithInterval
+        }
+    }
+
+    /// Who was served so far - sorted, and each of them once: a timer keeps
+    /// ticking while the others are still being waited for.
+    fn served_ones(served: &Arc<Mutex<Vec<&'static str>>>) -> Vec<&'static str> {
+        let mut result = served.lock().clone();
+        result.sort();
+        result.dedup();
+        result
+    }
+
+    async fn wait_until_served(served: &Arc<Mutex<Vec<&'static str>>>, expected: &[&str]) {
         for _ in 0..2000 {
-            if served.lock().len() >= expected {
+            if served_ones(served) == expected {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
 
         panic!(
-            "Expected {} to be served, got {:?}",
+            "Expected {:?} to be served, got {:?}",
             expected,
-            served.lock().as_slice()
+            served_ones(served)
         );
     }
 
@@ -143,6 +168,27 @@ mod tests {
                 served: served.clone(),
             });
             let logger: Arc<dyn Logger + Send + Sync + 'static> = Arc::new(TestLogger);
+
+            let mut timer = MyTimer::new(Duration::from_secs(30), logger.clone());
+            timer.set_first_tick_before_delay();
+            timer.register_timer(
+                "timer",
+                Arc::new(TimerTick {
+                    timer: "MyTimer",
+                    served: served.clone(),
+                }),
+            );
+
+            // The mark of the smallest interval is a second away at most.
+            let mut exact_timer =
+                MyExactTimer::new(ExactTimerInterval::Every1Second, logger.clone());
+            exact_timer.register_timer(
+                "exact-timer",
+                Arc::new(TimerTick {
+                    timer: "MyExactTimer",
+                    served: served.clone(),
+                }),
+            );
 
             let queue = Arc::new(QueueToSave::<u32>::new("queue", logger.clone()));
             queue.register_events_handler(recorder.clone());
@@ -181,6 +227,8 @@ mod tests {
 
             // Collected while the application is being wired up...
             let to_start: Vec<Arc<dyn Startable + Send + Sync + 'static>> = vec![
+                Arc::new(timer),
+                Arc::new(exact_timer),
                 queue.clone(),
                 queue_as_bulk.clone(),
                 queue_with_id.clone(),
@@ -203,24 +251,21 @@ mod tests {
             executor.trigger();
             multi_threads.trigger(1);
 
-            wait_for(&served, 7).await;
-            tokio::time::sleep(Duration::from_millis(50)).await;
-
-            let mut served = served.lock().clone();
-            served.sort();
-
-            assert_eq!(
-                served,
-                [
+            wait_until_served(
+                &served,
+                &[
                     "BackgroundExecutor",
                     "BackgroundExecutorWithMultiThreads",
                     "EventsLoop",
+                    "MyExactTimer",
+                    "MyTimer",
                     "QueueToSave",
                     "QueueToSaveAsBulk",
                     "QueueToSaveOrDeleteWithId",
                     "QueueToSaveWithId",
-                ]
-            );
+                ],
+            )
+            .await;
         });
     }
 }

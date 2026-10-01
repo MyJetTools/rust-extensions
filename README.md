@@ -297,7 +297,7 @@ for deal in deals {
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task; `tick()` gets the event **by ownership** (no clone) and returns `RepeatIteration<TModel>`, so an unfinished iteration hands the very same model back via `Yes(model)` and is started again with it.
 - `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free, callable from **any** thread (including one with no Tokio runtime around it), and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
 - `BackgroundExecutorWithMultiThreads<TThreadId>`: the same, but split into independent threads by the `thread_id` given to `trigger()` — one thread id is served by one background task (sequentially, and the id is passed to `execute()`), different thread ids are served in parallel, and the task of a thread id is spawned on its first trigger and removed once its triggers are drained. `trigger()` is likewise callable from any thread.
-- `MyTimer`: tick-based scheduling with graceful stop; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
+- `MyTimer`: tick-based scheduling; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
 - `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
@@ -306,7 +306,7 @@ for deal in deals {
 - `QueueToSave`: producer/consumer file-saving pipeline with retries.
 - `QueueToSaveWithId`: same producer/consumer batching as `QueueToSave`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone + Debug`; the handler receives `execute(&[T], attempt_no)` per tick. Returning means saved; a panic prints the IDs of the chunk to the console, and on a panic or a timeout the amount is logged and the same slice is handed over again after `retry_timeout` (1s, `set_retry_timeout`) with `attempt_no` + 1. No ordering guarantee across IDs.
 - `QueueToSaveOrDeleteWithId`: `QueueToSaveWithId` with two pending states per ID — upsert or delete. `enqueue_delete(id)` drops the pending object right there (there is nothing to save about an object which is about to be deleted) and leaves only the ID marked for deletion; a later `enqueue_single` of the same ID overwrites the delete back into an upsert. The handler receives `&[UpsertOrDelete<ID, T>]` with the same retry contract — `UpsertOrDelete::split(items)` cuts it into `(Vec<&T>, Vec<&ID>)` for a bulk insert-or-replace plus a bulk delete.
-- `Startable`: `fn start(&self)` — implemented by `EventsLoop`, `BackgroundExecutor`, `BackgroundExecutorWithMultiThreads`, `QueueToSave`, `QueueToSaveAsBulk`, `QueueToSaveWithId` and `QueueToSaveOrDeleteWithId` (not available on wasm). Each of them gets everything `start` needs in `new` — the `logger`, plus `app_states` for `EventsLoop` — so they can be collected as `Vec<Arc<dyn Startable + Send + Sync + 'static>>` while the app is being wired up and started in one loop. The same `start()` is also an inherent method, so starting a single one needs no import. `MyTimer` / `MyExactTimer` are not `Startable`: their `start` still takes `app_states` and `logger`.
+- `Startable`: `fn start(&self)` — implemented by `MyTimer`, `MyExactTimer`, `EventsLoop`, `BackgroundExecutor`, `BackgroundExecutorWithMultiThreads`, `QueueToSave`, `QueueToSaveAsBulk`, `QueueToSaveWithId` and `QueueToSaveOrDeleteWithId` (not available on wasm). Each of them gets everything `start` needs in `new` — the `logger`, plus `app_states` for `EventsLoop` — so they can be collected as `Vec<Arc<dyn Startable + Send + Sync + 'static>>` while the app is being wired up and started in one loop. The same `start()` is also an inherent method, so starting a single one needs no import.
 - `ApplicationStates`: async state machine with callbacks.
 - `SortableId`: monotonic sortable IDs backed by time + randomness.
 
@@ -774,13 +774,10 @@ impl MyTimerTick for MyTick {
     }
 }
 
-pub fn bootstrap(
-    app_states: Arc<dyn rust_extensions::ApplicationStates + Send + Sync + 'static>,
-    logger: Arc<dyn rust_extensions::Logger + Send + Sync + 'static>,
-) {
-    let mut timer = MyExactTimer::new(ExactTimerInterval::Every5Seconds);
+pub fn bootstrap(logger: Arc<dyn rust_extensions::Logger + Send + Sync + 'static>) {
+    let mut timer = MyExactTimer::new(ExactTimerInterval::Every5Seconds, logger);
     timer.register_timer("my-tick", Arc::new(MyTick));
-    timer.start(app_states, logger);
+    timer.start();
 }
 ```
 
@@ -790,8 +787,8 @@ How it stays exact:
 
 - **Epoch-aligned marks** — the next fire time is the next multiple of the interval since the Unix epoch. Because the epoch sits on a minute/hour boundary and every interval evenly divides a minute or an hour, those multiples land precisely on the natural wall-clock marks. No accumulated drift.
 - **Recomputed after every tick** — the next mark is computed from the moment the tick *finished*, so a slow tick simply skips to the next mark instead of pushing the whole schedule back. Finishing exactly on a mark advances to the following one (never a double fire).
-- **Coarse-to-fine wait** — the timer approaches the mark by sleeping in shrinking chunks (`10s → 5s → 1s`), re-measuring each loop; once under one second remains it does a single exact sleep and wakes right on the mark. A long interval therefore still notices `is_shutting_down()` within at most 10 seconds.
-- **Same lifecycle as `MyTimer`** — waits for `is_initialized()` before the first tick, stops on `is_shutting_down()`, supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
+- **Coarse-to-fine wait** — the timer approaches the mark by sleeping in shrinking chunks (`10s → 5s → 1s`), re-measuring each loop; once under one second remains it does a single exact sleep and wakes right on the mark. A long interval therefore never goes more than 10 seconds without looking at the wall clock.
+- **Same lifecycle as `MyTimer`** — ticks from `start()` on, for as long as the runtime lives (start it once the application is ready to be ticked), supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
 
 ### `RepeatTimerIteration` — leaving a tick early to reset the timeout
 
@@ -818,7 +815,6 @@ impl MyTimerTick for FlushTick {
 
 - **Only the tick that asked is repeated** — with several ticks registered on one timer, a neighbour that answered `WithInterval` keeps its own schedule and is not dragged into the extra passes.
 - **A panic or a timeout answered nothing** — neither is repeated, so a tick that always panics cannot spin the loop.
-- **Shutdown wins** — the repeat loop re-checks `is_shutting_down()` between passes.
 - **The schedule does not shift** — on `MyExactTimer` the next mark is computed once the extra passes are finished, exactly as it is after a single slow tick; on `MyTimer` the interval is slept once they are done.
 - **A tick that always answers `Immediately` never lets the timer sleep** — same as one that never returns; the decision to stop belongs to the tick.
 - **`execute_timer(name)`** (the manual, out-of-schedule call on either timer) has no interval to wait for, so it hands the `RepeatTimerIteration` back to the caller instead of acting on it.
