@@ -70,6 +70,41 @@ mod tests {
     }
 
     #[test]
+    fn test_through_ssh_with_non_ascii_ssh_part() {
+        let src = "ssh://юзер@хост:223->localhost:8080";
+
+        let string = RemoteEndpointHostString::try_parse(src).unwrap();
+
+        match string {
+            RemoteEndpointHostString::ViaSsh {
+                ssh_remote_host,
+                remote_host_behind_ssh,
+            } => {
+                assert_eq!(ssh_remote_host.get_user(), "юзер");
+                assert_eq!(ssh_remote_host.get_host_port(), ("хост", 223));
+                assert_eq!(remote_host_behind_ssh.get_host(), "localhost");
+                assert_eq!(remote_host_behind_ssh.get_port(), Some(8080));
+            }
+            _ => panic!("Unexpected result"),
+        }
+    }
+
+    #[test]
+    fn test_through_ssh_with_malformed_ssh_part() {
+        for ssh_part in [
+            "http://user@host:22",
+            "a@b:1:2",
+            "ssh://user@host:22x",
+            "ssh://user@host:99999",
+            "ssh://user@host:",
+            "ssh://user@[::1]:22",
+        ] {
+            let src = format!("{ssh_part}->http://localhost:5123");
+            assert!(RemoteEndpointHostString::try_parse(&src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
     fn test_example_from_real_life() {
         let result =
             RemoteEndpointHostString::try_parse("https://oauth2.googleapis.com/token").unwrap();

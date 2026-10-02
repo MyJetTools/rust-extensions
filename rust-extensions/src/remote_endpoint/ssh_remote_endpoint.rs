@@ -1,97 +1,69 @@
 use crate::str_utils::StrUtils;
 
+const DEFAULT_SSH_PORT: u16 = 22;
+
+// Positions are byte offsets in the string which was parsed
 #[derive(Debug, Clone, Copy)]
 pub struct SshRemoteEndpointInner {
     user_start: usize,
     user_separator: usize,
     port_separator: Option<usize>,
+    port: u16,
 }
 
 impl SshRemoteEndpointInner {
     pub fn try_parse(src: &str) -> Result<Self, String> {
-        let mut user_separator = None;
-        let mut first_separator = None;
-        let mut second_separator = None;
+        let mut user_start = 0;
 
-        let mut pos = 0;
-        for c in src.chars() {
-            if c == '@' {
-                user_separator = Some(pos);
-                pos += 1;
-                continue;
-            }
-            if c != ':' {
-                pos += 1;
-                continue;
-            }
+        if let Some(scheme_separator) = src.find(':') {
+            let scheme = &src[..scheme_separator];
 
-            if first_separator.is_none() {
-                first_separator = Some(pos);
-                pos += 1;
-                continue;
+            if scheme.eq_case_insensitive("ssh") {
+                user_start = scheme_separator + 1;
             }
-            second_separator = Some(pos);
-            break;
         }
 
-        if user_separator.is_none() {
+        if src[user_start..].starts_with("//") {
+            user_start += 2;
+        }
+
+        let user_separator = match src[user_start..].rfind('@') {
+            Some(pos) => user_start + pos,
+            None => return Err(format!("Ssh string is wrong {src}")),
+        };
+
+        if src[user_start..user_separator].contains(':') {
             return Err(format!("Ssh string is wrong {src}"));
         }
 
-        match first_separator {
-            Some(first_separator) => {
-                let left_part = &src[..first_separator];
+        let host_start = user_separator + 1;
 
-                if left_part.starts_with_case_insensitive("ssh") {
-                    match second_separator {
-                        Some(second_separator) => {
-                            return Ok(Self {
-                                user_start: first_separator + 1,
-                                user_separator: user_separator.unwrap(),
-                                port_separator: Some(second_separator),
-                            });
-                        }
-                        None => {
-                            return Ok(Self {
-                                user_start: first_separator + 1,
-                                user_separator: user_separator.unwrap(),
-                                port_separator: None,
-                            });
-                        }
-                    }
-                } else {
-                    match second_separator {
-                        Some(_) => {
-                            panic!("Invalid ssh string {src}");
-                        }
-                        None => {
-                            return Ok(Self {
-                                user_start: 0,
-                                user_separator: user_separator.unwrap(),
-                                port_separator: Some(first_separator + 1),
-                            });
-                        }
-                    }
+        match src[host_start..].find(':') {
+            Some(pos) => {
+                let port_separator = host_start + pos;
+                let port = &src[port_separator + 1..];
+
+                match port.parse::<u16>() {
+                    Ok(port) => Ok(Self {
+                        user_start,
+                        user_separator,
+                        port_separator: Some(port_separator),
+                        port,
+                    }),
+                    Err(_) => Err(format!("Invalid port {port} of ssh string {src}")),
                 }
             }
-            None => {
-                return Ok(Self {
-                    user_start: 0,
-                    user_separator: user_separator.unwrap(),
-                    port_separator: None,
-                });
-            }
+            None => Ok(Self {
+                user_start,
+                user_separator,
+                port_separator: None,
+                port: DEFAULT_SSH_PORT,
+            }),
         }
     }
 
     pub fn get_user<'s>(&self, src: &'s str) -> &'s str {
-        let result = &src[self.user_start..self.user_separator];
-
-        if result.starts_with("//") {
-            &result[2..]
-        } else {
-            result
-        }
+        &src[self.user_start..self.user_separator]
     }
 
     pub fn get_host<'s>(&self, src: &'s str) -> &'s str {
@@ -108,14 +80,7 @@ impl SshRemoteEndpointInner {
     }
 
     pub fn get_host_port<'s>(&self, src: &'s str) -> (&'s str, u16) {
-        if let Some(port) = self.get_port(src) {
-            match port.parse::<u16>() {
-                Ok(port) => (self.get_host(src), port),
-                Err(_) => panic!("Invalid port {port}"),
-            }
-        } else {
-            (self.get_host(src), 22)
-        }
+        (self.get_host(src), self.port)
     }
 }
 
@@ -231,5 +196,209 @@ mod tests {
         assert_eq!(ssh.get_host(), "host");
         assert_eq!(ssh.get_port(), None);
         assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_upper_case_scheme() {
+        let ssh = super::SshRemoteEndpoint::try_parse("SSH://user@host:22").unwrap();
+        assert_eq!(ssh.get_user(), "user");
+        assert_eq!(ssh.get_host(), "host");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_no_scheme_and_no_port() {
+        let ssh = super::SshRemoteEndpoint::try_parse("user@host").unwrap();
+        assert_eq!(ssh.get_user(), "user");
+        assert_eq!(ssh.get_host(), "host");
+        assert_eq!(ssh.get_port(), None);
+        assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_no_scheme_with_port() {
+        let ssh = super::SshRemoteEndpoint::try_parse("user@host:22").unwrap();
+        assert_eq!(ssh.get_user(), "user");
+        assert_eq!(ssh.get_host(), "host");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_user_name_starting_with_ssh() {
+        let ssh = super::SshRemoteEndpoint::try_parse("sshuser@host:22").unwrap();
+        assert_eq!(ssh.get_user(), "sshuser");
+        assert_eq!(ssh.get_host(), "host");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_scheme_is_exactly_ssh() {
+        for src in [
+            "http://user@host:22",
+            "ssh2://user@host:22",
+            "sshx:user@host",
+        ] {
+            assert!(super::SshRemoteEndpoint::try_parse(src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
+    fn test_extra_colon_with_no_scheme() {
+        assert!(super::SshRemoteEndpoint::try_parse("a@b:1:2").is_err());
+    }
+
+    #[test]
+    fn test_invalid_port() {
+        for src in [
+            "ssh://user@host:22x",
+            "ssh://user@host:99999",
+            "ssh://user@host:65536",
+            "ssh://user@host:",
+            "ssh://user@host:22/path",
+            "user@host:22x",
+        ] {
+            assert!(super::SshRemoteEndpoint::try_parse(src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
+    fn test_max_port() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://user@host:65535").unwrap();
+        assert_eq!(ssh.get_port(), Some("65535"));
+        assert_eq!(ssh.get_host_port(), ("host", 65535));
+    }
+
+    #[test]
+    fn test_non_ascii_user() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://юзер@127.0.0.1:22").unwrap();
+        assert_eq!(ssh.get_user(), "юзер");
+        assert_eq!(ssh.get_host(), "127.0.0.1");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("127.0.0.1", 22));
+    }
+
+    #[test]
+    fn test_one_non_ascii_char_user() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://ю@host").unwrap();
+        assert_eq!(ssh.get_user(), "ю");
+        assert_eq!(ssh.get_host(), "host");
+        assert_eq!(ssh.get_port(), None);
+        assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_non_ascii_host_with_no_port() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://user@хост").unwrap();
+        assert_eq!(ssh.get_user(), "user");
+        assert_eq!(ssh.get_host(), "хост");
+        assert_eq!(ssh.get_port(), None);
+        assert_eq!(ssh.get_host_port(), ("хост", 22));
+    }
+
+    #[test]
+    fn test_non_ascii_host_with_port() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://user@хост:22").unwrap();
+        assert_eq!(ssh.get_user(), "user");
+        assert_eq!(ssh.get_host(), "хост");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("хост", 22));
+    }
+
+    #[test]
+    fn test_non_ascii_owned() {
+        let ssh =
+            super::SshRemoteEndpointOwned::try_parse("ssh://юзер@хост:22".to_string()).unwrap();
+        assert_eq!(ssh.get_user(), "юзер");
+        assert_eq!(ssh.get_host_port(), ("хост", 22));
+        assert_eq!(ssh.to_ref().to_owned().get_host_port(), ("хост", 22));
+    }
+
+    #[test]
+    fn test_ipv6_host_in_brackets() {
+        for src in ["ssh://user@[::1]:22", "ssh://user@[::1]"] {
+            assert!(super::SshRemoteEndpoint::try_parse(src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
+    fn test_empty_user() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://@host:22").unwrap();
+        assert_eq!(ssh.get_user(), "");
+        assert_eq!(ssh.get_host(), "host");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("host", 22));
+    }
+
+    #[test]
+    fn test_empty_host() {
+        let ssh = super::SshRemoteEndpoint::try_parse("ssh://user@:22").unwrap();
+        assert_eq!(ssh.get_user(), "user");
+        assert_eq!(ssh.get_host(), "");
+        assert_eq!(ssh.get_port(), Some("22"));
+        assert_eq!(ssh.get_host_port(), ("", 22));
+    }
+
+    #[test]
+    fn test_empty_user_and_host() {
+        let ssh = super::SshRemoteEndpoint::try_parse("@").unwrap();
+        assert_eq!(ssh.get_user(), "");
+        assert_eq!(ssh.get_host(), "");
+        assert_eq!(ssh.get_port(), None);
+        assert_eq!(ssh.get_host_port(), ("", 22));
+    }
+
+    #[test]
+    fn test_rejected_strings() {
+        for src in [
+            "ssh://user:pass@host:22",
+            "user:pass@host",
+            "ssh://host:22",
+            "",
+        ] {
+            assert!(super::SshRemoteEndpoint::try_parse(src).is_err(), "{src}");
+        }
+    }
+
+    #[test]
+    fn test_accepted_string_never_panics_in_getters() {
+        let schemes = [
+            "", "ssh:", "ssh://", "SSH://", "sshx:", "http://", "//", ":",
+        ];
+        let users = ["user", "", "ю", "юзер", "a:b", "a@b", "ssh"];
+        let hosts = ["host", "", "хост", "[::1]", "127.0.0.1", "a/b"];
+        let ports = [
+            "", ":", ":22", ":22x", ":99999", ":1:2", ":22/path", ":２２",
+        ];
+
+        for scheme in schemes {
+            for user in users {
+                for user_separator in ["@", ""] {
+                    for host in hosts {
+                        for port in ports {
+                            let src = format!("{scheme}{user}{user_separator}{host}{port}");
+
+                            let Ok(ssh) = super::SshRemoteEndpoint::try_parse(&src) else {
+                                continue;
+                            };
+
+                            let (user, host) = (ssh.get_user(), ssh.get_host());
+
+                            let (expected_port, parsed) = match ssh.get_port() {
+                                Some(port) => {
+                                    (port.parse().unwrap(), format!("{user}@{host}:{port}"))
+                                }
+                                None => (22, format!("{user}@{host}")),
+                            };
+
+                            assert_eq!(ssh.get_host_port(), (host, expected_port), "{src}");
+                            assert!(src.ends_with(&parsed), "{src}");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
