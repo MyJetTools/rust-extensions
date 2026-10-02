@@ -8,6 +8,13 @@ use super::{MyTimerTick, RepeatTimerIteration};
 
 pub type RegisteredTimer = (String, Arc<dyn MyTimerTick + Send + Sync + 'static>);
 
+/// The names of the registered ticks, comma separated. A timer has no name of
+/// its own - this is what tells one of them from another in a panic message.
+pub fn get_timer_names(timers: &[RegisteredTimer]) -> String {
+    let names: Vec<&str> = timers.iter().map(|(name, _)| name.as_str()).collect();
+    names.join(", ")
+}
+
 /// Runs a single pass over `timers` and returns the ones which asked to be
 /// repeated immediately.
 ///

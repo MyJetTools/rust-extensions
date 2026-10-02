@@ -1,7 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use crate::{
-    my_timer::timers_iteration::{execute_timer, execute_timers_iteration, RegisteredTimer},
+    my_timer::timers_iteration::{
+        execute_timer, execute_timers_iteration, get_timer_names, RegisteredTimer,
+    },
     Logger, MyTimerTick, RepeatTimerIteration, Startable,
 };
 
@@ -22,6 +30,7 @@ pub struct MyExactTimer {
     interval: ExactTimerInterval,
     timers: Vec<RegisteredTimer>,
     iteration_timeout: Duration,
+    started: AtomicBool,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
@@ -34,6 +43,7 @@ impl MyExactTimer {
             interval,
             timers: Vec::new(),
             iteration_timeout: Duration::from_secs(60),
+            started: AtomicBool::new(false),
             logger,
         }
     }
@@ -47,6 +57,7 @@ impl MyExactTimer {
             interval,
             timers: Vec::new(),
             iteration_timeout,
+            started: AtomicBool::new(false),
             logger,
         }
     }
@@ -69,7 +80,25 @@ impl MyExactTimer {
         self.timers.push((name.to_string(), my_timer_tick));
     }
 
+    /// Spawns the one and only loop of this timer. A second `start` panics -
+    /// it would put a second loop on the very same ticks, and each of them
+    /// would be executed twice on every mark.
     pub fn start(&self) {
+        // Claims the right to start before anything is spawned. `Relaxed` is
+        // enough - what is needed is the atomicity of the swap, not an ordering
+        // against anything else.
+        if self
+            .started
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            panic!(
+                "Exact timer [{}] with interval {:?} is already started",
+                get_timer_names(&self.timers),
+                self.interval
+            );
+        }
+
         let timers = self.timers.clone();
         tokio::spawn(exact_timer_loop(
             timers,
@@ -211,6 +240,10 @@ fn get_now_micros() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use parking_lot::Mutex;
+
     use super::*;
 
     #[test]
@@ -310,5 +343,81 @@ mod tests {
         );
         assert_eq!(realigned % d, 0, "re-aligned target stays on a mark");
         assert_eq!(realigned, get_next_tick_micros(now_after, d));
+    }
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+    }
+
+    struct TestLogger;
+
+    impl Logger for TestLogger {
+        fn write_info(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
+        fn write_warning(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
+        fn write_error(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
+        fn write_fatal_error(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
+        fn write_debug_info(&self, _: String, _: String, _: Option<HashMap<String, String>>) {}
+    }
+
+    /// Writes down the wall-clock second of every tick it was given.
+    struct RecordingTick {
+        seconds: Arc<Mutex<Vec<u64>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MyTimerTick for RecordingTick {
+        async fn tick(&self) -> RepeatTimerIteration {
+            self.seconds.lock().push(get_now_micros() / 1_000_000);
+            RepeatTimerIteration::WithInterval
+        }
+    }
+
+    #[test]
+    fn second_start_panics_and_does_not_spawn_a_second_loop() {
+        rt().block_on(async {
+            let seconds = Arc::new(Mutex::new(Vec::new()));
+
+            // The mark of the smallest interval is a second away at most.
+            let mut timer =
+                MyExactTimer::new(ExactTimerInterval::Every1Second, Arc::new(TestLogger));
+            timer.register_timer(
+                "test",
+                Arc::new(RecordingTick {
+                    seconds: seconds.clone(),
+                }),
+            );
+            timer.start();
+
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                timer.start();
+            }));
+
+            let panic = panicked.expect_err("The second start must panic");
+            assert_eq!(
+                panic.downcast_ref::<String>().unwrap(),
+                "Exact timer [test] with interval Every1Second is already started"
+            );
+
+            // The loop of the first start is alive...
+            for _ in 0..400 {
+                if !seconds.lock().is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            let seen = seconds.lock().clone();
+            assert!(!seen.is_empty(), "The timer did not tick");
+
+            // ...and it is the only one: two loops would tick on the very same
+            // mark, so no second may be seen twice.
+            let mut unique = seen.clone();
+            unique.dedup();
+            assert_eq!(seen, unique);
+        });
     }
 }

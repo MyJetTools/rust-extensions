@@ -1,9 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use crate::{Logger, Startable};
 
 use super::{
-    timers_iteration::{execute_timer, execute_timers_iteration, RegisteredTimer},
+    timers_iteration::{execute_timer, execute_timers_iteration, get_timer_names, RegisteredTimer},
     MyTimerTick, RepeatTimerIteration,
 };
 
@@ -12,6 +18,7 @@ pub struct MyTimer {
     timers: Vec<RegisteredTimer>,
     iteration_timeout: Duration,
     delay_before_first_tick: bool,
+    started: AtomicBool,
     logger: Arc<dyn Logger + Send + Sync + 'static>,
 }
 
@@ -22,6 +29,7 @@ impl MyTimer {
             timers: Vec::new(),
             iteration_timeout: Duration::from_secs(60),
             delay_before_first_tick: true,
+            started: AtomicBool::new(false),
             logger,
         }
     }
@@ -40,6 +48,7 @@ impl MyTimer {
             timers: Vec::new(),
             iteration_timeout,
             delay_before_first_tick: true,
+            started: AtomicBool::new(false),
             logger,
         }
     }
@@ -62,7 +71,25 @@ impl MyTimer {
         self.timers.push((name.to_string(), my_timer_tick));
     }
 
+    /// Spawns the one and only loop of this timer. A second `start` panics -
+    /// it would put a second loop on the very same ticks, and each of them
+    /// would be executed twice per interval.
     pub fn start(&self) {
+        // Claims the right to start before anything is spawned. `Relaxed` is
+        // enough - what is needed is the atomicity of the swap, not an ordering
+        // against anything else.
+        if self
+            .started
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            panic!(
+                "Timer [{}] with interval {:?} is already started",
+                get_timer_names(&self.timers),
+                self.interval
+            );
+        }
+
         let timers = self.timers.clone();
         tokio::spawn(timer_loop(
             timers,
@@ -285,6 +312,35 @@ mod tests {
             // A panic answered nothing - it must not spin the loop.
             tokio::time::sleep(Duration::from_millis(200)).await;
             assert_eq!(runs.load(Ordering::SeqCst), 1);
+        });
+    }
+
+    #[test]
+    fn second_start_panics_and_does_not_spawn_a_second_loop() {
+        rt().block_on(async {
+            let runs = Arc::new(AtomicUsize::new(0));
+
+            let mut timer = MyTimer::new(INTERVAL, Arc::new(TestLogger));
+            timer.set_first_tick_before_delay();
+            timer.register_timer("first", repeating_tick(&runs, 0));
+            timer.register_timer("second", repeating_tick(&runs, 0));
+            timer.start();
+
+            let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                timer.start();
+            }));
+
+            let panic = panicked.expect_err("The second start must panic");
+            assert_eq!(
+                panic.downcast_ref::<String>().unwrap(),
+                "Timer [first, second] with interval 30s is already started"
+            );
+
+            // The loop of the first start is alive, and it is the only one: a
+            // second loop would have made the first tick of its own by now.
+            wait_for(&runs, 2).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert_eq!(runs.load(Ordering::SeqCst), 2);
         });
     }
 }

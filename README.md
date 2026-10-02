@@ -47,7 +47,7 @@ rust-extensions = { tag = "${last_tag}", git = "https://github.com/MyJetTools/ru
   - `StringBuilder` for incremental push/format operations.
   - `SecureStringBuilder` for the same, when the content is a secret: the buffer never re-allocates itself — every retired allocation, and the final one on `Drop`, is overwritten with zeroes.
 - Binary payloads:
-  - `BinaryPayloadBuilder` to append integers (`u8` … `u64`, `i8` … `i64`) into a `Vec<u8>` or into a `&mut [u8]` given by the caller.
+  - `BinaryPayloadBuilder` to append integers (`u8` … `u64`, `i8` … `i64`), little-endian, into a `Vec<u8>` or into a `&mut [u8]` given by the caller.
   - `UInt32VariableSize` for compact integer encoding/decoding.
 - Collections:
   - `SortedVec` family: `SortedVec`, `SortedVecWithStrKey`, `SortedVecOfArc`, `SortedVecOfArcWithStrKey`, `SortedVecWith2StrKey` and `SortedVecOfArcWith2StrKey` maintain order on insert and support efficient lookups.
@@ -225,7 +225,7 @@ Not a defence against an attacker who can read the process while the value is al
 
 ## Binary helpers
 
-- `BinaryPayloadBuilder`: append integers — `write_u8` … `write_u64`, `write_i8` … `write_i64` — either to a growing `Vec<u8>` (`new_as_vec()`) or into a buffer of the caller (`new_as_slice(&mut [u8])`); `.into()` turns the builder into a `SliceOrVec<u8>`.
+- `BinaryPayloadBuilder`: append integers — `write_u8` … `write_u64`, `write_i8` … `write_i64` — either to a growing `Vec<u8>` (`new_as_vec()`) or into a buffer of the caller (`new_as_slice(&mut [u8])`). Multi-byte integers are written **little-endian**, and both modes give the very same bytes for the same writes. `.into()` turns the builder into a `SliceOrVec<u8>` with what was written: the whole `Vec`, or — in the slice mode — the written part of the buffer, not the whole of it. A write which does not fit into the buffer of the caller panics.
 - `UInt32VariableSize`: encode variable-length `u32` values for compact wire/storage formats.
 - Optional: `base64` and `hex` modules expose encode/decode helpers compatible with the rest of the crate.
 
@@ -235,10 +235,11 @@ Example:
 use rust_extensions::{BinaryPayloadBuilder, SliceOrVec};
 
 let mut builder = BinaryPayloadBuilder::new_as_vec();
-builder.write_u16(42);
+builder.write_u16(0x0102);
 builder.write_u32(7);
 let bytes: SliceOrVec<u8> = builder.into();
-assert_eq!(bytes.as_slice().len(), 2 + 4);
+// Little-endian: the lowest byte goes first.
+assert_eq!(bytes.as_slice(), &[0x02, 0x01, 7, 0, 0, 0]);
 ```
 
 ## Collections & memory helpers
@@ -298,8 +299,8 @@ for deal in deals {
 - `EventsLoop`: single-consumer async message loop — `send` is lock-free, the consumer runs in a dedicated Tokio task; `tick()` gets the event **by ownership** (no clone) and returns `RepeatIteration<TModel>`, so an unfinished iteration hands the very same model back via `Yes(model)` and is started again with it.
 - `BackgroundExecutor`: offloads work from the caller onto a single background Tokio task — `trigger()` is lock-free, callable from **any** thread (including one with no Tokio runtime around it), and runs the registered `execute()` exactly once per call, never in parallel; `execute()` can return `RepeatIteration::Yes` to ask for another iteration.
 - `BackgroundExecutorWithMultiThreads<TThreadId>`: the same, but split into independent threads by the `thread_id` given to `trigger()` — one thread id is served by one background task (sequentially, and the id is passed to `execute()`), different thread ids are served in parallel, and the task of a thread id is spawned on its first trigger and removed once its triggers are drained. `trigger()` is likewise callable from any thread.
-- `MyTimer`: tick-based scheduling; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately.
-- `MyExactTimer`: same tick model as `MyTimer`, but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
+- `MyTimer`: tick-based scheduling; `tick()` returns `RepeatTimerIteration` and can ask to be run again immediately. `start()` is called once — a second call panics.
+- `MyExactTimer`: same tick model as `MyTimer` — and the same one-shot `start()` — but fires exactly on aligned wall-clock marks (`:00, :05, :10 …`) with no drift.
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
 - `idempotency::by_process_id::IdempotencyCache` / `idempotency::by_user_id_and_process_id::IdempotencyCache`: de-duplicates retries of the same request — identified by a process id, or by a user id + process id pair — the first caller executes, concurrent retries park on the same execution, later retries get the memorized result.
@@ -799,6 +800,7 @@ How it stays exact:
 - **Recomputed after every tick** — the next mark is computed from the moment the tick *finished*, so a slow tick simply skips to the next mark instead of pushing the whole schedule back. Finishing exactly on a mark advances to the following one (never a double fire).
 - **Coarse-to-fine wait** — the timer approaches the mark by sleeping in shrinking chunks (`10s → 5s → 1s`), re-measuring each loop; once under one second remains it does a single exact sleep and wakes right on the mark. A long interval therefore never goes more than 10 seconds without looking at the wall clock.
 - **Same lifecycle as `MyTimer`** — ticks from `start()` on, for as long as the runtime lives (neither timer watches the application states — start it once the application is ready to be ticked), supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
+- **One loop per timer** — on either timer `start()` is called once: a second call panics (`… is already started`, naming the registered ticks and the interval) rather than putting a second loop on the same ticks, which would run each of them twice. Register every tick before `start()` — the loop works with the ticks registered by then.
 
 ### `RepeatTimerIteration` — leaving a tick early to reset the timeout
 
