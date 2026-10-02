@@ -70,14 +70,6 @@ impl Scheme {
     }
 }
 
-enum ReadingEndpointMode {
-    LookingForSchemeEnd,
-    NextSymbolAfterSchemeEnd,
-    ReadingSchemeLastSymbols,
-    LookingForEndOfHost,
-    ReadingPort,
-}
-
 /// Returns the byte offset of the last '/' in the run of slashes that immediately
 /// follows the scheme separator (`:`). Slicing the source from here yields the
 /// unix socket path with exactly one leading slash, no matter whether the URL was
@@ -97,6 +89,34 @@ fn unix_socket_host_position(src: &str, colon_position: usize) -> usize {
     last_slash
 }
 
+/// Reads a host with its port from `from` on. Returns the position of the port
+/// separator — the last ':' before the host ends — and the position the host, with
+/// its port, ends at: the first '/', '?' or '#', or the end of the address. In the
+/// path of a socket file a '?' and a '#' are characters of the path.
+///
+/// An IPv6 literal is written in brackets, and the colons inside them belong to the
+/// address: only a colon after the closing bracket separates the port.
+fn read_host_and_port(
+    bytes: &[u8],
+    from: usize,
+    mut inside_brackets: bool,
+    is_socket_path: bool,
+) -> (Option<usize>, usize) {
+    let mut port_position = None;
+
+    for (pos, b) in bytes.iter().enumerate().skip(from) {
+        match b {
+            b']' => inside_brackets = false,
+            b':' if !inside_brackets => port_position = Some(pos),
+            b'/' => return (port_position, pos),
+            b'?' | b'#' if !is_socket_path => return (port_position, pos),
+            _ => {}
+        }
+    }
+
+    (port_position, bytes.len())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct RemoteEndpointInner {
     scheme: Option<Scheme>,
@@ -107,110 +127,137 @@ pub struct RemoteEndpointInner {
 }
 
 impl RemoteEndpointInner {
+    fn new(
+        scheme: Option<Scheme>,
+        host_position: usize,
+        port_position: Option<usize>,
+        http_path_and_query_position: usize,
+    ) -> Self {
+        Self {
+            scheme,
+            host_position,
+            port_position,
+            http_path_and_query_position,
+            default_port: None,
+        }
+    }
+
+    /// Splits an address into the scheme, the host, the port and the http path with
+    /// the query.
+    ///
+    /// * The scheme is looked for at the start of the address only: a `:/` further
+    ///   on belongs to the path or to the query.
+    /// * The host ends at the first '/', '?' or '#', with a scheme and without one.
+    ///   Everything from there on — a fragment too — is the path with the query.
+    /// * An IPv6 literal in brackets is a host as a whole, with its brackets.
+    /// * An address that starts with '/' or '~' is the path of a socket file, and
+    ///   all of it is the host.
     pub fn try_parse(src: &str) -> Result<Self, String> {
-        let mut scheme_name_end_position = None;
+        // The delimiters are ASCII, and no ASCII byte ever appears inside a
+        // multi-byte UTF-8 sequence, so every position recorded here and sliced
+        // with later is a char boundary even when the host or the path contains
+        // multi-byte characters.
+        let bytes = src.as_bytes();
 
-        let mut http_path_and_query_position = None;
+        // The first ':' of an IPv6 literal is one of its own, so an address that
+        // starts with a literal has no scheme to look for.
+        if bytes.first() == Some(&b'[') {
+            let (port_position, host_end) = read_host_and_port(bytes, 0, true, false);
+            return Ok(Self::new(None, 0, port_position, host_end));
+        }
 
-        let mut port_position = None;
+        // `/var/run/docker.sock`, `~/docker.sock` — the path of a socket file. Its
+        // slashes are its own, so a '/', a '?' or a '#' does not end it.
+        let is_socket_path = matches!(bytes.first(), Some(b'/' | b'~'));
 
-        let mut reading_mode = ReadingEndpointMode::LookingForSchemeEnd;
+        let mut first_colon = None;
 
-        // `char_indices` yields the byte offset of each char, so every position we
-        // record and later slice with is a valid UTF-8 boundary even when the host
-        // or path contains multi-byte characters. All the reference chars we do
-        // arithmetic against (`:`, `/`) are ASCII, so `pos - 1` stays byte-safe.
-        for (pos, c) in src.char_indices() {
-            match reading_mode {
-                ReadingEndpointMode::LookingForSchemeEnd => {
-                    if c == ':' {
-                        reading_mode = ReadingEndpointMode::NextSymbolAfterSchemeEnd;
-                    }
+        for (pos, b) in bytes.iter().enumerate() {
+            match b {
+                b':' => {
+                    first_colon = Some(pos);
+                    break;
                 }
-                ReadingEndpointMode::NextSymbolAfterSchemeEnd => {
-                    if c.is_ascii_digit() {
-                        reading_mode = ReadingEndpointMode::ReadingPort;
-                        port_position = Some(pos - 1);
-                        continue;
-                    }
-
-                    if c == '/' {
-                        scheme_name_end_position = Some(pos - 1);
-                        reading_mode = ReadingEndpointMode::ReadingSchemeLastSymbols;
-                        continue;
-                    }
-
-                    scheme_name_end_position = None;
-                    reading_mode = ReadingEndpointMode::LookingForEndOfHost
+                // The host ended before any ':' — there is neither a scheme nor a
+                // port, and whatever ':' comes later belongs to the path or the query.
+                b'/' | b'?' | b'#' if !is_socket_path => {
+                    return Ok(Self::new(None, 0, None, pos));
                 }
-
-                ReadingEndpointMode::ReadingSchemeLastSymbols => {
-                    if c != '/' {
-                        reading_mode = ReadingEndpointMode::LookingForEndOfHost;
-                    }
-                }
-
-                ReadingEndpointMode::LookingForEndOfHost => match c {
-                    ':' => {
-                        port_position = Some(pos);
-                    }
-
-                    '/' => {
-                        http_path_and_query_position = Some(pos);
-                        break;
-                    }
-                    _ => {}
-                },
-                ReadingEndpointMode::ReadingPort => {
-                    if !c.is_ascii_digit() {
-                        http_path_and_query_position = Some(pos);
-                        break;
-                    }
-                }
+                _ => {}
             }
         }
 
-        let http_path_and_query_position = match http_path_and_query_position {
-            Some(pos) => pos,
-            None => src.len(),
+        let Some(first_colon) = first_colon else {
+            return Ok(Self::new(None, 0, None, src.len()));
         };
 
-        if scheme_name_end_position.is_none() {
-            return Ok(Self {
-                scheme: None,
-                host_position: 0,
-                port_position,
-                http_path_and_query_position,
-                default_port: None,
-            });
+        match bytes.get(first_colon + 1) {
+            Some(b'/') => {
+                let scheme_name = &src[..first_colon];
+
+                let Some(scheme) = Scheme::try_parse(scheme_name) else {
+                    return Err(format!("Invalid scheme name {}", scheme_name));
+                };
+
+                if scheme.is_unix_socket() {
+                    // A unix-socket URL carries an absolute socket path where the host
+                    // would normally be. Keep exactly one leading '/' regardless of how
+                    // many slashes follow the scheme separator, so `unix://path`,
+                    // `unix:///path`, `unix+http://path` and `http+unix://path` all
+                    // resolve to the very same socket path.
+                    let host_position = unix_socket_host_position(src, first_colon);
+                    return Ok(Self::new(Some(scheme), host_position, None, src.len()));
+                }
+
+                // Any other scheme ends with `://`. With one slash — `http:/host` —
+                // the address has no scheme: `http` is its host, and the path starts
+                // at the slash.
+                if bytes.get(first_colon + 2) != Some(&b'/') {
+                    return Ok(Self::new(None, 0, Some(first_colon), first_colon + 1));
+                }
+
+                // The host starts right after `://`, and its first character is read
+                // like any other: `http://:8080` has an empty host and a port,
+                // `http:///path` an empty host and a path.
+                let host_position = first_colon + 3;
+                let inside_brackets = bytes.get(host_position) == Some(&b'[');
+                let (port_position, host_end) =
+                    read_host_and_port(bytes, host_position, inside_brackets, false);
+
+                Ok(Self::new(
+                    Some(scheme),
+                    host_position,
+                    port_position,
+                    host_end,
+                ))
+            }
+            // `host:8080` — the port is the digits, and whatever follows them is the
+            // path and the query.
+            Some(b) if b.is_ascii_digit() => {
+                let port_len = bytes[first_colon + 1..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_digit())
+                    .count();
+
+                Ok(Self::new(
+                    None,
+                    0,
+                    Some(first_colon),
+                    first_colon + 1 + port_len,
+                ))
+            }
+            Some(b'?' | b'#') if !is_socket_path => Ok(Self::new(None, 0, None, first_colon + 1)),
+            // Neither a scheme nor a port follows the first ':', so it stays in the
+            // host together with the character after it, and from there on the last
+            // ':' is the port separator.
+            Some(_) => {
+                let (port_position, host_end) =
+                    read_host_and_port(bytes, first_colon + 2, false, is_socket_path);
+
+                Ok(Self::new(None, 0, port_position, host_end))
+            }
+            None => Ok(Self::new(None, 0, None, src.len())),
         }
-
-        let scheme_name_end_position = scheme_name_end_position.unwrap();
-
-        let scheme = &src[..scheme_name_end_position];
-
-        if let Some(scheme) = Scheme::try_parse(scheme) {
-            let host_position = if scheme.is_unix_socket() {
-                // A unix-socket URL carries an absolute socket path where the host
-                // would normally be. Keep exactly one leading '/' regardless of how
-                // many slashes follow the scheme separator, so `unix://path`,
-                // `unix:///path`, `unix+http://path` and `http+unix://path` all
-                // resolve to the very same socket path.
-                unix_socket_host_position(src, scheme_name_end_position)
-            } else {
-                scheme_name_end_position + scheme.host_postfix_len()
-            };
-
-            return Ok(Self {
-                scheme: Some(scheme),
-                host_position,
-                port_position,
-                http_path_and_query_position,
-                default_port: None,
-            });
-        }
-
-        return Err(format!("Invalid scheme name {}", scheme));
     }
 
     fn is_unix_socket(&self) -> bool {
@@ -267,6 +314,12 @@ impl RemoteEndpointInner {
         self.default_port
     }
 
+    /// `host:port` to connect to. An address that has no port gets the default one
+    /// of its scheme, or, with no scheme, the one set by `set_default_port`.
+    ///
+    /// The result is a `ShortString`, so this panics when it is longer than 255
+    /// bytes. A caller that takes the address from outside has to check its length
+    /// first.
     pub fn get_host_port(&self, src: &str) -> ShortString {
         let mut result = ShortString::new_empty();
 
@@ -340,10 +393,17 @@ impl<'s> RemoteEndpoint<'s> {
         self.inner.get_port(self.host_str)
     }
 
+    /// Panics when `host:port` is longer than 255 bytes, see
+    /// [`RemoteEndpointInner::get_host_port`].
     pub fn get_host_port(&self) -> ShortString {
         self.inner.get_host_port(self.host_str)
     }
 
+    /// What follows the host and the port, exactly as it is written in the address.
+    /// With no path there it starts with the '?' of the query or the '#' of the
+    /// fragment rather than with a '/', so it is not a request target as it is.
+    ///
+    /// `None` when nothing follows the host, and for a unix socket.
     pub fn get_http_path_and_query(&self) -> Option<&str> {
         if self.inner.is_unix_socket() {
             return None;
@@ -402,6 +462,8 @@ impl RemoteEndpointOwned {
         self.inner.get_port(&self.host_str)
     }
 
+    /// Panics when `host:port` is longer than 255 bytes, see
+    /// [`RemoteEndpointInner::get_host_port`].
     pub fn get_host_port(&self) -> ShortString {
         self.inner.get_host_port(&self.host_str)
     }
@@ -410,6 +472,7 @@ impl RemoteEndpointOwned {
         &self.host_str
     }
 
+    /// See [`RemoteEndpoint::get_http_path_and_query`].
     pub fn get_http_path_and_query(&self) -> Option<&str> {
         if self.inner.is_unix_socket() {
             return None;
