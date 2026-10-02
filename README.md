@@ -12,7 +12,8 @@ rust-extensions = { tag = "${last_tag}", git = "https://github.com/MyJetTools/ru
 
 ### Feature flags
 
-- `with-tokio` — Tokio-backed helpers: timers, queues, events loop, task completions, application state tracking, sortable IDs.
+- `with-tokio` — Tokio-backed helpers: timers, queues, events loop, task completions, application state tracking. Turns `rnd` on as well.
+- `rnd` — Everything which needs a source of randomness: `uuid::generate_v4()` and `SortableId` (sortable IDs).
 - `base64` — Enable base64 encode/decode utilities.
 - `hex` — Enable hex helpers.
 - `objects-pool` — Object pooling.
@@ -21,40 +22,41 @@ rust-extensions = { tag = "${last_tag}", git = "https://github.com/MyJetTools/ru
 Example:
 
 ```toml
-rust-extensions = { version = "${last_tag}", features = ["with-tokio", "base64"] }
+rust-extensions = { tag = "${last_tag}", git = "https://github.com/MyJetTools/rust-extensions.git", features = ["with-tokio", "base64"] }
 ```
 
 ## Module map (what you get)
 
 - Time: `date_time`, `duration_utils`, `stop_watch`, `atomic_stop_watch`, `atomic_duration`.
-- String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `str_utils`, `str_or_string`, `as_str`.
+- String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `secure_string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
 - Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `sized_chunks`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
-- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `my_timer`, `task_completion`, `is_initialized`, `idempotency`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `queue_to_save_or_delete_with_id`, `application_states`, `sortable_id`.
-- IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `placeholders`, `maybe_short_string`.
+- Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `background_executor_with_multi_threads`, `my_timer`, `exact_timer`, `task_completion`, `is_initialized`, `idempotency`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `queue_to_save_or_delete_with_id`, `startable`, `application_states`.
+- Randomness (feature `rnd`, on with `with-tokio`): `uuid`, `sortable_id`.
+- IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `maybe_short_string`.
 
 ## Quick recipes
 
 - Time point + interval keys:
   - `date_time::DateTimeAsMicroseconds` for UTC timestamps with µs precision.
   - `date_time::DateTimeAsMicrosecondsWithTimeZone` (+ `TimeZone`) to pair a UTC instant with an offset and render it as local wall-clock time.
-  - `date_time::interval_key::*` for rounding/grouping into year/month/week/day/hour (1h/2h/4h)/minute (1m/5m/15m/30m) buckets.
+  - `date_time::IntervalKey` / `date_time::DateTimeInterval` for rounding/grouping into year/month/week/day/hour (1h/2h/4h)/minute (1m/5m/15m/30m) buckets.
 - High-performance strings:
   - `ShortString` (Pascal-style, single-byte length, max 255 bytes on stack) with `Display`, `Serialize`, `Eq`, hashing.
 - `MaybeShortString` keeps data inline as `ShortString` when length ≤ 255 bytes; seamlessly upgrades to `String` when longer.
   - `StringBuilder` for incremental push/format operations.
   - `SecureStringBuilder` for the same, when the content is a secret: the buffer never re-allocates itself — every retired allocation, and the final one on `Drop`, is overwritten with zeroes.
 - Binary payloads:
-  - `BinaryPayloadBuilder` to append scalars, slices, and length-prefixed data into a single `Vec<u8>`.
-  - `Uint32VariableSize` for compact integer encoding/decoding.
+  - `BinaryPayloadBuilder` to append integers (`u8` … `u64`, `i8` … `i64`) into a `Vec<u8>` or into a `&mut [u8]` given by the caller.
+  - `UInt32VariableSize` for compact integer encoding/decoding.
 - Collections:
-  - `SortedVec` family: `SortedVec`, `SortedVecWithStrKey`, `SortedVecOfArc`, `SortedVecOfArcWithStrKey`, and `SortedVecWith2Keys` maintain order on insert and support efficient lookups.
-  - `AutoShrinkVec` / `AutoShrinkVecDeque` resize toward steady-state usage.
+  - `SortedVec` family: `SortedVec`, `SortedVecWithStrKey`, `SortedVecOfArc`, `SortedVecOfArcWithStrKey`, `SortedVecWith2StrKey` and `SortedVecOfArcWith2StrKey` maintain order on insert and support efficient lookups.
+  - `VecAutoShrink` / `VecDequeAutoShrink` resize toward steady-state usage.
   - `SliceOrVec` toggles between borrowed and owned buffers.
 - Async/Tokio (enable `with-tokio`):
-  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `BackgroundExecutorWithMultiThreads` to do the same per `thread_id` — sequentially within one id, in parallel across ids, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `idempotency::by_process_id::IdempotencyCache` to make a retried request execute at most once (`idempotency::by_user_id_and_process_id::IdempotencyCache` when a process id is only unique within its user), `TokioQueue` for bounded async queues, `QueueToSave` for producer/consumer disk pipelines, `ApplicationStates` for async state transitions.
+  - `MyTimer` for tick-driven tasks, `MyExactTimer` for ticks aligned to wall-clock marks, `EventsLoop` for fan-out processing, `BackgroundExecutor` to offload bursty work onto a single background task, `BackgroundExecutorWithMultiThreads` to do the same per `thread_id` — sequentially within one id, in parallel across ids, `TaskCompletion` for awaiting completion handles, `IsInitialized` as a one-shot initialization gate many tasks can await, `idempotency::by_process_id::IdempotencyCache` to make a retried request execute at most once (`idempotency::by_user_id_and_process_id::IdempotencyCache` when a process id is only unique within its user), `TokioQueue` for an in-memory byte pipe read through `AsyncRead`, `QueueToSave` / `QueueToSaveAsBulk` for producer/consumer save pipelines, `ApplicationStates` / `AppStates` for the initialized / shutting-down flags of the application.
 - File/IO:
-  - `file_utils::read_file_lines_iter`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
+  - `file_utils::format_path` / `file_utils::FilePath`, `array_of_bytes_iterator::FileIterator`, `remote_endpoint` helpers for host/port parsing.
 
 ## Time utilities in detail
 
@@ -124,7 +126,6 @@ Minimal example:
 
 ```rust
 use rust_extensions::date_time::*;
-use rust_extensions::date_time::interval_key::*;
 use std::time::Duration;
 
 let now = DateTimeAsMicroseconds::now();
@@ -224,31 +225,31 @@ Not a defence against an attacker who can read the process while the value is al
 
 ## Binary helpers
 
-- `BinaryPayloadBuilder`: append primitives (`u8`, `u16`, `u32`, `u64`, slices) and length-prefixed blobs; get the final `Vec<u8>` or borrowed slice.
-- `Uint32VariableSize`: encode variable-length `u32` values for compact wire/storage formats.
+- `BinaryPayloadBuilder`: append integers — `write_u8` … `write_u64`, `write_i8` … `write_i64` — either to a growing `Vec<u8>` (`new_as_vec()`) or into a buffer of the caller (`new_as_slice(&mut [u8])`); `.into()` turns the builder into a `SliceOrVec<u8>`.
+- `UInt32VariableSize`: encode variable-length `u32` values for compact wire/storage formats.
 - Optional: `base64` and `hex` modules expose encode/decode helpers compatible with the rest of the crate.
 
 Example:
 
 ```rust
-use rust_extensions::binary_payload_builder::BinaryPayloadBuilder;
+use rust_extensions::{BinaryPayloadBuilder, SliceOrVec};
 
-let mut builder = BinaryPayloadBuilder::new();
+let mut builder = BinaryPayloadBuilder::new_as_vec();
 builder.write_u16(42);
-builder.write_slice(b"ping");
-let bytes = builder.finish();
-assert_eq!(bytes.len(), 2 + 4);
+builder.write_u32(7);
+let bytes: SliceOrVec<u8> = builder.into();
+assert_eq!(bytes.as_slice().len(), 2 + 4);
 ```
 
 ## Collections & memory helpers
 
-- `SortedVec<T>` / `SortedVecWith2Keys<K1, K2, V>` keep elements ordered; provide binary search insertion and lookup APIs.
-- `GroupedData` to collect items by key with minimal allocations.
-- `AutoShrinkVec` / `AutoShrinkVecDeque` shrink capacity after spikes.
+- `SortedVec<TKey, TValue>` / `SortedVecWith2StrKey<TValue>` keep elements ordered; provide binary search insertion and lookup APIs. The key is taken from the element itself: `EntityWithKey<TKey>` for the former, `EntityWith2StrKey` — a primary and a secondary `&str` key — for the latter.
+- `grouped_data`: `group_to_hash_map` / `group_to_btree_map` collect an iterator into `Vec`s by key; `GroupedDataAsHashmap` / `GroupedDataAsBTreeMap` keep values as group key → key → value and drop a group once its last value is removed.
+- `VecAutoShrink` / `VecDequeAutoShrink` shrink capacity after spikes.
 - `ObjectsPool` (feature `objects-pool`) for pooling reusable buffers/objects.
 - `VecMaybeStack` (feature `vec-maybe-stack`) for small-buffer-optimized vectors.
-- Iteration helpers: `array_of_bytes_iterator::{SliceIterator, VecIterator, FileIterator}`, `slice_of_u8_utils` for safe chunking.
-- `Lazy<T>` for deferred construction guarded by `OnceLock`-like behavior.
+- Iteration helpers: `array_of_bytes_iterator::{SliceIterator, VecIterator, FileIterator}`, `slice_of_u8_utils::SliceOfU8Ext` to find a byte, a byte sequence or the first byte matching a condition in a `[u8]`.
+- `lazy::{LazyVec, LazyHashMap, LazyGroupIntoHashMap, LazyGroupIntoBTreeMap}` collect into a container which is allocated on the first insert only — `get_result()` gives `None` when nothing was added.
 - `split_into_sized_chunks` / `SizeBudget` cut a collection into batches by MEASURED size instead of item count — see below.
 
 ### Batching by size, not by count
@@ -302,23 +303,31 @@ for deal in deals {
 - `TaskCompletion`: create awaitable completion sources with error support.
 - `IsInitialized`: one-shot initialization gate — any number of tasks `await` until initialization happens, then every subsequent wait flies through a lock-free atomic flag.
 - `idempotency::by_process_id::IdempotencyCache` / `idempotency::by_user_id_and_process_id::IdempotencyCache`: de-duplicates retries of the same request — identified by a process id, or by a user id + process id pair — the first caller executes, concurrent retries park on the same execution, later retries get the memorized result.
-- `TokioQueue`: bounded async queue with backpressure.
-- `QueueToSave`: producer/consumer file-saving pipeline with retries.
-- `QueueToSaveWithId`: same producer/consumer batching as `QueueToSave`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone + Debug`; the handler receives `execute(&[T], attempt_no)` per tick. Returning means saved; a panic prints the IDs of the chunk to the console, and on a panic or a timeout the amount is logged and the same slice is handed over again after `retry_timeout` (1s, `set_retry_timeout`) with `attempt_no` + 1. No ordering guarantee across IDs.
+- `TokioQueue`: an in-memory byte pipe — producers `enqueue(&[u8])` through `get_publisher()`, the queue itself is the reading side and implements `tokio::io::AsyncRead`. It is not bounded: nothing pushes back on the producers.
+- `QueueToSave`: producer/consumer pipeline which hands the queued items to the handler one by one, by value — `execute(item)`. There are no retries: a panic or a timeout (10s) of the handler is logged and that item is lost.
+- `QueueToSaveAsBulk`: the same queue flushed in chunks of up to 50 items — the handler receives `execute(&[T], attempt_no)`. Returning means saved; on a panic or a timeout (10s) the amount is logged and the same slice is handed over again after `retry_timeout` (1s, `set_retry_timeout`) with `attempt_no` + 1.
+- `QueueToSaveWithId`: same producer/consumer batching as `QueueToSaveAsBulk`, but each item implements `PersistObjectId<ID>`. Re-enqueuing an item with an ID already in the queue overwrites the pending entry, so only the latest state per ID is flushed to the handler. `ID` must be `Hash + Eq + Clone + Debug`; the handler receives `execute(&[T], attempt_no)` per tick. Returning means saved; a panic prints the IDs of the chunk to the console, and on a panic or a timeout the amount is logged and the same slice is handed over again after `retry_timeout` (1s, `set_retry_timeout`) with `attempt_no` + 1. No ordering guarantee across IDs.
 - `QueueToSaveOrDeleteWithId`: `QueueToSaveWithId` with two pending states per ID — upsert or delete. `enqueue_delete(id)` drops the pending object right there (there is nothing to save about an object which is about to be deleted) and leaves only the ID marked for deletion; a later `enqueue_single` of the same ID overwrites the delete back into an upsert. The handler receives `&[UpsertOrDelete<ID, T>]` with the same retry contract — `UpsertOrDelete::split(items)` cuts it into `(Vec<&T>, Vec<&ID>)` for a bulk insert-or-replace plus a bulk delete.
-- `Startable`: `fn start(&self)` — implemented by `MyTimer`, `MyExactTimer`, `EventsLoop`, `BackgroundExecutor`, `BackgroundExecutorWithMultiThreads`, `QueueToSave`, `QueueToSaveAsBulk`, `QueueToSaveWithId` and `QueueToSaveOrDeleteWithId` (not available on wasm). Each of them gets everything `start` needs in `new` — the `logger`, plus `app_states` for `EventsLoop` — so they can be collected as `Vec<Arc<dyn Startable + Send + Sync + 'static>>` while the app is being wired up and started in one loop. The same `start()` is also an inherent method, so starting a single one needs no import.
-- `ApplicationStates`: async state machine with callbacks.
+- `Startable`: `fn start(&self)` — implemented by `MyTimer`, `MyExactTimer`, `EventsLoop`, `BackgroundExecutor`, `BackgroundExecutorWithMultiThreads`, `QueueToSave`, `QueueToSaveAsBulk`, `QueueToSaveWithId` and `QueueToSaveOrDeleteWithId` (not available on wasm). Each of them gets everything `start` needs in `new` — the `logger`, plus `app_states` for `EventsLoop` — so they can be collected as `Vec<Arc<dyn Startable + Send + Sync + 'static>>` while the app is being wired up and started in one loop. The same `start()` is also an inherent method, so starting a single one needs no import. `EventsLoop` is the only one of them which waits for its `app_states` to be initialized; the timers, the executors and the queues are at work from `start()` on, so start them once the application is ready.
+- `ApplicationStates`: the trait a component reads the application lifecycle through — `is_initialized()` and `is_shutting_down()`. `AppStates` is the ready implementation: two atomic flags (`create_un_initialized()` / `create_initialized()`, `set_initialized()`, `set_shutting_down()`) plus `wait_until_shutdown().await`, which hooks SIGTERM / SIGINT to raise the shutdown flag and returns once it is raised (`AppStates` is not available on wasm). Of the components above only `EventsLoop` reads it.
 - `SortableId`: monotonic sortable IDs backed by time + randomness.
 
 ```rust
 #[cfg(feature = "with-tokio")]
 async fn example_queue() {
     use rust_extensions::tokio_queue::TokioQueue;
+    use tokio::io::AsyncReadExt;
 
-    let queue = TokioQueue::new(100);
-    queue.send("item").await.unwrap();
-    let item = queue.recv().await.unwrap();
-    assert_eq!(item, "item");
+    let mut queue = TokioQueue::new();
+    let publisher = queue.get_publisher();
+
+    // Producers hold the publisher - `enqueue` takes `&self` and never awaits.
+    publisher.enqueue(b"item");
+
+    // The queue itself is the reading side - whatever takes an `AsyncRead` can drain it.
+    let mut buf = [0u8; 4];
+    queue.read_exact(&mut buf).await.unwrap();
+    assert_eq!(&buf, b"item");
 }
 ```
 
@@ -328,7 +337,7 @@ async fn example_queue() {
 
 1. **Construct in `AppCtx::new`** — the channel is created immediately, so `send` is available right away and is lock-free (no mutex on the hot path).
 2. **Register a callback** (`EventsLoopTick`) via `register_event_loop` — typically during app initialization, once dependencies are wired.
-3. **Start** — spawns the background reader task which owns the receiver + callback and drives `started` / `tick` / `finished`.
+3. **Start** — spawns the background reader task which owns the receiver + callback and drives `started` / `tick` / `finished`. The reader holds until the `app_states` given to `new` is initialized.
 4. **Send / stop** — `send(msg)` pushes a message; `stop()` sends a shutdown signal.
 
 ```rust
@@ -393,12 +402,11 @@ mod example {
 For producers that don't need access to the whole `EventsLoop` (e.g. a background task, an HTTP handler held in its own struct), grab a cheap reference-counted publisher:
 
 ```rust
-use std::sync::Arc;
 use rust_extensions::events_loop::EventsLoopPublisher;
 
-let publisher: Arc<EventsLoopPublisher<String>> = ctx.events_loop.get_publisher();
+let publisher: EventsLoopPublisher<String> = ctx.events_loop.get_publisher();
 
-// Move/clone the Arc into other tasks; `send` / `stop` work the same way and stay lock-free.
+// Move/clone the publisher into other tasks; `send` / `stop` work the same way and stay lock-free.
 tokio::spawn({
     let publisher = publisher.clone();
     async move {
@@ -407,13 +415,14 @@ tokio::spawn({
 });
 ```
 
-`get_publisher` returns `Arc<EventsLoopPublisher<TModel>>` — every call hands out a clone of the same shared publisher (the `Sender` is created once in `EventsLoop::new`).
+`get_publisher` returns `EventsLoopPublisher<TModel>` by value — every call hands out a clone which shares the one `Sender` created in `EventsLoop::new`. The `Sender` sits behind an `Arc` inside the publisher, so neither `get_publisher` nor `publisher.clone()` allocates anything.
 
 Key properties:
 
 - **Lock-free `send` / `stop`** — the `Sender` lives inside the shared `EventsLoopPublisher`; `.lock()` is only ever taken in `register_event_loop` and `start`.
 - **One-shot registration** — a second `register_event_loop` panics; `start` without a prior register panics.
 - **Bounded lifecycle** — `stop` delivers `Shutdown` through the same channel, so in-flight messages ahead of it are processed first.
+- **Follows the application states** — that is what the `app_states` given to `new` is for. The reader waits for `is_initialized()` (checked once a second) before it calls `started()` and serves the first event; events sent meanwhile are not lost, they wait in the channel. `is_shutting_down()` is checked each time the loop goes for the next event, and before an iteration is repeated on `Yes(model)`: once it is raised the loop is over and `finished()` is called. A loop parked on an empty channel does not watch the flag — it wakes on the next event, serves it and only then leaves, while `stop()` wakes it right away. Once the loop is over the receiver is gone: `send` and `stop` panic from then on.
 - **Per-tick timeout** — `set_iteration_timeout(Duration)` caps a single `tick` call; overruns are logged via the provided `Logger` and the loop keeps running.
 - **The event is moved into the tick, and comes back to repeat it** — `tick` takes `TModel` by value: nothing is cloned and nothing is borrowed, so `TModel` only has to be `Send`. An iteration which is not done with the event returns `RepeatIteration::Yes(model)` — the reader starts a new iteration **with that very model** and a fresh timeout window, the way to do a long job in portions. `RepeatIteration::No` consumes the model and the loop goes for the next event.
 - **A panic / a timeout drops the event** — the model was moved into the running future, so unwinding (or the timeout dropping that future) takes the model with it: there is nothing left to repeat with. Both cases are logged as an error via the provided `Logger` and the loop moves on to the next event instead of getting stuck. An event which must survive a failing tick has to be recoverable by the tick itself (catch the error inside `tick` and answer `Yes(model)`), or be held behind an `Arc` / a re-readable source.
@@ -487,6 +496,7 @@ Key properties:
 - **Lock-free hot path** — `trigger()` takes no lock at all: it adds one permit to the semaphore and returns. `BackgroundExecutor` holds no mutex whatsoever — the job is registered into a `OnceLock`.
 - **`trigger()` is legal from any thread** — a Tokio one, a plain `std::thread`, or an OS thread owned by a C++ host calling in through FFI. The reader is spawned once, by `start`, so a trigger never touches the runtime: `Semaphore::add_permits` is a plain synchronous method. **Only `start` has to be called from inside a runtime.** Permits accumulate, so N triggers are N iterations no matter how they interleave with the reader, and a trigger which arrives before the reader gets going is simply served later.
 - **Panic-safe** — a panicking `execute()` is caught, logged via the provided `Logger`, and the reader keeps serving. A panic answers nothing, so it consumes the trigger like a `No` — a job that panics every time cannot spin the reader forever.
+- **At work from `start()` on** — there is no `app_states` here: triggers are served from the moment `start` is called, whatever state the application is in, and for as long as the runtime lives. Start it once the application is ready for the job to run.
 - **One-shot lifecycle** — a second `register` panics, `start` without a prior `register` panics, and `trigger` before `start` panics.
 
 ### `BackgroundExecutorWithMultiThreads` use case
@@ -788,7 +798,7 @@ How it stays exact:
 - **Epoch-aligned marks** — the next fire time is the next multiple of the interval since the Unix epoch. Because the epoch sits on a minute/hour boundary and every interval evenly divides a minute or an hour, those multiples land precisely on the natural wall-clock marks. No accumulated drift.
 - **Recomputed after every tick** — the next mark is computed from the moment the tick *finished*, so a slow tick simply skips to the next mark instead of pushing the whole schedule back. Finishing exactly on a mark advances to the following one (never a double fire).
 - **Coarse-to-fine wait** — the timer approaches the mark by sleeping in shrinking chunks (`10s → 5s → 1s`), re-measuring each loop; once under one second remains it does a single exact sleep and wakes right on the mark. A long interval therefore never goes more than 10 seconds without looking at the wall clock.
-- **Same lifecycle as `MyTimer`** — ticks from `start()` on, for as long as the runtime lives (start it once the application is ready to be ticked), supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
+- **Same lifecycle as `MyTimer`** — ticks from `start()` on, for as long as the runtime lives (neither timer watches the application states — start it once the application is ready to be ticked), supports multiple registered ticks (fired together on each mark), a per-iteration timeout (`new_with_execute_timeout` / `set_iteration_timeout`, default 60s), and panic-catching that logs via the provided `Logger`.
 
 ### `RepeatTimerIteration` — leaving a tick early to reset the timeout
 
@@ -821,9 +831,9 @@ impl MyTimerTick for FlushTick {
 
 ## IO, logging, misc
 
-- `file_utils`: iterators over file lines and path helpers.
+- `file_utils`: path helpers — `format_path` expands `~` into `$HOME`, `FilePath` builds a path by appending and removing segments.
 - `logger`: simple structured logger traits.
-- `remote_endpoint`: parse/format endpoints (`host:port`), detect loopback.
+- `remote_endpoint`: parse an address into scheme, host, port and HTTP path with query — `RemoteEndpoint` (`http`, `https`, `ws`, `wss` and unix-socket addresses), `SshRemoteEndpoint` for `ssh://user@host:port`, `RemoteEndpointHostString` for a host reached through SSH (`ssh://user@host:port->host:port`).
 - Math/min-max helpers: `min_value`, `max_value`, `min_key_value`, `max_value`.
 - `StopWatch` / `AtomicStopWatch` / `AtomicDuration` for timing.
 
