@@ -115,6 +115,8 @@ pub use queue_to_save_with_id::*;
 mod sized_chunks;
 pub use sized_chunks::*;
 
+mod vec_uninit;
+
 #[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 mod queue_to_save_or_delete_with_id;
 #[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]

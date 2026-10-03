@@ -30,7 +30,7 @@ rust-extensions = { tag = "${last_tag}", git = "https://github.com/MyJetTools/ru
 - Time: `date_time`, `duration_utils`, `stop_watch`, `atomic_stop_watch`, `atomic_duration`.
 - String ergonomics: `short_string`, `maybe_short_string`, `string_builder`, `secure_string_builder`, `str_utils`, `str_or_string`, `as_str`.
 - Binary helpers: `binary_payload_builder`, `binary_search`, `uint32_variable_size`, optional `base64`, optional `hex`.
-- Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `sized_chunks`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`.
+- Collections & memory: `sorted_vec`, `sorted_ver_with_2_keys`, `grouped_data`, `auto_shrink`, `slice_or_vec`, `sized_chunks`, `vec_maybe_stack` (opt), `objects_pool` (opt), `lazy`, `linq`, `array_of_bytes_iterator`, `slice_of_u8_utils`, `vec_uninit!`.
 - Async/Tokio (feature `with-tokio`): `events_loop`, `background_executor`, `background_executor_with_multi_threads`, `my_timer`, `exact_timer`, `task_completion`, `is_initialized`, `idempotency`, `tokio_queue`, `queue_to_save`, `queue_to_save_with_id`, `queue_to_save_or_delete_with_id`, `startable`, `application_states`.
 - Randomness (feature `rnd`, on with `with-tokio`): `uuid`, `sortable_id`.
 - IO & misc: `file_utils`, `remote_endpoint`, `logger`, `min_value`, `max_value`, `min_key_value`, `maybe_short_string`.
@@ -252,6 +252,15 @@ assert_eq!(bytes.as_slice(), &[0x02, 0x01, 7, 0, 0, 0]);
 - Iteration helpers: `array_of_bytes_iterator::{SliceIterator, VecIterator, FileIterator}`, `slice_of_u8_utils::SliceOfU8Ext` to find a byte, a byte sequence or the first byte matching a condition in a `[u8]`.
 - `lazy::{LazyVec, LazyHashMap, LazyGroupIntoHashMap, LazyGroupIntoBTreeMap}` collect into a container which is allocated on the first insert only — `get_result()` gives `None` when nothing was added.
 - `split_into_sized_chunks` / `SizeBudget` cut a collection into batches by MEASURED size instead of item count — see below.
+- `vec_uninit![len]` allocates a `Vec<u8>` of `len` bytes without zeroing them — a read buffer for a socket. The bytes are garbage until written: look only at the part a read reported (`&buf[..n]`). Allows `clippy::uninit_vec` inside its expansion, so the call site needs no `#[allow]`.
+
+```rust
+use rust_extensions::vec_uninit;
+
+let mut buf = vec_uninit![1024 * 1024];
+// let n = socket.read(&mut buf).await?;
+// process(&buf[..n]);
+```
 
 ### Batching by size, not by count
 
