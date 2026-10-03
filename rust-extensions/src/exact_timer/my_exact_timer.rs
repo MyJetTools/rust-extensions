@@ -71,6 +71,17 @@ impl MyExactTimer {
         name: &str,
         my_timer_tick: Arc<dyn MyTimerTick + Send + Sync + 'static>,
     ) {
+        // The loop works with the ticks registered by `start()`: one registered
+        // later would never be executed on schedule.
+        if *self.started.get_mut() {
+            panic!(
+                "Exact timer [{}] with interval {:?} is already started: tick [{}] must be registered before start()",
+                get_timer_names(&self.timers),
+                self.interval,
+                name
+            );
+        }
+
         for (timer_name, _) in &self.timers {
             if timer_name == name {
                 panic!("Timer with the name [{}] is already registered", name);

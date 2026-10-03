@@ -55,11 +55,20 @@ where
         self.inner.enqueue_single(item);
     }
 
+    /// Registers the handler the queue hands its items to. Called again before
+    /// `start()`, it replaces the handler; after `start()` it panics.
     pub fn register_events_handler(
         &self,
         events_handle: Arc<dyn QueueToSaveWithIdEventsHandler<T> + Send + Sync + 'static>,
     ) {
         let mut write_access = self.handler.lock();
+
+        // Once started, the status stays `Working`: putting a handler back here
+        // would let a second `start()` through and put a second loop on the queue.
+        if let HandlerStatus::Working = &*write_access {
+            panic!("QueueToSaveWithId {} is already started", self.inner.name);
+        }
+
         *write_access = HandlerStatus::Some(events_handle);
     }
 
