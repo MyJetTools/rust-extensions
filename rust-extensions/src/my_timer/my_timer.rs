@@ -219,7 +219,7 @@ mod tests {
 
             if self
                 .immediate_repeats
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
                     if left == 0 {
                         None
                     } else {
