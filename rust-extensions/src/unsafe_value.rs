@@ -1,38 +1,39 @@
-use std::{fmt::Debug, ops::Deref};
+use std::fmt::Debug;
 
+use parking_lot::Mutex;
+
+/// A `Copy` value that can be read and replaced through a shared reference
+/// (`&self`), from any thread.
+///
+/// It used to write through a `&T` cast to `*mut T`. That is undefined behaviour
+/// - the compiler may assume a value behind a shared reference never changes, and
+/// release builds did drop such writes. The value now sits behind a short
+/// `parking_lot` mutex: `get_value` copies it out, `set_value` replaces it. For a
+/// plain flag or counter an `AtomicBool` / `AtomicUsize` is cheaper still.
 #[derive(Default)]
 pub struct UnsafeValue<T: Copy + Clone + Debug + Default> {
-    value: T,
+    value: Mutex<T>,
 }
 
 impl<T: Copy + Clone + Debug + Default> Debug for UnsafeValue<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.get_value())
     }
 }
 
 impl<T: Copy + Clone + Debug + Default> UnsafeValue<T> {
     pub fn new(value: T) -> Self {
-        Self { value }
+        Self {
+            value: Mutex::new(value),
+        }
     }
 
     pub fn get_value(&self) -> T {
-        self.value
+        *self.value.lock()
     }
 
     pub fn set_value(&self, new_value: T) {
-        unsafe {
-            let value = &self.value as *const T as *mut T;
-            value.write(new_value);
-        }
-    }
-}
-
-impl<T: Clone + Copy + Debug + Default> Deref for UnsafeValue<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
+        *self.value.lock() = new_value;
     }
 }
 
@@ -44,6 +45,8 @@ impl<T: Clone + Copy + Debug + Default> From<T> for UnsafeValue<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::UnsafeValue;
 
     #[test]
@@ -55,5 +58,28 @@ mod tests {
         value.set_value(20);
 
         assert_eq!(20, value.get_value());
+    }
+
+    // The shape that lost writes in release builds: a flag behind an `Arc`, set
+    // through `&self` by one function and read back by another.
+    #[inline(never)]
+    fn set_flag(flag: &UnsafeValue<bool>) {
+        if !flag.get_value() {
+            flag.set_value(true);
+        }
+    }
+
+    #[test]
+    fn a_value_set_through_a_shared_reference_is_seen_afterwards() {
+        let flag = Arc::new(UnsafeValue::new(false));
+
+        set_flag(&flag);
+        assert!(flag.get_value());
+
+        let other = flag.clone();
+        std::thread::spawn(move || other.set_value(false))
+            .join()
+            .unwrap();
+        assert!(!flag.get_value());
     }
 }
