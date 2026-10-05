@@ -109,6 +109,7 @@ pub async fn withdraw(
 
 - **The last N results are kept.** N is `max_amount`, `DEFAULT_MAX_AMOUNT` = 1000. The oldest-completed result is evicted first, and a hit does not refresh an entry. `0` means "deduplicate concurrent retries, remember nothing". In `by_user_id_and_process_id` the cap is shared by all users. Lookups scan linearly — right for thousands, not for hundreds of thousands.
 - **Executions are bounded.** Each runs under a timeout, `DEFAULT_EXECUTION_TIMEOUT` = 5s, changed with `set_execution_timeout`.
-- **The first caller owns the execution.** If its future is dropped (an HTTP timeout), or the execution panics or times out, the entry is removed and nothing is remembered — nobody knows whether the side effect happened. The next retry executes from scratch. Retries already waiting get `get_result()` panicking with `"Task is dropped"`.
+- **The first caller owns the execution.** If its future is dropped (an HTTP timeout), or the execution panics or times out, the entry is removed and nothing is remembered — nobody knows whether the side effect happened. The next retry executes from scratch.
+- **Failure reaches every caller as a panic.** A timed-out or panicked execution makes the first caller's `execute(...).await` panic, and the `execute(...).await` of every retry waiting on it panics with `"Task is dropped"`. Only `Ok` and `Err` are answers.
 - **Register exactly once, before use.** A second `register_execution` panics, and `execute` before registration panics.
 - **No lock is held across an `.await`.**

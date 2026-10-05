@@ -47,6 +47,20 @@ assert_eq!(ep.get_http_path_and_query(), None);
 
 `get_host_port()` returns a `ShortString` and panics past 255 bytes, so check the length of an address that comes from outside.
 
+`Scheme` is what `get_scheme()` returns; it also parses on its own, case-insensitively:
+
+```rust
+use rust_extensions::remote_endpoint::Scheme;
+
+let https = Scheme::try_parse("HTTPS").unwrap();
+assert!(https.is_https());
+assert_eq!(https.get_default_port(), Some(443));
+
+assert_eq!(Scheme::try_parse("ws").unwrap().get_default_port(), Some(80));
+assert_eq!(Scheme::try_parse("unix").unwrap().get_default_port(), None); // http+unix, unix+http too
+assert!(Scheme::try_parse("ftp").is_none());
+```
+
 `RemoteEndpointOwned` is the same thing holding its `String`:
 
 ```rust

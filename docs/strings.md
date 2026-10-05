@@ -8,7 +8,7 @@ Up to 255 bytes of UTF-8 inline: a `[u8; 256]` with the length in the first byte
 
 `Ord` is by length first, then by bytes: `"b" < "aa"`. Fine for a map key, not for alphabetical output.
 
-The `push*` methods panic past 255 bytes; the `try_*` ones return `false` instead.
+The `push*` methods panic past 255 bytes; the `try_*` ones return `false` and leave the string as it was.
 
 ```rust
 use rust_extensions::ShortString;
@@ -27,6 +27,7 @@ assert_eq!(s.len(), 12);
 let mut full = ShortString::from_str(&"x".repeat(255)).unwrap();
 assert!(!full.try_push('y'));
 assert!(!full.try_push_str("y"));
+assert_eq!(full.len(), 255); // unchanged
 
 s.update("Hello");
 s.insert(5, " world").unwrap();

@@ -16,20 +16,26 @@ impl DateTimeStruct {
         self.year == other.year && self.month == other.month && self.day == other.day
     }
 
+    /// Moves to the same day of the next month. The day is not adjusted: Jan 31
+    /// becomes Feb 31, which does not convert back into a `DateTimeAsMicroseconds`.
     pub fn inc_month(&mut self) {
         self.month += 1;
         if self.month > 12 {
             self.month = 1;
             self.year += 1;
         }
+        // It is another date now - the remembered day of the week is not its own.
+        self.dow = None;
     }
 
+    /// Moves to the same day of the previous month; the day is not adjusted.
     pub fn dec_month(&mut self) {
         self.month -= 1;
         if self.month == 0 {
             self.month = 12;
             self.year -= 1;
         }
+        self.dow = None;
     }
 
     pub fn from_str(src: &str) -> Option<Self> {
@@ -114,6 +120,22 @@ mod test {
         assert_eq!(54, result.time.sec);
 
         assert_eq!(0, result.time.micros);
+    }
+
+    /// The struct comes with its day of the week filled in - it has to be
+    /// forgotten when the date moves.
+    #[test]
+    fn the_day_of_week_follows_the_month() {
+        // Sunday, 25 Apr 2021
+        let mut dt: DateTimeStruct = DateTimeAsMicroseconds::create(2021, 4, 25, 0, 0, 0, 0).into();
+        assert_eq!(dt.get_day_of_week(), Weekday::Sun);
+
+        dt.inc_month(); // Tuesday, 25 May 2021
+        assert_eq!(dt.get_day_of_week(), Weekday::Tue);
+
+        dt.dec_month();
+        dt.dec_month(); // Thursday, 25 Mar 2021
+        assert_eq!(dt.get_day_of_week(), Weekday::Thu);
     }
 }
 

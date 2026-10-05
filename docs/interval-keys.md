@@ -44,6 +44,15 @@ assert_eq!(next.to_i64(), 202104251738);
 assert_eq!(minute.add(Duration::from_secs(30)), minute);
 assert_eq!(next.sub(Duration::from_secs(60)), minute);
 
+// add/sub are not calendar-aware: they move the slot start by the Duration and snap.
+// Months and years are not fixed Durations - step them one slot at a time:
+let month: IntervalKey<MonthKey> = dt.into();
+let day = Duration::from_secs(86_400);
+assert_eq!(month.add(day * 31).to_i64(), 202105); // from the 1st, 31 days is always the next month
+assert_eq!(month.sub(day).to_i64(), 202103); // a day before the 1st is the previous month
+let year: IntervalKey<YearKey> = dt.into();
+assert_eq!(year.add(day * 366).to_i64(), 2022);
+
 // Keys are Copy + Ord + Hash
 assert!(minute < next);
 
