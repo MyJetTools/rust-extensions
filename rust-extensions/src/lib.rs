@@ -124,3 +124,55 @@ pub use queue_to_save_or_delete_with_id::*;
 mod startable;
 #[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
 pub use startable::*;
+
+/// Every `rust` block of `docs/*.md` is compiled - and the synchronous ones run - by
+/// `cargo test --doc --all-features`, so the docs can not drift away from the API.
+#[cfg(doctest)]
+mod docs {
+    #[doc = include_str!("../../docs/date-time.md")]
+    struct DateTime;
+    #[doc = include_str!("../../docs/interval-keys.md")]
+    struct IntervalKeys;
+    #[doc = include_str!("../../docs/durations.md")]
+    struct Durations;
+    #[doc = include_str!("../../docs/strings.md")]
+    struct Strings;
+    #[doc = include_str!("../../docs/secure-string-builder.md")]
+    struct SecureStringBuilder;
+    #[cfg(all(feature = "hex", feature = "base64", feature = "with-tokio"))]
+    #[doc = include_str!("../../docs/binary.md")]
+    struct Binary;
+    #[doc = include_str!("../../docs/sorted-vec.md")]
+    struct SortedVec;
+    #[cfg(all(feature = "vec-maybe-stack", feature = "objects-pool"))]
+    #[doc = include_str!("../../docs/collections.md")]
+    struct Collections;
+    #[doc = include_str!("../../docs/sized-chunks.md")]
+    struct SizedChunks;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/timers.md")]
+    struct Timers;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/events-loop.md")]
+    struct EventsLoop;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/background-executor.md")]
+    struct BackgroundExecutor;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/queue-to-save.md")]
+    struct QueueToSave;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/idempotency.md")]
+    struct Idempotency;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/async-primitives.md")]
+    struct AsyncPrimitives;
+    #[cfg(feature = "with-tokio")]
+    #[doc = include_str!("../../docs/app-lifecycle.md")]
+    struct AppLifecycle;
+    #[doc = include_str!("../../docs/remote-endpoint.md")]
+    struct RemoteEndpoint;
+    #[cfg(feature = "rnd")]
+    #[doc = include_str!("../../docs/misc.md")]
+    struct Misc;
+}

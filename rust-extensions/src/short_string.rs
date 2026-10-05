@@ -3,9 +3,9 @@ use std::{
     ops::Deref,
 };
 
-use crate::slice_of_u8_utils::SliceOfU8Ext;
-
 pub const SHORT_STRING_MAX_LEN: usize = 255;
+/// The bytes past the length are always zero: the derived comparisons look at the
+/// whole buffer, so a leftover of a longer value would make equal strings unequal.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ShortString {
     data: [u8; 256],
@@ -47,7 +47,13 @@ impl ShortString {
             );
         }
 
+        let old_len = self.len();
         self.data[1..src.len() + 1].copy_from_slice(src.as_bytes());
+
+        if src.len() < old_len {
+            self.data[src.len() + 1..old_len + 1].fill(0);
+        }
+
         self.data[0] = src.len() as u8;
     }
 
@@ -162,7 +168,21 @@ impl ShortString {
         unsafe { std::str::from_utf8_unchecked(&self.data[1..len + 1]) }
     }
 
+    /// Cuts the string to `pos` bytes. Panics when `pos` falls inside a UTF-8 char -
+    /// `as_str` would hand out a `str` that is not UTF-8.
     pub fn set_len(&mut self, pos: u8) {
+        let old_len = self.len();
+        let new_len = pos as usize;
+
+        if new_len < old_len {
+            assert!(
+                self.as_str().is_char_boundary(new_len),
+                "ShortString::set_len({}) cuts the char at this position",
+                new_len
+            );
+            self.data[new_len + 1..old_len + 1].fill(0);
+        }
+
         self.data[0] = pos;
     }
 
@@ -170,50 +190,27 @@ impl ShortString {
         crate::str_utils::compare_strings_case_insensitive(self.as_str(), other)
     }
 
+    /// Replaces every occurrence of `from` with `to`, the way `str::replace` does.
+    /// Returns `false` and leaves the string as it was when the result would be
+    /// longer than 255 bytes.
     pub fn replace(&mut self, from: &str, to: &str) -> bool {
-        let mut pos = 0;
+        let mut result = ShortString::new_empty();
+        let src = self.as_str();
+        let mut copied_up_to = 0;
 
-        while let Some(found_pos) = (&self.data[1..]).find_sequence_pos(from.as_bytes(), pos) {
-            if self.len() - from.len() + to.len() > SHORT_STRING_MAX_LEN {
+        for (pos, _) in src.match_indices(from) {
+            if !result.try_push_str(&src[copied_up_to..pos]) || !result.try_push_str(to) {
                 return false;
             }
 
-            if from.len() == to.len() {
-                self.data[found_pos + 1..found_pos + 1 + from.len()].copy_from_slice(to.as_bytes());
-            } else {
-                let (pos_from_move, pos_to_move, new_len) = if from.len() < to.len() {
-                    let size_increase = to.len() - from.len();
-                    let pos_from_move = found_pos + from.len() + 1;
-                    let pos_to_move = pos_from_move + size_increase;
-
-                    (pos_from_move, pos_to_move, self.len() + size_increase)
-                } else {
-                    let size_decrease = from.len() - to.len();
-                    let pos_from_move = found_pos + from.len() + 1;
-                    let pos_to_move = pos_from_move - size_decrease;
-                    (pos_from_move, pos_to_move, self.len() - size_decrease)
-                };
-
-                let mut slice_to_copy = [0u8; 255];
-
-                let len_to_copy = self.len() + 1 - pos_from_move;
-
-                slice_to_copy[..len_to_copy]
-                    .copy_from_slice(&self.data[pos_from_move..pos_from_move + len_to_copy]);
-
-                self.data[pos_to_move..pos_to_move + len_to_copy]
-                    .copy_from_slice(&slice_to_copy[..len_to_copy]);
-
-                let to = to.as_bytes();
-
-                self.data[found_pos + 1..found_pos + 1 + to.len()].copy_from_slice(to);
-
-                self.data[0] = new_len as u8;
-            }
-
-            pos += to.len();
+            copied_up_to = pos + from.len();
         }
 
+        if !result.try_push_str(&src[copied_up_to..]) {
+            return false;
+        }
+
+        *self = result;
         true
     }
 }
@@ -366,6 +363,58 @@ mod test {
         my_str.replace("beautiful", "my");
 
         assert_eq!(&my_str, "Hello my world my");
+    }
+
+    /// The search goes on after the inserted text, so a `to` which contains
+    /// `from` is not replaced again.
+    #[test]
+    fn test_replace_with_a_value_containing_the_pattern() {
+        let mut my_str = ShortString::from_str("bab").unwrap();
+
+        assert!(my_str.replace("a", "aa"));
+
+        assert_eq!(my_str.as_str(), "baab");
+    }
+
+    /// Only the live part is searched - a leftover of a longer value is not.
+    #[test]
+    fn test_replace_after_update_to_a_shorter_value() {
+        let mut my_str = ShortString::from_str("hello world").unwrap();
+        my_str.update("hi");
+
+        assert!(my_str.replace("o", "00"));
+
+        assert_eq!(my_str.as_str(), "hi");
+    }
+
+    #[test]
+    fn test_replace_which_does_not_fit_changes_nothing() {
+        let src = "a".repeat(200);
+        let mut my_str = ShortString::from_str(src.as_str()).unwrap();
+
+        assert!(!my_str.replace("a", "aa"));
+
+        assert_eq!(my_str.as_str(), src.as_str());
+    }
+
+    #[test]
+    fn test_equal_after_update_to_a_shorter_value() {
+        let mut updated = ShortString::from_str("hello").unwrap();
+        updated.update("hi");
+
+        assert!(updated == ShortString::from_str("hi").unwrap());
+
+        let mut cut = ShortString::from_str("hi!").unwrap();
+        cut.set_len(2);
+
+        assert!(cut == ShortString::from_str("hi").unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "cuts the char")]
+    fn test_set_len_inside_a_char_panics() {
+        let mut my_str = ShortString::from_str("Á").unwrap();
+        my_str.set_len(1);
     }
 
     #[test]

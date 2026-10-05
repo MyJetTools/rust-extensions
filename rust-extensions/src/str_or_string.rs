@@ -58,7 +58,7 @@ impl<'s> StrOrString<'s> {
         self.from.is_some() || self.to.is_some()
     }
 
-    pub fn as_str(&'s self) -> &'s str {
+    pub fn as_str(&self) -> &str {
         let result = match &self.data {
             StrOrStringData::AsStr(s) => s,
             StrOrStringData::AsString(s) => s.as_str(),

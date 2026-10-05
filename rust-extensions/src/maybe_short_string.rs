@@ -59,7 +59,7 @@ impl MaybeShortString {
     pub fn push_str(&mut self, c: &str) {
         match self {
             MaybeShortString::AsShortString(value) => {
-                if !value.try_push_str(c) {
+                if value.try_push_str(c) {
                     return;
                 }
 
@@ -152,5 +152,31 @@ impl TryInto<ShortString> for MaybeShortString {
             MaybeShortString::AsShortString(value) => Ok(value),
             MaybeShortString::AsString(value) => Err(value),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MaybeShortString;
+
+    #[test]
+    fn push_str_keeps_a_short_value_short() {
+        let mut value = MaybeShortString::from_str("x");
+        value.push_str("ab");
+
+        assert_eq!(value.as_str(), "xab");
+        assert!(matches!(value, MaybeShortString::AsShortString(_)));
+    }
+
+    #[test]
+    fn push_str_which_does_not_fit_promotes_to_string() {
+        let long = "y".repeat(300);
+
+        let mut value = MaybeShortString::from_str("x");
+        value.push_str(long.as_str());
+
+        assert_eq!(value.len(), 301);
+        assert!(value.as_str().starts_with("xy"));
+        assert!(matches!(value, MaybeShortString::AsString(_)));
     }
 }

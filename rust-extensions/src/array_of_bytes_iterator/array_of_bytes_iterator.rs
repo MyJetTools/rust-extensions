@@ -72,7 +72,7 @@ pub trait ArrayOfBytesIterator {
     fn peek_and_find_sequence_pos(&self, mut pos: usize, sequence_to_find: &[u8]) -> Option<usize> {
         let slice = self.get_src_slice();
 
-        while pos + sequence_to_find.len() < slice.len() {
+        while pos + sequence_to_find.len() <= slice.len() {
             let pos_slice = &slice[pos..pos + sequence_to_find.len()];
 
             if pos_slice == sequence_to_find {
@@ -85,18 +85,53 @@ pub trait ArrayOfBytesIterator {
         None
     }
 
+    /// The next `amount` bytes, moving the position past them. `None` - and the
+    /// position stays - when fewer than `amount` bytes are left.
     fn advance(&self, amount: usize) -> Option<&[u8]> {
         let pos = self.get_pos();
         let pos_after = amount + pos;
 
         let data = self.get_src_slice();
 
-        if pos_after >= data.len() {
+        if pos_after > data.len() {
             None
         } else {
             let result = &data[pos..pos_after];
             self.set_pos(pos_after);
             Some(result)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ArrayOfBytesIterator;
+    use crate::array_of_bytes_iterator::SliceIterator;
+
+    #[test]
+    fn advance_can_take_the_last_bytes() {
+        let src = SliceIterator::from_str("abc");
+
+        assert_eq!(src.advance(2), Some(b"ab".as_slice()));
+        assert_eq!(src.advance(1), Some(b"c".as_slice()));
+        assert_eq!(src.get_pos(), 3);
+        assert!(src.get_next().is_none());
+    }
+
+    #[test]
+    fn advance_past_the_end_keeps_the_position() {
+        let src = SliceIterator::from_str("abc");
+
+        assert_eq!(src.advance(4), None);
+        assert_eq!(src.get_pos(), 0);
+    }
+
+    #[test]
+    fn a_sequence_at_the_very_end_is_found() {
+        let src = SliceIterator::from_str("abc");
+
+        assert_eq!(src.peek_and_find_sequence_pos(0, b"bc"), Some(1));
+        assert_eq!(src.peek_and_find_sequence_pos_from_current_pos(b"c"), Some(2));
+        assert_eq!(src.peek_and_find_sequence_pos(0, b"cd"), None);
     }
 }

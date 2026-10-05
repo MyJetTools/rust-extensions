@@ -292,38 +292,18 @@ impl<TKey: Ord, TValue: EntityWithKey<TKey>> SortedVec<TKey, TValue> {
         self.items.is_empty()
     }
 
+    /// The last `amount` items whose key is not above `highest_key`.
     pub fn get_highest_and_below_amount(&self, highest_key: &TKey, amount: usize) -> &[TValue] {
-        if self.items.is_empty() {
-            return &self.items[0..0];
-        }
-
-        let index_to = self
+        // Right past the last item whose key is <= highest_key.
+        let end = match self
             .items
-            .binary_search_by(|itm| itm.get_key().cmp(highest_key));
-
-        let mut index_to = match index_to {
-            Ok(index_to) => index_to,
-            Err(index_to) => index_to,
+            .binary_search_by(|itm| itm.get_key().cmp(highest_key))
+        {
+            Ok(index) => index + 1,
+            Err(index) => index,
         };
 
-        if index_to >= self.items.len() {
-            index_to = self.items.len() - 1;
-        }
-
-        let index_to_key = self.items[index_to].get_key();
-        if index_to_key <= highest_key {
-            if amount >= index_to {
-                return &self.items[..=index_to];
-            }
-
-            return &self.items[index_to - amount + 1..=index_to];
-        }
-
-        if amount >= index_to {
-            return &self.items[..index_to];
-        }
-
-        &self.items[index_to - amount + 1..index_to]
+        &self.items[end.saturating_sub(amount)..end]
     }
 
     pub fn drain_into_vec(&mut self) -> Vec<TValue> {
@@ -643,6 +623,24 @@ mod tests {
             Vec::<u8>::new(),
             result.into_iter().map(|itm| itm.value).collect::<Vec<u8>>()
         );
+    }
+
+    /// `amount` equal to the index of the highest key used to hand out one item
+    /// too many, and a `highest_key` between two keys - one item too few.
+    #[test]
+    fn test_get_highest_and_below_amount_returns_exactly_amount() {
+        let mut vec = super::SortedVec::new();
+
+        for key in [1, 3, 4, 6, 7] {
+            vec.insert_or_replace(TestEntity { key, value: key });
+        }
+
+        let values = |result: &[TestEntity]| result.iter().map(|itm| itm.value).collect::<Vec<u8>>();
+
+        assert_eq!(vec![3u8, 4u8], values(vec.get_highest_and_below_amount(&4, 2)));
+        assert_eq!(vec![3u8, 4u8], values(vec.get_highest_and_below_amount(&5, 2)));
+        assert_eq!(vec![1u8, 3u8, 4u8], values(vec.get_highest_and_below_amount(&5, 3)));
+        assert_eq!(Vec::<u8>::new(), values(vec.get_highest_and_below_amount(&7, 0)));
     }
 
     #[test]

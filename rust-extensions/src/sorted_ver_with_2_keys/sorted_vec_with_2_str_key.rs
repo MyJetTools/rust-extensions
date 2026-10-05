@@ -62,6 +62,11 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
             Ok(partition_index) => {
                 let partition = self.partitions.get_mut(partition_index).unwrap();
                 let (_, result) = partition.insert_or_replace(item);
+
+                if result.is_none() {
+                    self.len += 1;
+                }
+
                 result
             }
             Err(index_to_insert) => {
@@ -270,6 +275,11 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
                     self.len -= 1;
                 }
 
+                // An empty partition would hide the neighbours from `first` / `last`.
+                if partition.is_empty() {
+                    self.partitions.remove(partition_index);
+                }
+
                 removed_item
             }
             Err(_) => None,
@@ -278,6 +288,7 @@ impl<TValue: super::EntityWith2StrKey> SortedVecWith2StrKey<TValue> {
 
     pub fn clear(&mut self) {
         self.partitions.clear();
+        self.len = 0;
     }
 
     pub fn first(&self) -> Option<&TValue> {
@@ -444,5 +455,45 @@ mod tests {
         let item = items.get("pk", "key2").unwrap();
 
         assert_eq!(item.value, 2)
+    }
+
+    fn entity(primary_key: &str, secondary_key: &str) -> TestEntity {
+        TestEntity {
+            primary_key: primary_key.to_string(),
+            secondary_key: secondary_key.to_string(),
+            value: 0,
+        }
+    }
+
+    #[test]
+    fn test_len_counts_every_row() {
+        let mut items = SortedVecWith2StrKey::new();
+
+        items.insert_or_replace(entity("a", "1"));
+        items.insert_or_replace(entity("a", "2"));
+        items.insert_or_replace(entity("b", "1"));
+        assert_eq!(items.len(), 3);
+
+        // Replacing a row does not change the amount.
+        items.insert_or_replace(entity("a", "2"));
+        assert_eq!(items.len(), 3);
+
+        items.clear();
+        assert_eq!(items.len(), 0);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_removing_the_last_row_drops_the_partition() {
+        let mut items = SortedVecWith2StrKey::new();
+
+        items.insert_or_replace(entity("a", "1"));
+        items.insert_or_replace(entity("b", "1"));
+
+        items.remove("a", "1");
+
+        assert_eq!(items.partitions_len(), 1);
+        assert_eq!(items.first().unwrap().primary_key, "b");
+        assert_eq!(items.len(), 1);
     }
 }

@@ -326,6 +326,55 @@ mod tests {
         });
     }
 
+    /// Sleeps far longer than the iteration timeout, then reports it got to the end.
+    struct SlowTick {
+        started: Arc<AtomicUsize>,
+        finished: Arc<AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl MyTimerTick for SlowTick {
+        async fn tick(&self) -> RepeatTimerIteration {
+            self.started.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            self.finished.fetch_add(1, Ordering::SeqCst);
+            RepeatTimerIteration::WithInterval
+        }
+    }
+
+    /// With several ticks each one runs in its own task, and a task is not
+    /// stopped by dropping its handle - a timed out tick has to be aborted.
+    #[test]
+    fn a_tick_which_times_out_is_cancelled_next_to_other_ticks() {
+        rt().block_on(async {
+            let started = Arc::new(AtomicUsize::new(0));
+            let finished = Arc::new(AtomicUsize::new(0));
+            let calm_runs = Arc::new(AtomicUsize::new(0));
+
+            let mut timer = MyTimer::new_with_execute_timeout(
+                INTERVAL,
+                Duration::from_millis(50),
+                Arc::new(TestLogger),
+            );
+            timer.set_first_tick_before_delay();
+            timer.register_timer(
+                "slow",
+                Arc::new(SlowTick {
+                    started: started.clone(),
+                    finished: finished.clone(),
+                }),
+            );
+            timer.register_timer("calm", repeating_tick(&calm_runs, 0));
+            timer.start();
+
+            wait_for(&started, 1).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            assert_eq!(calm_runs.load(Ordering::SeqCst), 1);
+            assert_eq!(finished.load(Ordering::SeqCst), 0);
+        });
+    }
+
     #[test]
     fn second_start_panics_and_does_not_spawn_a_second_loop() {
         rt().block_on(async {

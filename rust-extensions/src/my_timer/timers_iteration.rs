@@ -30,6 +30,9 @@ pub fn get_timer_names(timers: &[RegisteredTimer]) -> String {
 /// `WithInterval` keeps its schedule and is not dragged into a neighbour's extra
 /// pass. A tick which panicked or timed out answered nothing and is not
 /// repeated either.
+///
+/// A tick which overruns `iteration_timeout` is cancelled - left running, it
+/// would overlap with its own next execution.
 pub async fn execute_timers_iteration<'s>(
     timers: &[&'s RegisteredTimer],
     logger: &Arc<dyn Logger + Send + Sync + 'static>,
@@ -42,6 +45,7 @@ pub async fn execute_timers_iteration<'s>(
         let (timer_id, timer_tick) = timer;
         let tick_future = AssertUnwindSafe(execute_timer(timer_tick.clone())).catch_unwind();
 
+        // On a timeout the future is dropped right here, which cancels the tick.
         match tokio::time::timeout(iteration_timeout, tick_future).await {
             Ok(Ok(repeat)) => {
                 if repeat.is_immediately() {
@@ -53,13 +57,15 @@ pub async fn execute_timers_iteration<'s>(
                 println!("{}", message);
                 logger.write_error(timer_id.to_string().into(), message.into(), None.into());
             }
-            Err(err) => {
-                println!("Timer {} is time outed with err: {:?}", timer_id, err);
-            }
+            Err(_) => report_timeout(timer_id, iteration_timeout, logger),
         }
 
         return repeat_immediately;
     }
+
+    // One deadline for the whole pass: the ticks run in parallel, so each of
+    // them gets `iteration_timeout` from the start, however long the others take.
+    let deadline = tokio::time::Instant::now() + iteration_timeout;
 
     let mut timer_handles = Vec::with_capacity(timers.len());
     for timer in timers {
@@ -67,10 +73,10 @@ pub async fn execute_timers_iteration<'s>(
         timer_handles.push((*timer, handle));
     }
 
-    for (timer, timer_handler) in timer_handles {
+    for (timer, mut timer_handler) in timer_handles {
         let timer_id = &timer.0;
 
-        match tokio::time::timeout(iteration_timeout, timer_handler).await {
+        match tokio::time::timeout_at(deadline, &mut timer_handler).await {
             Ok(Ok(repeat)) => {
                 if repeat.is_immediately() {
                     repeat_immediately.push(timer);
@@ -86,13 +92,28 @@ pub async fn execute_timers_iteration<'s>(
                     logger.write_error(timer_id.into(), message.into(), None.into());
                 });
             }
-            Err(err) => {
-                println!("Timer {} is time outed with err: {:?}", timer_id, err);
+            Err(_) => {
+                // Dropping a JoinHandle does not stop the task - it has to be aborted.
+                timer_handler.abort();
+                report_timeout(timer_id, iteration_timeout, logger);
             }
         }
     }
 
     repeat_immediately
+}
+
+fn report_timeout(
+    timer_id: &str,
+    iteration_timeout: Duration,
+    logger: &Arc<dyn Logger + Send + Sync + 'static>,
+) {
+    let message = format!(
+        "Timer {} is cancelled: it did not finish within {:?}",
+        timer_id, iteration_timeout
+    );
+    println!("{}", message);
+    logger.write_error(timer_id.to_string(), message, None);
 }
 
 pub async fn execute_timer(
