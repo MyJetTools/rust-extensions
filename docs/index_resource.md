@@ -22,7 +22,7 @@ Builds for `wasm32`; timers, queues, executors, signals and pooling are compiled
 
 | Topic | What is inside | Startable |
 | --- | --- | --- |
-| [`date-time`](date-time.md) | `DateTimeAsMicroseconds` — UTC µs timestamp, parsing, formats, serde; `DateTimeStruct` calendar fields, month steps; time zones, client time | — |
+| [`date-time`](date-time.md) | `DateTimeAsMicroseconds` — UTC µs timestamp, parsing, formats, serde; `DateTimeStruct` calendar fields, month steps; showing an instant in a time zone (fixed offset, readable `YYYY-MM-DD HH:MM:SS`); reading a time the user typed | — |
 | [`interval-keys`](interval-keys.md) | Bucket timestamps into minute…year keys stored as sortable `i64` | — |
 | [`durations`](durations.md) | Parse / print `Duration`, `StopWatch`, `AtomicStopWatch`, `AtomicDuration` | — |
 | [`strings`](strings.md) | `ShortString`, `MaybeShortString`, `StrOrString`, `StringBuilder`, `AsStr`, case-insensitive helpers | — |
@@ -31,12 +31,12 @@ Builds for `wasm32`; timers, queues, executors, signals and pooling are compiled
 | [`sorted-vec`](sorted-vec.md) | Vectors kept sorted by a key from the item — one key, string key, two string keys, `Arc` flavours | — |
 | [`collections`](collections.md) | Grouping, lazy containers, `linq`, auto-shrink, running min/max, `VecMaybeStack`, `ObjectsPool` | — |
 | [`sized-chunks`](sized-chunks.md) | Batch by measured byte size instead of item count | — |
-| [`timers`](timers.md) | `MyTimer`, `MyExactTimer` — periodic work, long jobs in portions | `MyTimer`, `MyExactTimer` |
+| [`timers`](timers.md) | `MyTimer` every interval, `MyExactTimer` on wall-clock marks (`:00`, `:05`…); long jobs in portions | `MyTimer`, `MyExactTimer` |
 | [`events-loop`](events-loop.md) | Single-consumer async message loop | `EventsLoop` |
 | [`background-executor`](background-executor.md) | Trigger work onto a background task, globally or per thread id | `BackgroundExecutor`, `BackgroundExecutorWithMultiThreads` |
 | [`queue-to-save`](queue-to-save.md) | Write-behind queues: single, bulk, latest-state-per-ID, upsert-or-delete | `QueueToSave`, `QueueToSaveAsBulk`, `QueueToSaveWithId`, `QueueToSaveOrDeleteWithId` |
 | [`idempotency`](idempotency.md) | Execute a retried request at most once | — |
 | [`async-primitives`](async-primitives.md) | `TaskCompletion`, `IsInitialized`, `TokioQueue` | — |
 | [`app-lifecycle`](app-lifecycle.md) | `Logger`, `ApplicationStates` / `AppStates`, `Startable` | — |
-| [`remote-endpoint`](remote-endpoint.md) | Parse `scheme://host:port/path`, unix sockets, SSH and SSH-tunnelled addresses | — |
+| [`remote-endpoint`](remote-endpoint.md) | Parse `scheme://host:port/path`, scheme default ports, unix sockets, SSH and SSH-tunnelled addresses | — |
 | [`misc`](misc.md) | Paths, uuid, `SortableId`, `DataWrapper`, re-exports | — |

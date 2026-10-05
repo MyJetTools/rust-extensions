@@ -14,6 +14,10 @@ let rows = vec!["four", "five5", "six666"];
 let chunks = split_into_sized_chunks(rows, 10, |row| row.len());
 assert_eq!(chunks, vec![vec!["four", "five5"], vec!["six666"]]);
 
+// The limit is inclusive: a chunk of exactly `limit` is fine.
+let chunks = split_into_sized_chunks(vec!["12345", "67890"], 10, |row| row.len());
+assert_eq!(chunks, vec![vec!["12345", "67890"]]);
+
 // An item bigger than the whole limit becomes a chunk of its own - the real
 // boundary rejects it with its own error instead of the batcher spinning.
 let chunks = split_into_sized_chunks(vec!["x".repeat(50), "y".to_string()], 10, |row| row.len());
@@ -23,7 +27,7 @@ assert_eq!(chunks.len(), 2);
 assert!(split_into_sized_chunks(Vec::<String>::new(), 10, |row| row.len()).is_empty());
 ```
 
-A gRPC stream, one message per chunk, each under a 4 MiB decode limit:
+A gRPC stream, one message per chunk, each under a 4 MiB decode limit. The `+ 8` stands for the tag and the length prefix a `repeated` item adds on the wire, and 3 MiB leaves headroom for the rest of the message:
 
 ```rust,ignore
 for page in split_into_sized_chunks(rows, 3 * 1024 * 1024, |row| row.encoded_len() + 8) {

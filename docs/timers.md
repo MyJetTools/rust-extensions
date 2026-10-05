@@ -3,7 +3,7 @@
 Feature `with-tokio`. Run code periodically.
 
 - `MyTimer` sleeps `interval` between passes. A slow pass pushes the next one back.
-- `MyExactTimer` fires on wall-clock marks: `Every5Seconds` means at `:00`, `:05`, `:10`… It never drifts.
+- `MyExactTimer` fires on wall-clock marks: the marks are multiples of the interval counted from the Unix epoch, so `Every5Seconds` fires at `:00`, `:05`, `:10`… of every minute and `Every5Minutes` at `:00`, `:05`, … `:55` of every hour. It never drifts.
 
 Both take the same `MyTimerTick`, so a tick moves from one timer to the other unchanged.
 

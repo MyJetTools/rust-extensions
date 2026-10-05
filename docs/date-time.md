@@ -208,15 +208,20 @@ assert_eq!(dt.to_compact_string(), "2021-04-25 18:30:03");
 assert_eq!(dt.to_rfc3339(), "2021-04-25T18:30:03.000000+01:00");
 assert_eq!(dt.to_local_date_time_struct().time.hour, 18);
 
-let explicit = DateTimeAsMicrosecondsWithTimeZone::new(server, TimeZone::from_minutes(-300));
-assert_eq!(format!("{:?}", explicit.time_zone), "-05:00");
+// A known fixed offset: UTC+3 is 180 minutes
+let utc_plus_3 = DateTimeAsMicrosecondsWithTimeZone::new(server, TimeZone::from_minutes(180));
+assert_eq!(utc_plus_3.to_local_date_time_struct().time.hour, 20);
+assert_eq!(format!("{:?}", utc_plus_3.time_zone), "+03:00");
+
+let utc_minus_5 = DateTimeAsMicrosecondsWithTimeZone::new(server, TimeZone::from_minutes(-300));
+assert_eq!(format!("{:?}", utc_minus_5.time_zone), "-05:00");
 ```
 
 Serde writes and reads exactly `to_rfc3339()`. A bare number, or a string without an offset, is refused.
 
-## Client time
+## Client time — a time the user typed in
 
-A time typed in by a user is on the user's clock. `client_input_time_to_server_time` shifts it by the client/server difference, rounded to 30 minutes:
+The opposite direction of the section above: not showing a UTC instant in the user's zone, but reading a time the user typed on their own clock. `client_input_time_to_server_time` shifts it by the client/server difference, rounded to 30 minutes:
 
 ```rust
 use rust_extensions::date_time::DateTimeAsMicroseconds;

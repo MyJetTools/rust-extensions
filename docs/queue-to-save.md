@@ -9,7 +9,7 @@ Feature `with-tokio`. Write-behind queues: producers `enqueue` and return, and o
 | `QueueToSaveWithId<ID, T>` | up to 50 items, the latest state per ID | the same chunk is retried |
 | `QueueToSaveOrDeleteWithId<ID, T>` | up to 50 upserts or deletes, the latest per ID | the same chunk is retried |
 
-"Fails" means the handler panicked or ran longer than 10 seconds. A retried chunk is handed over again after `retry_timeout`, 1s by default, set with `set_retry_timeout`, and `attempt_no` grows by one each time. Returning from the handler means "saved".
+"Fails" means the handler panicked or ran longer than 10 seconds. A retried chunk is handed over again after `retry_timeout`, 1s by default, set with `set_retry_timeout`, and `attempt_no` grows by one each time. There is no retry limit: the same chunk comes back until the handler returns, and returning means "saved". A handler that should give up has to decide that itself, from `attempt_no`.
 
 ## QueueToSave
 

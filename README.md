@@ -61,7 +61,7 @@ A service is assembled from long-living background components, and they share on
 
 ### Addresses and the rest
 
-- [**remote-endpoint**](docs/remote-endpoint.md) — parse a connection string into scheme, host, port and path: HTTP and WebSocket URLs, unix sockets, SSH hosts and addresses reached through an SSH tunnel.
+- [**remote-endpoint**](docs/remote-endpoint.md) — parse a connection string into scheme, host, port and path, with the default port of each scheme: HTTP and WebSocket URLs, unix sockets, SSH hosts and addresses reached through an SSH tunnel.
 - [**misc**](docs/misc.md) — paths with `~` expansion, uuid v4, ids that sort by creation time, the `DataWrapper` derive and re-exports.
 
 ## For AI agents
