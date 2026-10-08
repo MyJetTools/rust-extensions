@@ -102,6 +102,8 @@ mod queue_to_save;
 pub use queue_to_save::*;
 mod as_str;
 pub use as_str::*;
+mod async_iterator;
+pub use async_iterator::*;
 
 pub extern crate macros;
 
