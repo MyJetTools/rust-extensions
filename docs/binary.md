@@ -153,7 +153,7 @@ A trait for a source of bytes that arrives chunk by chunk: a file, a response bo
 
 - `get_next()` returns `Ok(Some(chunk))` with the next chunk, and `Ok(None)` at the end of the data.
 - `get_size()` returns the size of the whole stream in bytes, or `None` when it is not known before the stream is read.
-- `into_vec()` is already implemented. It reads the stream to the end and returns everything as one `Vec<u8>`. A known size is allocated at once, so the `Vec` does not grow while the chunks are appended.
+- `into_vec()` is already implemented. It reads the stream to the end and returns everything as one `Vec<u8>`.
 
 ```rust
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -200,7 +200,16 @@ rt.block_on(async {
 });
 ```
 
-- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the source works as `Arc<dyn AsyncBytesReader<TError> + Send + Sync>`.
+`into_vec()` makes the first chunk the result itself, so nothing is allocated or copied for it:
+
+- **The chunk is the whole stream** — its length is `get_size()`. It is returned as it is, and `get_next()` is not called again.
+- **The size is known and the chunk is smaller.** The chunk is extended to that size at once, so it does not grow while the rest is appended.
+- **The size is not known.** The rest is appended to the chunk until `get_next()` returns `None`.
+
+The contracts:
+
+- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the source works as `Arc<dyn AsyncBytesReader<TError> + Send + Sync>`, `into_vec()` included.
+- **`get_size()` must be exact.** `into_vec()` stops at a first chunk of exactly that length. It is asked after the first chunk has arrived, so a size that becomes known only then still counts.
 - **`into_vec()` reads what is left.** Called after some `get_next()`, it returns only the remaining bytes.
 - **Errors.** `into_vec()` returns the first error, and the chunks read before it are dropped.
 
