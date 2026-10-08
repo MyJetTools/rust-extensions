@@ -1,6 +1,6 @@
 # binary
 
-Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks and parsed across them, hex and base64.
+Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks and parsed across them, two buffers between the task which reads and the task which parses, hex and base64.
 
 ## BinaryPayloadBuilder
 
@@ -306,6 +306,72 @@ The contracts:
 - **Errors.** `get_next()` returns the error of the stream as it is. What was read stays, and the next call asks the stream again.
 - **`mark_as_read()` panics** when there are fewer than `size` bytes.
 - **One parser.** Unlike the stream, the reader changes through `&mut self`.
+
+## DoubleBuffer — two buffers between reading and parsing
+
+One task reads a stream, another one parses it. `DoubleBuffer` gives them two buffers to pass the bytes through: while a chunk is being parsed, the next one is read into the other buffer. No bytes are copied, and there are never more than the two buffers. It needs no feature and no runtime.
+
+`DoubleBuffer::new(buffer_size)` returns the two ends.
+
+- **`DoubleBufferWriter`** is for the one who reads. `get_buffer_to_read()` gives a buffer — a `&mut [u8]` of `buffer_size` bytes — and waits until one of the two is free. `send(size)` of that buffer hands over the first `size` bytes of it.
+- **`DoubleBufferReader`** is for the one who parses. `get_next()` gives what is read — a chunk, which is a `&[u8]` — and waits until there is one. Dropping the chunk frees its buffer to be read into again.
+
+```rust
+use rust_extensions::DoubleBuffer;
+use tokio::io::AsyncReadExt;
+
+let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+rt.block_on(async {
+    let (writer, reader) = DoubleBuffer::new(8);
+
+    // The one who reads
+    let reading = tokio::spawn(async move {
+        let mut src: &[u8] = b"hello world, hello buffers"; // a socket, a file
+
+        // None - the reader is dropped, so nobody is going to parse
+        while let Some(mut buffer) = writer.get_buffer_to_read().await {
+            let size = src.read(&mut buffer).await?;
+
+            if size == 0 {
+                break; // the stream is over
+            }
+
+            buffer.send(size);
+        }
+
+        std::io::Result::Ok(())
+        // `writer` is dropped here - that is the end for the one who parses
+    });
+
+    // The one who parses
+    let mut result = Vec::new();
+
+    while let Some(chunk) = reader.get_next().await {
+        assert!(chunk.len() <= 8);
+        result.extend_from_slice(&chunk);
+        // `chunk` is dropped here - its buffer is free to be read into again
+    }
+
+    assert_eq!(result, b"hello world, hello buffers");
+
+    // `None` does not say why the reading is over - the task does
+    reading.await.unwrap().unwrap();
+});
+```
+
+A chunk becomes a `Bytes` with `into_bytes()`, which is what a chunk of an `AsyncBytesStream` is. It is not a copy: the buffer is free once the last piece of that `Bytes` — a clone of it, a slice of it — is dropped. So a stream over a `DoubleBufferReader` is `reader.get_next().await.map(DoubleBufferChunk::into_bytes)`, and a `BufferedReader` parses it as any other stream.
+
+The contracts:
+
+- **The one who reads is at most two buffers ahead.** With both buffers sent and not parsed yet, `get_buffer_to_read()` waits.
+- **A chunk holds its buffer.** Parse it and drop it. Whoever keeps both chunks — or a piece of the `Bytes` of both — and calls `get_next()` waits forever, since there is nothing to read into. `BufferedReader` holds one chunk at most: the bytes not parsed yet are copied out of it when the next chunk comes.
+- **A buffer dropped with no `send()` is free again.** That is what a read which was given up leaves — a `select!` which took the other branch, for example. `send(0)` does the same.
+- **A buffer is not cleared.** What was read into it before is still there, so only the first `size` bytes of a read mean something.
+- **The end goes both ways.** With the writer dropped, `get_next()` gives what was sent before and `None` after it. With the reader dropped, `get_buffer_to_read()` gives `None`, and what was sent and not taken is dropped.
+- **`None` is not an error.** A reading task which has failed drops its writer just the same. It tells about the failure its own way — by what the task returns, as above.
+- **`send()` panics** when the buffer is smaller than `size` bytes.
+- **Everything takes `&self`**, and waiting needs no runtime — it works under `tokio` and in a browser alike.
 
 ## binary_search
 

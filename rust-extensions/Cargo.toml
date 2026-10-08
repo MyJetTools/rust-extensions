@@ -22,8 +22,9 @@ futures = { version = "*", optional = true }
 chrono = "*"
 async-trait = "*"
 # What a chunk of `AsyncBytesStream` is. 1.7 is where `Bytes::try_into_mut` comes from - it is how
-# `BufferedReader` puts a chunk into the buffer it already has.
-bytes = "1.7"
+# `BufferedReader` puts a chunk into the buffer it already has. 1.9 is where `Bytes::from_owner`
+# comes from - it is how a chunk of `DoubleBuffer` gives its buffer back once the `Bytes` are dropped.
+bytes = "1.9"
 base64 = { version = "*", optional = true }
 serde = { version = "*", features = ["derive"] }
 macros = { path = "../macros" }

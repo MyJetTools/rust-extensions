@@ -27,7 +27,7 @@ Builds for `wasm32`; timers, queues, executors, signals and pooling are compiled
 | [`durations`](durations.md) | Parse / print `Duration`, `StopWatch`, `AtomicStopWatch`, `AtomicDuration` | — |
 | [`strings`](strings.md) | `ShortString`, `MaybeShortString`, `StrOrString`, `StringBuilder`, `AsStr`, case-insensitive helpers | — |
 | [`secure-string-builder`](secure-string-builder.md) | Build secrets without leaving copies in freed memory | — |
-| [`binary`](binary.md) | `BinaryPayloadBuilder`, varint, `SliceOrVec`, byte search and cursors, `AsyncBytesStream` — a byte stream read in chunks, `BufferedReader` — parsing it across the chunks, `binary_search`, hex, base64 | — |
+| [`binary`](binary.md) | `BinaryPayloadBuilder`, varint, `SliceOrVec`, byte search and cursors, `AsyncBytesStream` — a byte stream read in chunks, `BufferedReader` — parsing it across the chunks, `DoubleBuffer` — two buffers between the task which reads and the task which parses, `binary_search`, hex, base64 | — |
 | [`sorted-vec`](sorted-vec.md) | Vectors kept sorted by a key from the item — one key, string key, two string keys, `Arc` flavours | — |
 | [`collections`](collections.md) | Grouping, lazy containers, `linq`, auto-shrink, running min/max, `VecMaybeStack`, `ObjectsPool` | — |
 | [`sized-chunks`](sized-chunks.md) | Batch by measured byte size instead of item count | — |

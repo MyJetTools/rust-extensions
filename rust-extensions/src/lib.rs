@@ -106,6 +106,8 @@ mod async_bytes_stream;
 pub use async_bytes_stream::*;
 mod buffered_reader;
 pub use buffered_reader::*;
+mod double_buffer;
+pub use double_buffer::*;
 
 pub extern crate bytes;
 pub extern crate macros;
