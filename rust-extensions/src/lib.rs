@@ -102,9 +102,12 @@ mod queue_to_save;
 pub use queue_to_save::*;
 mod as_str;
 pub use as_str::*;
-mod async_bytes_reader;
-pub use async_bytes_reader::*;
+mod async_bytes_stream;
+pub use async_bytes_stream::*;
+mod buffered_reader;
+pub use buffered_reader::*;
 
+pub extern crate bytes;
 pub extern crate macros;
 
 #[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]

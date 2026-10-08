@@ -82,7 +82,7 @@ assert_eq!(name.to_string(), "acme");
 
 ## Re-exports
 
-`rust_extensions::chrono` is the `chrono` this crate is built with — use it to name the types that `DateTimeAsMicroseconds::to_chrono_utc()` returns without a version mismatch. `rust_extensions::macros` holds the derives.
+`rust_extensions::chrono` is the `chrono` this crate is built with — use it to name the types that `DateTimeAsMicroseconds::to_chrono_utc()` returns without a version mismatch. `rust_extensions::bytes` is the `bytes` crate: a chunk of `AsyncBytesStream` is its `Bytes`. `rust_extensions::macros` holds the derives.
 
 ```rust
 use rust_extensions::chrono::{DateTime, Utc};

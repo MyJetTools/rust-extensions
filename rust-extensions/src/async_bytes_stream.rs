@@ -1,11 +1,19 @@
-/// A source of bytes which is read in chunks - a file, a response body, a blob
+use std::sync::Arc;
+
+use bytes::Bytes;
+
+/// A stream of bytes which is read in chunks - a file, a response body, a blob
 /// downloaded part by part.
 ///
 /// `get_next()` returns `Ok(Some(chunk))` with the next chunk and `Ok(None)`
 /// once there is nothing left to read.
+///
+/// A chunk is a `Bytes`, so a stream hands it over the way it has it: a body
+/// read off the network is a `Bytes` already and goes as it is, a `Vec<u8>`
+/// becomes one by `.into()`. Neither copies the data.
 #[async_trait::async_trait]
-pub trait AsyncBytesReader<TError> {
-    async fn get_next(&self) -> Result<Option<Vec<u8>>, TError>;
+pub trait AsyncBytesStream<TError> {
+    async fn get_next(&self) -> Result<Option<Bytes>, TError>;
 
     /// The size of the whole stream in bytes - `None` if it is not known until
     /// the stream is read to the end.
@@ -13,8 +21,10 @@ pub trait AsyncBytesReader<TError> {
 
     /// Reads the stream to the end and returns everything as a single `Vec`.
     ///
-    /// The first chunk becomes the result itself, so nothing is allocated and
-    /// nothing is copied for it:
+    /// The first chunk becomes the result itself. Nothing is allocated and
+    /// nothing is copied for a chunk nobody else holds a part of - the one made
+    /// of a `Vec`, say. A chunk which shares its buffer - a part of what was
+    /// read off a socket - is copied out of it:
     /// - a chunk of `get_size()` bytes is the whole stream - it is returned as
     ///   it is, and the stream is not asked for more;
     /// - a smaller chunk of a stream with a known size is extended up to that
@@ -24,9 +34,11 @@ pub trait AsyncBytesReader<TError> {
     /// `get_size()` is asked once the first chunk has arrived - a size which
     /// becomes known together with the first chunk is taken into account.
     async fn into_vec(&self) -> Result<Vec<u8>, TError> {
-        let Some(mut result) = self.get_next().await? else {
+        let Some(first) = self.get_next().await? else {
             return Ok(Vec::new());
         };
+
+        let mut result: Vec<u8> = first.into();
 
         if let Some(size) = self.get_size() {
             if result.len() == size {
@@ -46,26 +58,57 @@ pub trait AsyncBytesReader<TError> {
     }
 }
 
+/// A stream behind an `Arc` is a stream as well - so what takes one takes an
+/// `Arc<dyn AsyncBytesStream<TError> + Send + Sync>` too.
+#[async_trait::async_trait]
+impl<TError, TStream> AsyncBytesStream<TError> for Arc<TStream>
+where
+    TStream: AsyncBytesStream<TError> + Send + Sync + ?Sized,
+{
+    async fn get_next(&self) -> Result<Option<Bytes>, TError> {
+        self.as_ref().get_next().await
+    }
+
+    fn get_size(&self) -> Option<usize> {
+        self.as_ref().get_size()
+    }
+
+    async fn into_vec(&self) -> Result<Vec<u8>, TError> {
+        self.as_ref().into_vec().await
+    }
+}
+
 #[cfg(all(test, feature = "with-tokio"))]
 mod tests {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    use bytes::Bytes;
     use parking_lot::Mutex;
 
-    use super::AsyncBytesReader;
+    use super::AsyncBytesStream;
 
     /// Hands the chunks over by ownership - the very same buffers, so it is
     /// seen whether the reader of the stream has copied them.
     struct Chunks {
-        chunks: Mutex<VecDeque<Result<Vec<u8>, String>>>,
+        chunks: Mutex<VecDeque<Result<Bytes, String>>>,
         size: Option<usize>,
         requests: Arc<AtomicUsize>,
     }
 
     impl Chunks {
+        /// Each chunk is made of a `Vec` of its own, so nobody else holds its buffer
         fn new(chunks: Vec<Result<Vec<u8>, String>>) -> Self {
+            Self::of_bytes(
+                chunks
+                    .into_iter()
+                    .map(|chunk| chunk.map(Bytes::from))
+                    .collect(),
+            )
+        }
+
+        fn of_bytes(chunks: Vec<Result<Bytes, String>>) -> Self {
             Self {
                 chunks: Mutex::new(chunks.into()),
                 size: None,
@@ -80,8 +123,8 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl AsyncBytesReader<String> for Chunks {
-        async fn get_next(&self) -> Result<Option<Vec<u8>>, String> {
+    impl AsyncBytesStream<String> for Chunks {
+        async fn get_next(&self) -> Result<Option<Bytes>, String> {
             self.requests.fetch_add(1, Ordering::Relaxed);
             self.chunks.lock().pop_front().transpose()
         }
@@ -100,7 +143,7 @@ mod tests {
     #[test]
     fn reads_chunks_until_none() {
         rt().block_on(async {
-            let src: Arc<dyn AsyncBytesReader<String> + Send + Sync + 'static> =
+            let src: Arc<dyn AsyncBytesStream<String> + Send + Sync + 'static> =
                 Arc::new(Chunks::new(vec![Ok(vec![1, 2]), Ok(vec![3])]));
 
             // Read from a spawned task - the future of `get_next()` is `Send`.
@@ -123,7 +166,7 @@ mod tests {
         rt().block_on(async {
             let src = Chunks::new(vec![Ok(vec![1]), Err("no connection".to_string())]);
 
-            assert_eq!(src.get_next().await, Ok(Some(vec![1])));
+            assert_eq!(src.get_next().await, Ok(Some(Bytes::from_static(&[1]))));
             assert_eq!(src.get_next().await, Err("no connection".to_string()));
             assert_eq!(src.get_next().await, Ok(None));
         });
@@ -132,7 +175,7 @@ mod tests {
     #[test]
     fn into_vec_merges_all_the_chunks() {
         rt().block_on(async {
-            let src: Arc<dyn AsyncBytesReader<String> + Send + Sync + 'static> =
+            let src: Arc<dyn AsyncBytesStream<String> + Send + Sync + 'static> =
                 Arc::new(Chunks::new(vec![
                     Ok(vec![1, 2]),
                     Ok(vec![3]),
@@ -163,6 +206,42 @@ mod tests {
             // The very same buffer - and the stream was not asked for more.
             assert_eq!(result.as_ptr(), chunk_ptr);
             assert_eq!(requests.load(Ordering::Relaxed), 1);
+        });
+    }
+
+    #[test]
+    fn into_vec_copies_a_chunk_which_shares_its_buffer() {
+        rt().block_on(async {
+            // A part of a bigger buffer - the way a chunk is cut out of what was
+            // read off a socket. The rest of the buffer is still held.
+            let read_off_the_socket = Bytes::from(vec![0, 1, 2, 3, 0]);
+            let chunk = read_off_the_socket.slice(1..4);
+            let chunk_ptr = chunk.as_ptr();
+
+            let src = Chunks::of_bytes(vec![Ok(chunk)]).with_size(3);
+
+            let result = src.into_vec().await.unwrap();
+
+            assert_eq!(result, vec![1, 2, 3]);
+            assert_ne!(result.as_ptr(), chunk_ptr);
+            assert_eq!(read_off_the_socket, vec![0, 1, 2, 3, 0]);
+        });
+    }
+
+    #[test]
+    fn a_stream_behind_an_arc_is_a_stream() {
+        async fn read_all<TStream: AsyncBytesStream<String> + Sync>(src: TStream) -> Vec<u8> {
+            src.into_vec().await.unwrap()
+        }
+
+        rt().block_on(async {
+            let src = Arc::new(Chunks::new(vec![Ok(vec![1, 2]), Ok(vec![3])]).with_size(3));
+            assert_eq!(src.get_size(), Some(3));
+            assert_eq!(read_all(src).await, vec![1, 2, 3]);
+
+            let src: Arc<dyn AsyncBytesStream<String> + Send + Sync + 'static> =
+                Arc::new(Chunks::new(vec![Ok(vec![1, 2]), Ok(vec![3])]));
+            assert_eq!(read_all(src).await, vec![1, 2, 3]);
         });
     }
 

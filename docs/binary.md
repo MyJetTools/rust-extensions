@@ -1,6 +1,6 @@
 # binary
 
-Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks, hex and base64.
+Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks and parsed across them, hex and base64.
 
 ## BinaryPayloadBuilder
 
@@ -147,34 +147,38 @@ async fn count_lines(path: &str) -> std::io::Result<usize> {
 }
 ```
 
-## AsyncBytesReader — bytes read in chunks
+## AsyncBytesStream — bytes read in chunks
 
-A trait for a source of bytes that arrives chunk by chunk: a file, a response body, a blob downloaded in parts. It needs no feature.
+A trait for a stream of bytes that arrives chunk by chunk: a file, a response body, a blob downloaded in parts. It needs no feature.
 
-- `get_next()` returns `Ok(Some(chunk))` with the next chunk, and `Ok(None)` at the end of the data.
+- `get_next()` returns `Ok(Some(chunk))` with the next chunk, and `Ok(None)` at the end of the data. A chunk is a `Bytes` of the `bytes` crate, which is re-exported as `rust_extensions::bytes`.
 - `get_size()` returns the size of the whole stream in bytes, or `None` when it is not known before the stream is read.
 - `into_vec()` is already implemented. It reads the stream to the end and returns everything as one `Vec<u8>`.
 
 ```rust
 use std::sync::atomic::{AtomicUsize, Ordering};
-use rust_extensions::AsyncBytesReader;
+use rust_extensions::bytes::Bytes;
+use rust_extensions::AsyncBytesStream;
 
 struct Chunks {
-    chunks: Vec<Vec<u8>>,
+    chunks: Vec<Bytes>,
     next_chunk: AtomicUsize,
 }
 
 impl Chunks {
     fn new(chunks: Vec<Vec<u8>>) -> Self {
+        // A `Vec<u8>` becomes a chunk with no copy
+        let chunks = chunks.into_iter().map(Bytes::from).collect();
         Self { chunks, next_chunk: AtomicUsize::new(0) }
     }
 }
 
 #[async_trait::async_trait]
-impl AsyncBytesReader<std::io::Error> for Chunks {
-    async fn get_next(&self) -> std::io::Result<Option<Vec<u8>>> {
+impl AsyncBytesStream<std::io::Error> for Chunks {
+    async fn get_next(&self) -> std::io::Result<Option<Bytes>> {
         let chunk_no = self.next_chunk.fetch_add(1, Ordering::Relaxed);
-        Ok(self.chunks.get(chunk_no).cloned()) // None once the chunks are over
+        // None once the chunks are over. Cloning a `Bytes` copies no data.
+        Ok(self.chunks.get(chunk_no).cloned())
     }
 
     fn get_size(&self) -> Option<usize> {
@@ -200,7 +204,7 @@ rt.block_on(async {
 });
 ```
 
-`into_vec()` makes the first chunk the result itself, so nothing is allocated or copied for it:
+`into_vec()` makes the first chunk the result itself. Nothing is allocated or copied for a chunk nobody else holds a part of — one made of a `Vec<u8>`, for example. A chunk that shares its buffer, such as a part of what was read off a socket, is copied out of it.
 
 - **The chunk is the whole stream** — its length is `get_size()`. It is returned as it is, and `get_next()` is not called again.
 - **The size is known and the chunk is smaller.** The chunk is extended to that size at once, so it does not grow while the rest is appended.
@@ -208,10 +212,100 @@ rt.block_on(async {
 
 The contracts:
 
-- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the source works as `Arc<dyn AsyncBytesReader<TError> + Send + Sync>`, `into_vec()` included.
+- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the stream works as `Arc<dyn AsyncBytesStream<TError> + Send + Sync>`, `into_vec()` included. An `Arc` of a stream is a stream itself, so it goes wherever one is taken.
+- **A chunk is handed over with no copy.** A stream that already has `Bytes` returns them as they are, and a `Vec<u8>` becomes a chunk with `.into()`.
 - **`get_size()` must be exact.** `into_vec()` stops at a first chunk of exactly that length. It is asked after the first chunk has arrived, so a size that becomes known only then still counts.
 - **`into_vec()` reads what is left.** Called after some `get_next()`, it returns only the remaining bytes.
 - **Errors.** `into_vec()` returns the first error, and the chunks read before it are dropped.
+
+## BufferedReader — parsing a stream cut into chunks
+
+A stream is cut into chunks wherever it happens to be, so a JSON, a line or a frame may begin in one chunk and end in the next. `BufferedReader` wraps an `AsyncBytesStream` and keeps what is read and not parsed yet as one run of bytes. It needs no feature.
+
+- `as_slice()` is what there is to parse.
+- `mark_as_read(size)` drops `size` parsed bytes from the beginning.
+- `get_next()` reads the next chunk in when there is not enough to parse. It returns all there is to parse — the bytes of `as_slice()` — as a `Bytes`.
+- `read_mode()` is `false` once the stream is read to its end.
+
+```rust
+use std::sync::atomic::{AtomicUsize, Ordering};
+use rust_extensions::bytes::Bytes;
+use rust_extensions::{AsyncBytesStream, BufferedReader};
+
+struct Chunks {
+    chunks: Vec<Bytes>,
+    next_chunk: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl AsyncBytesStream<std::io::Error> for Chunks {
+    async fn get_next(&self) -> std::io::Result<Option<Bytes>> {
+        let chunk_no = self.next_chunk.fetch_add(1, Ordering::Relaxed);
+        Ok(self.chunks.get(chunk_no).cloned())
+    }
+
+    fn get_size(&self) -> Option<usize> {
+        None
+    }
+}
+
+/// A JSON per line. `None` - the line is not complete yet.
+fn next_json(src: &[u8]) -> Option<&[u8]> {
+    let end = src.iter().position(|b| *b == b'\n')?;
+    Some(&src[..end])
+}
+
+let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+rt.block_on(async {
+    // The chunks are cut in the middle of the lines
+    let src = Chunks {
+        chunks: vec![
+            Bytes::from_static(b"{\"id\":1}\n{\"i"),
+            Bytes::from_static(b"d\":2}\n{\"id\""),
+            Bytes::from_static(b":3}\n"),
+        ],
+        next_chunk: AtomicUsize::new(0),
+    };
+
+    let mut reader = BufferedReader::new(src);
+    let mut lines = Vec::new();
+
+    loop {
+        if let Some(json) = next_json(reader.as_slice()) {
+            lines.push(String::from_utf8(json.to_vec()).unwrap());
+
+            let size = json.len() + 1; // the line and its `\n`
+            reader.mark_as_read(size);
+            continue;
+        }
+
+        if !reader.read_mode() {
+            break; // the stream is over - what is left is a line that was cut short
+        }
+
+        reader.get_next().await.unwrap(); // not enough to parse - the next chunk is read in
+    }
+
+    assert_eq!(lines, [r#"{"id":1}"#, r#"{"id":2}"#, r#"{"id":3}"#]);
+    assert!(reader.as_slice().is_empty());
+});
+```
+
+The bytes are kept in a `Bytes`, and they are copied only to be joined:
+
+- **Nothing is left to parse.** The next chunk becomes the buffer as it is, with no copy.
+- **Some bytes are not parsed yet.** The chunk is copied behind them. The buffer is reused: the room of what was marked as read is given back, and the buffer grows the way a `Vec` does.
+- **`mark_as_read()` moves nothing.** The bytes that are left stay where they are.
+
+The contracts:
+
+- **What `get_next()` returns shares the buffer.** It is not a copy, and it stays as it is whatever is read later: keep it, slice it, send it to another task. While it is alive the reader can not put the next chunk into that buffer, so the next `get_next()` copies the bytes not parsed yet to a new one. For a piece that lasts for many chunks that is a copy of everything read so far on every call. Drop it before the next call, or parse through `as_slice()`, unless it is there to be kept.
+- **`read_mode()` turns `false` one call after the last chunk.** The reader learns about the end when the stream returns `None`. That call returns what is left, and the stream is not asked again.
+- **Chunks with no bytes are skipped.** After `get_next()` there is something new to parse, or `read_mode()` is `false`.
+- **Errors.** `get_next()` returns the error of the stream as it is. What was read stays, and the next call asks the stream again.
+- **`mark_as_read()` panics** when there are fewer than `size` bytes.
+- **One parser.** Unlike the stream, the reader changes through `&mut self`.
 
 ## binary_search
 
