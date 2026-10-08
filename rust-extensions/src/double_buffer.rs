@@ -1,44 +1,60 @@
 use std::collections::VecDeque;
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
-use bytes::Bytes;
 use parking_lot::Mutex;
+
+use crate::AsyncBytesStream;
 
 const BUFFERS: usize = 2;
 
-/// Two buffers between the one who reads a stream and the one who parses it - while
-/// a chunk is being parsed, the next one is read into the other buffer.
+/// Two buffers between the one who reads a stream and the one who processes it -
+/// while one is processed, the next one is read into the other.
 ///
 /// `new()` gives the two ends:
 /// - [`DoubleBufferWriter`] is for the one who reads: `get_buffer_to_read()` gives a
-///   buffer to read into, and `send()` of that buffer hands over what is read;
-/// - [`DoubleBufferReader`] is for the one who parses: `get_next()` gives what is
-///   read, and once that is dropped its buffer is free to be read into again.
+///   buffer to read into, `send()` of that buffer hands over what is read, and
+///   `finish()` is the end of the stream;
+/// - [`DoubleBufferReader`] is for the one who processes: `get_next()` gives what is
+///   read - a [`DoubleBufferChunk`], a `&[u8]` through `Deref`. Dropping the chunk
+///   says that it is processed - all of it: the whole buffer is free to be read
+///   into again.
 ///
 /// Both wait. `get_buffer_to_read()` waits until one of the two buffers is free, so
-/// the one who reads is never more than two buffers ahead of the one who parses.
+/// the one who reads is never more than two buffers ahead of the one who processes.
 /// `get_next()` waits until something is read.
 ///
-/// No bytes are copied, and there are never more than the two buffers.
+/// Both learn that the other end is gone - [`DoubleBufferError::Disconnected`]: a
+/// writer dropped with no `finish()` is a stream which is not read to its end, and a
+/// reader dropped is nobody to process what is read.
+///
+/// The buffers are `Vec<u8>`s, each allocated once - when it is taken for the first
+/// time - and nothing is copied on the way.
 pub struct DoubleBuffer;
 
 impl DoubleBuffer {
-    /// The two ends. Each of the two buffers is `buffer_size` bytes, and it is
-    /// allocated when it is taken for the first time.
+    /// The two ends. Each of the two buffers is `buffer_size` bytes.
+    ///
+    /// Panics when `buffer_size` is 0: nothing could be read into such a buffer, and
+    /// a read of nothing is how the end of a stream is told.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(buffer_size: usize) -> (DoubleBufferWriter, DoubleBufferReader) {
+        assert!(buffer_size > 0, "DoubleBuffer::new: the size of a buffer is 0");
+
         let inner = Arc::new(DoubleBufferInner {
             buffer_size,
             state: Mutex::new(State {
                 free: Vec::with_capacity(BUFFERS),
                 not_created: BUFFERS,
                 read: VecDeque::with_capacity(BUFFERS),
-                writer_is_dropped: false,
+                writer: WriterState::Writing,
                 reader_is_dropped: false,
-                waiting_to_read: Vec::new(),
-                waiting_to_parse: Vec::new(),
+                waiting_for_buffer: Waiters::default(),
+                waiting_for_read: Waiters::default(),
+                waiting_for_close: Waiters::default(),
             }),
         });
 
@@ -51,164 +67,238 @@ impl DoubleBuffer {
     }
 }
 
+/// The other end of a [`DoubleBuffer`] is gone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoubleBufferError {
+    /// For the one who processes: the writer is dropped with no `finish()` - the
+    /// connection is gone, the reading has failed, the task is cancelled. What came
+    /// before it is not the whole stream.
+    ///
+    /// For the one who reads: the reader is dropped - nobody is going to process
+    /// what is read.
+    Disconnected,
+}
+
+impl std::fmt::Display for DoubleBufferError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disconnected => f.write_str("The other end of the double buffer is gone"),
+        }
+    }
+}
+
+impl std::error::Error for DoubleBufferError {}
+
 struct DoubleBufferInner {
     buffer_size: usize,
     state: Mutex<State>,
 }
 
+/// How far the writer has got
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WriterState {
+    Writing,
+    /// `finish()` - all there is, is sent
+    Finished,
+    /// Dropped with no `finish()` - the stream is cut short
+    Dropped,
+}
+
 struct State {
-    /// The buffers nobody reads into and nobody parses
+    /// The buffers nobody reads into and nobody processes
     free: Vec<Vec<u8>>,
     /// How many of the two buffers are not allocated yet
     not_created: usize,
-    /// What is read and not taken to be parsed yet - a buffer and how many bytes of
-    /// it are read, in the order they were sent
+    /// What is read and not taken to be processed yet - a buffer and how many bytes
+    /// of it are read, in the order they were sent
     read: VecDeque<(Vec<u8>, usize)>,
-    writer_is_dropped: bool,
+    writer: WriterState,
     reader_is_dropped: bool,
-    /// Those who wait for a buffer to read into
-    waiting_to_read: Vec<Waker>,
-    /// Those who wait for something to parse
-    waiting_to_parse: Vec<Waker>,
+    /// The waits for a buffer to read into
+    waiting_for_buffer: Waiters,
+    /// The waits for something to process
+    waiting_for_read: Waiters,
+    /// The waits for the reader to be dropped
+    waiting_for_close: Waiters,
 }
 
-impl DoubleBufferInner {
-    /// The buffer is free - the one who waits for a buffer to read into is woken up
-    fn free(&self, buffer: Vec<u8>) {
-        let waiting = {
-            let mut state = self.state.lock();
-            state.free.push(buffer);
-            std::mem::take(&mut state.waiting_to_read)
-        };
+impl State {
+    /// A buffer is free again. While both ends are there it is kept for the next
+    /// read, and those who wait for a buffer are to be woken up. With an end gone
+    /// nobody is going to read into it, and it is let go.
+    fn free(&mut self, buffer: Vec<u8>) -> Wake {
+        if self.writer != WriterState::Writing || self.reader_is_dropped {
+            return Wake::Nobody;
+        }
 
-        wake(waiting);
+        self.free.push(buffer);
+        self.waiting_for_buffer.take()
     }
-}
 
-/// A future which is polled again and again while it waits is kept once
-fn wait(waiting: &mut Vec<Waker>, cx: &Context<'_>) {
-    if !waiting.iter().any(|waker| waker.will_wake(cx.waker())) {
-        waiting.push(cx.waker().clone());
+    /// A buffer to read into, `None` while both are taken. `Some(Ok(None))` is the
+    /// one which is not allocated yet - whoever has asked for it allocates it.
+    fn take_buffer(&mut self) -> Option<Result<Option<Vec<u8>>, DoubleBufferError>> {
+        if self.reader_is_dropped {
+            return Some(Err(DoubleBufferError::Disconnected));
+        }
+
+        if let Some(buffer) = self.free.pop() {
+            return Some(Ok(Some(buffer)));
+        }
+
+        if self.not_created > 0 {
+            self.not_created -= 1;
+            return Some(Ok(None));
+        }
+
+        None
     }
-}
 
-/// It is called with the lock released: waking up may drop a task, and a task may
-/// hold a buffer - which comes back through the same lock.
-///
-/// All of them are woken up, since a wait which was given up is among them as well,
-/// and it would take the only wake-up away.
-fn wake(waiting: Vec<Waker>) {
-    for waker in waiting {
-        waker.wake();
+    /// What is read next, `None` while nothing is. `Some(Ok(None))` is the end of
+    /// the stream.
+    #[allow(clippy::type_complexity)]
+    fn take_read(&mut self) -> Option<Result<Option<(Vec<u8>, usize)>, DoubleBufferError>> {
+        if let Some(read) = self.read.pop_front() {
+            return Some(Ok(Some(read)));
+        }
+
+        match self.writer {
+            WriterState::Writing => None,
+            WriterState::Finished => Some(Ok(None)),
+            WriterState::Dropped => Some(Err(DoubleBufferError::Disconnected)),
+        }
+    }
+
+    fn closed(&mut self) -> Option<()> {
+        self.reader_is_dropped.then_some(())
+    }
+
+    fn buffer_waiters(&mut self) -> &mut Waiters {
+        &mut self.waiting_for_buffer
+    }
+
+    fn read_waiters(&mut self) -> &mut Waiters {
+        &mut self.waiting_for_read
+    }
+
+    fn close_waiters(&mut self) -> &mut Waiters {
+        &mut self.waiting_for_close
     }
 }
 
 /// The end of a [`DoubleBuffer`] for the one who reads the stream.
 ///
-/// Dropping it is the end of what is read: the one who parses gets what was sent
-/// before, and `None` after it.
+/// `finish()` is the end of the stream. A writer dropped with no `finish()` - the
+/// connection is gone, the task has failed or is cancelled - is a stream cut short:
+/// the reader gets what was sent, and [`DoubleBufferError::Disconnected`] after it.
 pub struct DoubleBufferWriter {
     inner: Arc<DoubleBufferInner>,
 }
 
 impl DoubleBufferWriter {
     /// A buffer to read the stream into. It waits until one of the two is free -
-    /// that is, until the one who parses has dropped what it was given.
+    /// that is, until the chunk read into it before is dropped by the one who
+    /// processes it.
     ///
-    /// `None` - the reader is dropped, and nobody is going to parse what is read.
-    pub async fn get_buffer_to_read(&self) -> Option<BufferToRead<'_>> {
-        std::future::poll_fn(|cx| self.poll_buffer_to_read(cx)).await
-    }
+    /// `Err(Disconnected)` - the reader is dropped: nobody is going to process what
+    /// is read.
+    pub async fn get_buffer_to_read(&self) -> Result<BufferToRead<'_>, DoubleBufferError> {
+        let buffer = Waiting::new(&self.inner, State::take_buffer, State::buffer_waiters).await?;
 
-    fn poll_buffer_to_read(&self, cx: &mut Context<'_>) -> Poll<Option<BufferToRead<'_>>> {
-        let buffer = {
-            let mut state = self.inner.state.lock();
-
-            if state.reader_is_dropped {
-                return Poll::Ready(None);
-            }
-
-            match state.free.pop() {
-                Some(buffer) => Some(buffer),
-                None if state.not_created > 0 => {
-                    state.not_created -= 1;
-                    None
-                }
-                None => {
-                    wait(&mut state.waiting_to_read, cx);
-                    return Poll::Pending;
-                }
-            }
-        };
-
-        // It is allocated with the lock released
+        // A buffer taken for the first time is allocated with the lock released
         let buffer = buffer.unwrap_or_else(|| vec![0; self.inner.buffer_size]);
 
-        Poll::Ready(Some(BufferToRead {
-            buffer: Some(buffer),
+        Ok(BufferToRead {
+            buffer,
             writer: self,
-        }))
+        })
+    }
+
+    /// The end of the stream: the reader gets what was sent, and `None` after it.
+    pub fn finish(self) {
+        self.inner.state.lock().writer = WriterState::Finished;
+    }
+
+    /// `true` - the reader is dropped, and nobody is going to process what is read.
+    pub fn is_closed(&self) -> bool {
+        self.inner.state.lock().reader_is_dropped
+    }
+
+    /// Resolves once the reader is dropped. A read which may wait long - a socket
+    /// which is silent - is raced against it, so the one who reads learns at once
+    /// that nobody is going to process what it reads.
+    pub async fn closed(&self) {
+        Waiting::new(&self.inner, State::closed, State::close_waiters).await
     }
 }
 
 impl Drop for DoubleBufferWriter {
     fn drop(&mut self) {
-        let waiting = {
+        let (free, waiting) = {
             let mut state = self.inner.state.lock();
-            state.writer_is_dropped = true;
-            std::mem::take(&mut state.waiting_to_parse)
+
+            if state.writer == WriterState::Writing {
+                // No `finish()`: the stream is cut short
+                state.writer = WriterState::Dropped;
+            }
+
+            (
+                std::mem::take(&mut state.free),
+                state.waiting_for_read.take(),
+            )
         };
 
-        wake(waiting);
+        // Nobody is going to read into them
+        drop(free);
+        waiting.wake();
     }
 }
 
 /// A buffer to read the stream into - all the `buffer_size` bytes of it, as a
-/// `&mut [u8]`. What was read into it before is still there.
+/// `&mut [u8]`. What was read into it before is still there: it is not cleared.
 ///
-/// `send()` hands over what is read. A buffer which is dropped with no `send()` - a
-/// read which was given up, say - is free to be taken again.
+/// `send()` hands over what is read. A buffer dropped with no `send()` - a read
+/// which was given up, say - is free to be taken again.
 pub struct BufferToRead<'s> {
-    /// `None` - it is sent
-    buffer: Option<Vec<u8>>,
+    /// Empty once it is sent
+    buffer: Vec<u8>,
     writer: &'s DoubleBufferWriter,
 }
 
 impl BufferToRead<'_> {
-    /// `size` bytes are read into the beginning of the buffer - they go to the one
-    /// who parses, and they are what the next `get_next()` of the reader gives.
+    /// `size` bytes are read into the beginning of the buffer - they go to the reader,
+    /// and one of its next `get_next()` gives them.
     ///
-    /// With `size` of `0` there is nothing to parse, and with the reader dropped
-    /// there is nobody to parse it: the buffer is just free again.
+    /// With `size` of `0` there is nothing to process, and with the reader dropped
+    /// there is nobody to process it: the buffer is just free again.
     ///
     /// Panics when the buffer is smaller than `size` bytes.
     pub fn send(mut self, size: usize) {
         assert!(
-            size <= self.len(),
+            size <= self.buffer.len(),
             "send: {} bytes are sent, and the buffer has {} of them",
             size,
-            self.len()
+            self.buffer.len()
         );
 
         if size == 0 {
             return;
         }
 
-        let waiting = {
-            let mut state = self.writer.inner.state.lock();
+        let buffer = std::mem::take(&mut self.buffer);
+        let mut state = self.writer.inner.state.lock();
 
-            if state.reader_is_dropped {
-                return;
-            }
+        if state.reader_is_dropped {
+            // Nobody is going to process it - it is let go with the lock released
+            drop(state);
+            return;
+        }
 
-            if let Some(buffer) = self.buffer.take() {
-                state.read.push_back((buffer, size));
-            }
+        state.read.push_back((buffer, size));
+        let waiting = state.waiting_for_read.take();
+        drop(state);
 
-            std::mem::take(&mut state.waiting_to_parse)
-        };
-
-        wake(waiting);
+        waiting.wake();
     }
 }
 
@@ -216,29 +306,31 @@ impl Deref for BufferToRead<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        self.buffer.as_deref().unwrap_or_default()
+        &self.buffer
     }
 }
 
 impl DerefMut for BufferToRead<'_> {
     fn deref_mut(&mut self) -> &mut [u8] {
-        self.buffer.as_deref_mut().unwrap_or_default()
+        &mut self.buffer
     }
 }
 
 impl Drop for BufferToRead<'_> {
     fn drop(&mut self) {
-        // It is not sent - there is nothing to parse in it
-        if let Some(buffer) = self.buffer.take() {
-            self.writer.inner.free(buffer);
+        // Not sent - there is nothing to process in it
+        if !self.buffer.is_empty() {
+            let buffer = std::mem::take(&mut self.buffer);
+            let waiting = self.writer.inner.state.lock().free(buffer);
+            waiting.wake();
         }
     }
 }
 
-/// The end of a [`DoubleBuffer`] for the one who parses the stream.
+/// The end of a [`DoubleBuffer`] for the one who processes the stream.
 ///
-/// Dropping it stops the one who reads: `get_buffer_to_read()` gives `None` from
-/// then on.
+/// Dropping it stops the one who reads: every wait of the writer ends with
+/// [`DoubleBufferError::Disconnected`].
 pub struct DoubleBufferReader {
     inner: Arc<DoubleBufferInner>,
 }
@@ -247,56 +339,67 @@ impl DoubleBufferReader {
     /// What is read - the chunks come in the order they were sent. It waits until
     /// there is one.
     ///
-    /// `None` - the writer is dropped, and all it had sent is given already.
+    /// A chunk holds one of the two buffers, and dropping it says that it is
+    /// processed. While both chunks are held nothing is read, so a `get_next()`
+    /// which waits then waits forever: a chunk is processed and dropped, and what is
+    /// needed later is copied out of it.
     ///
-    /// A chunk holds its buffer, and there are two of them. While both chunks are
-    /// held, nothing is read - so `get_next()` called at that moment waits forever.
-    pub async fn get_next(&self) -> Option<DoubleBufferChunk> {
-        std::future::poll_fn(|cx| self.poll_next(cx)).await
+    /// - `Ok(None)` - the writer has called `finish()`, and all it has sent is given.
+    /// - `Err(Disconnected)` - the writer is dropped with no `finish()`: the stream is
+    ///   cut short. It comes after all that was sent before, and every call after it
+    ///   gives it again.
+    pub async fn get_next(&self) -> Result<Option<DoubleBufferChunk>, DoubleBufferError> {
+        let read = Waiting::new(&self.inner, State::take_read, State::read_waiters).await?;
+
+        Ok(read.map(|(buffer, size)| DoubleBufferChunk {
+            buffer,
+            size,
+            inner: self.inner.clone(),
+        }))
+    }
+}
+
+/// The reader is a stream: its chunks are what `get_next()` gives, and it ends the
+/// way the writer has ended it.
+#[async_trait::async_trait]
+impl AsyncBytesStream<DoubleBufferError> for DoubleBufferReader {
+    type Chunk = DoubleBufferChunk;
+
+    async fn get_next(&self) -> Result<Option<DoubleBufferChunk>, DoubleBufferError> {
+        DoubleBufferReader::get_next(self).await
     }
 
-    fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Option<DoubleBufferChunk>> {
-        let mut state = self.inner.state.lock();
-
-        if let Some((buffer, size)) = state.read.pop_front() {
-            return Poll::Ready(Some(DoubleBufferChunk {
-                buffer,
-                size,
-                inner: self.inner.clone(),
-            }));
-        }
-
-        if state.writer_is_dropped {
-            return Poll::Ready(None);
-        }
-
-        wait(&mut state.waiting_to_parse, cx);
-        Poll::Pending
+    fn get_size(&self) -> Option<usize> {
+        None
     }
 }
 
 impl Drop for DoubleBufferReader {
     fn drop(&mut self) {
-        let (not_parsed, waiting) = {
+        let (read, free, waiting_for_buffer, waiting_for_close) = {
             let mut state = self.inner.state.lock();
             state.reader_is_dropped = true;
 
             (
                 std::mem::take(&mut state.read),
-                std::mem::take(&mut state.waiting_to_read),
+                std::mem::take(&mut state.free),
+                state.waiting_for_buffer.take(),
+                state.waiting_for_close.take(),
             )
         };
 
-        // Nobody is going to parse it
-        drop(not_parsed);
-        wake(waiting);
+        // Nobody is going to process them, or to read into them
+        drop((read, free));
+
+        waiting_for_buffer.wake();
+        waiting_for_close.wake();
     }
 }
 
-/// What is read - the bytes to parse, as a `&[u8]`.
+/// What is read - the bytes to process, as a `&[u8]` through `Deref`.
 ///
-/// It holds one of the two buffers. Once it is dropped, the buffer is free to be
-/// read into again - that is how the one who parses says that it is done.
+/// It holds one of the two buffers. Dropping it says that it is processed - all of
+/// it: the buffer is free to be read into again.
 pub struct DoubleBufferChunk {
     buffer: Vec<u8>,
     size: usize,
@@ -306,13 +409,6 @@ pub struct DoubleBufferChunk {
 impl DoubleBufferChunk {
     pub fn as_slice(&self) -> &[u8] {
         &self.buffer[..self.size]
-    }
-
-    /// The same bytes as a `Bytes` - what a chunk of an `AsyncBytesStream` is. It is
-    /// not a copy: the buffer is held until the last piece of that `Bytes` - a clone
-    /// of it, a slice of it - is dropped.
-    pub fn into_bytes(self) -> Bytes {
-        Bytes::from_owner(self)
     }
 }
 
@@ -332,7 +428,144 @@ impl AsRef<[u8]> for DoubleBufferChunk {
 
 impl Drop for DoubleBufferChunk {
     fn drop(&mut self) {
-        self.inner.free(std::mem::take(&mut self.buffer));
+        let buffer = std::mem::take(&mut self.buffer);
+        let waiting = self.inner.state.lock().free(buffer);
+        waiting.wake();
+    }
+}
+
+/// Waits in one of the lists of [`State`] until `check` gives what it waits for.
+///
+/// Its waker is kept under a key: polled again, the future replaces it, and dropped,
+/// it takes it out. So a wait which is given up takes no wake-up away from the ones
+/// which are not, and a future polled again and again does not make the list grow.
+struct Waiting<'s, T> {
+    inner: &'s DoubleBufferInner,
+    key: Option<u64>,
+    check: fn(&mut State) -> Option<T>,
+    waiters: fn(&mut State) -> &mut Waiters,
+}
+
+impl<'s, T> Waiting<'s, T> {
+    fn new(
+        inner: &'s DoubleBufferInner,
+        check: fn(&mut State) -> Option<T>,
+        waiters: fn(&mut State) -> &mut Waiters,
+    ) -> Self {
+        Self {
+            inner,
+            key: None,
+            check,
+            waiters,
+        }
+    }
+}
+
+impl<T> Future for Waiting<'_, T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
+        let this = self.get_mut();
+        let mut state = this.inner.state.lock();
+
+        match (this.check)(&mut state) {
+            Some(result) => {
+                if let Some(key) = this.key.take() {
+                    (this.waiters)(&mut state).remove(key);
+                }
+
+                Poll::Ready(result)
+            }
+            None => {
+                this.key = Some((this.waiters)(&mut state).register(this.key, cx.waker()));
+                Poll::Pending
+            }
+        }
+    }
+}
+
+impl<T> Drop for Waiting<'_, T> {
+    fn drop(&mut self) {
+        if let Some(key) = self.key {
+            (self.waiters)(&mut self.inner.state.lock()).remove(key);
+        }
+    }
+}
+
+/// The wakers of the futures which wait for the same thing, each under the key of
+/// its future
+#[derive(Default)]
+struct Waiters {
+    entries: Vec<(u64, Waker)>,
+    last_key: u64,
+}
+
+impl Waiters {
+    /// Registers the waker of a future: `key` is what the future got the time before -
+    /// `None` the first time - and the key to keep is returned
+    fn register(&mut self, key: Option<u64>, waker: &Waker) -> u64 {
+        let key = match key {
+            Some(key) => {
+                if let Some((_, registered)) = self.entries.iter_mut().find(|(k, _)| *k == key) {
+                    registered.clone_from(waker);
+                    return key;
+                }
+
+                // It was woken up, and somebody else has taken what it waits for
+                key
+            }
+            None => {
+                self.last_key += 1;
+                self.last_key
+            }
+        };
+
+        self.entries.push((key, waker.clone()));
+        key
+    }
+
+    fn remove(&mut self, key: u64) {
+        if let Some(position) = self.entries.iter().position(|(k, _)| *k == key) {
+            self.entries.swap_remove(position);
+        }
+    }
+
+    /// Takes the wakers out, to be woken with the lock released. One waker - the
+    /// usual case - is taken alone, so the list keeps its room and the next wait
+    /// allocates nothing.
+    fn take(&mut self) -> Wake {
+        if self.entries.len() > 1 {
+            return Wake::All(std::mem::take(&mut self.entries));
+        }
+
+        match self.entries.pop() {
+            Some((_, waker)) => Wake::One(waker),
+            None => Wake::Nobody,
+        }
+    }
+}
+
+/// Wakers taken out of [`State`]. They are woken with the lock released: a waker may
+/// run or drop a task right away, and a task may hold a buffer - which comes back
+/// through the same lock.
+#[must_use]
+enum Wake {
+    Nobody,
+    One(Waker),
+    All(Vec<(u64, Waker)>),
+}
+
+impl Wake {
+    fn wake(self) {
+        match self {
+            Self::Nobody => {}
+            Self::One(waker) => waker.wake(),
+            Self::All(waiting) => {
+                for (_, waker) in waiting {
+                    waker.wake();
+                }
+            }
+        }
     }
 }
 
@@ -346,28 +579,45 @@ mod tests {
     use std::task::{Context, Poll, Wake, Waker};
     use std::time::Duration;
 
-    use bytes::Bytes;
-
-    use super::{DoubleBuffer, DoubleBufferChunk, DoubleBufferReader, DoubleBufferWriter};
+    use super::{
+        DoubleBuffer, DoubleBufferError, DoubleBufferInner, DoubleBufferReader,
+        DoubleBufferWriter,
+    };
     use crate::{AsyncBytesStream, BufferedReader};
 
-    /// Counts how many times the one who waits is woken up
+    /// Counts how many times the one who waits is woken up. One which takes the lock
+    /// of the double buffer when it is woken would wait for it forever if it were
+    /// woken with the lock held.
     #[derive(Default)]
-    struct WakeUps(AtomicUsize);
+    struct WakeUps {
+        count: AtomicUsize,
+        takes_the_lock: Option<Arc<DoubleBufferInner>>,
+    }
 
     impl WakeUps {
         fn new() -> Arc<Self> {
             Arc::new(Self::default())
         }
 
+        fn taking_the_lock_of(writer: &DoubleBufferWriter) -> Arc<Self> {
+            Arc::new(Self {
+                count: AtomicUsize::new(0),
+                takes_the_lock: Some(writer.inner.clone()),
+            })
+        }
+
         fn count(&self) -> usize {
-            self.0.load(Ordering::Relaxed)
+            self.count.load(Ordering::Relaxed)
         }
     }
 
     impl Wake for WakeUps {
         fn wake(self: Arc<Self>) {
-            self.0.fetch_add(1, Ordering::Relaxed);
+            if let Some(inner) = &self.takes_the_lock {
+                drop(inner.state.lock());
+            }
+
+            self.count.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -391,6 +641,11 @@ mod tests {
         buffer.send(src.len());
     }
 
+    /// The next chunk, processed at once: a copy of it
+    fn next(reader: &DoubleBufferReader) -> Result<Option<Vec<u8>>, DoubleBufferError> {
+        now(reader.get_next()).map(|chunk| chunk.map(|chunk| chunk.to_vec()))
+    }
+
     fn rt() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
             .enable_time()
@@ -399,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn what_is_read_comes_to_the_one_who_parses() {
+    fn what_is_read_comes_to_the_one_who_processes() {
         let (writer, reader) = DoubleBuffer::new(8);
 
         let mut buffer = now(writer.get_buffer_to_read()).unwrap();
@@ -409,8 +664,8 @@ mod tests {
         buffer[..5].copy_from_slice(b"Hello");
         buffer.send(5);
 
-        let chunk = now(reader.get_next()).unwrap();
-        assert_eq!(chunk.as_slice(), b"Hello");
+        let chunk = now(reader.get_next()).unwrap().unwrap();
+        assert_eq!(&*chunk, b"Hello");
         // The very same buffer - nothing is copied
         assert_eq!(chunk.as_ptr(), buffer_ptr);
     }
@@ -422,12 +677,12 @@ mod tests {
         send(&writer, b"ab");
         send(&writer, b"cd");
 
-        assert_eq!(now(reader.get_next()).unwrap().as_slice(), b"ab");
-        assert_eq!(now(reader.get_next()).unwrap().as_slice(), b"cd");
+        assert_eq!(next(&reader), Ok(Some(b"ab".to_vec())));
+        assert_eq!(next(&reader), Ok(Some(b"cd".to_vec())));
     }
 
     #[test]
-    fn the_third_buffer_waits_until_one_of_the_two_is_free() {
+    fn a_buffer_is_free_once_its_chunk_is_dropped() {
         let (writer, reader) = DoubleBuffer::new(4);
 
         send(&writer, b"ab");
@@ -437,20 +692,23 @@ mod tests {
         let mut third = pin!(writer.get_buffer_to_read());
         assert!(poll(third.as_mut(), &wake_ups).is_pending());
 
-        // It is taken to be parsed - and it is not parsed yet
-        let chunk = now(reader.get_next()).unwrap();
-        let chunk_ptr = chunk.as_ptr();
+        // It is taken - and it is being processed
+        let ab = now(reader.get_next()).unwrap().unwrap();
+        let ab_ptr = ab.as_ptr();
         assert!(poll(third.as_mut(), &wake_ups).is_pending());
         assert_eq!(wake_ups.count(), 0);
 
-        drop(chunk);
+        // It is processed
+        drop(ab);
         // Polled twice while it waited - and woken up once
         assert_eq!(wake_ups.count(), 1);
 
-        let Poll::Ready(Some(buffer)) = poll(third.as_mut(), &wake_ups) else {
+        let Poll::Ready(Ok(buffer)) = poll(third.as_mut(), &wake_ups) else {
             panic!("it waits");
         };
-        assert_eq!(buffer.as_ptr(), chunk_ptr);
+        assert_eq!(buffer.as_ptr(), ab_ptr);
+        // What was read into it before is still there - it is not cleared
+        assert_eq!(&buffer[..2], b"ab");
     }
 
     #[test]
@@ -470,10 +728,10 @@ mod tests {
         buffer.send(1);
         assert_eq!(wake_ups.count(), 1);
 
-        let Poll::Ready(Some(chunk)) = poll(next.as_mut(), &wake_ups) else {
+        let Poll::Ready(Ok(Some(chunk))) = poll(next.as_mut(), &wake_ups) else {
             panic!("it waits");
         };
-        assert_eq!(chunk.as_slice(), [7]);
+        assert_eq!(&*chunk, [7]);
     }
 
     #[test]
@@ -484,19 +742,26 @@ mod tests {
         let second = now(writer.get_buffer_to_read()).unwrap();
         let second_ptr = second.as_ptr();
 
+        let wake_ups = WakeUps::new();
+        let mut third = pin!(writer.get_buffer_to_read());
+        assert!(poll(third.as_mut(), &wake_ups).is_pending());
+
         // A read which was given up
         drop(second);
+        assert_eq!(wake_ups.count(), 1);
 
-        let again = now(writer.get_buffer_to_read()).unwrap();
+        let Poll::Ready(Ok(again)) = poll(third.as_mut(), &wake_ups) else {
+            panic!("it waits");
+        };
         assert_eq!(again.as_ptr(), second_ptr);
         assert_ne!(again.as_ptr(), first.as_ptr());
 
-        // Nothing has come to be parsed
+        // Nothing has come to be processed
         assert!(poll(pin!(reader.get_next()), &WakeUps::new()).is_pending());
     }
 
     #[test]
-    fn nothing_read_is_nothing_to_parse() {
+    fn nothing_read_is_nothing_to_process() {
         let (writer, reader) = DoubleBuffer::new(4);
 
         now(writer.get_buffer_to_read()).unwrap().send(0);
@@ -510,33 +775,65 @@ mod tests {
     }
 
     #[test]
-    fn a_dropped_writer_is_the_end_of_what_is_read() {
+    fn finish_is_the_end_of_the_stream() {
         let (writer, reader) = DoubleBuffer::new(4);
 
         send(&writer, b"ab");
-        drop(writer);
+        writer.finish();
 
-        // What was sent before is still there to be parsed
-        assert_eq!(now(reader.get_next()).unwrap().as_slice(), b"ab");
-        assert!(now(reader.get_next()).is_none());
-        assert!(now(reader.get_next()).is_none());
+        // What was sent before still comes, and the end after it
+        assert_eq!(next(&reader), Ok(Some(b"ab".to_vec())));
+        assert_eq!(next(&reader), Ok(None));
+        assert_eq!(next(&reader), Ok(None));
     }
 
     #[test]
-    fn a_dropped_writer_wakes_up_the_one_who_waits_to_parse() {
+    fn a_writer_dropped_with_no_finish_cuts_the_stream_short() {
         let (writer, reader) = DoubleBuffer::new(4);
 
-        let wake_ups = WakeUps::new();
-        let mut next = pin!(reader.get_next());
-        assert!(poll(next.as_mut(), &wake_ups).is_pending());
-
+        send(&writer, b"ab");
+        // The connection is gone before the end of the stream
         drop(writer);
-        assert_eq!(wake_ups.count(), 1);
-        assert!(matches!(poll(next.as_mut(), &wake_ups), Poll::Ready(None)));
+
+        // What was sent before still comes
+        assert_eq!(next(&reader), Ok(Some(b"ab".to_vec())));
+        // And then it is known that it was not all of it
+        assert_eq!(next(&reader), Err(DoubleBufferError::Disconnected));
+        assert_eq!(next(&reader), Err(DoubleBufferError::Disconnected));
     }
 
     #[test]
-    fn a_dropped_reader_stops_the_one_who_reads() {
+    fn the_reader_which_waits_learns_how_the_stream_has_ended() {
+        {
+            let (writer, reader) = DoubleBuffer::new(4);
+
+            let wake_ups = WakeUps::new();
+            let mut next = pin!(reader.get_next());
+            assert!(poll(next.as_mut(), &wake_ups).is_pending());
+
+            writer.finish();
+            assert_eq!(wake_ups.count(), 1);
+            assert!(matches!(poll(next.as_mut(), &wake_ups), Poll::Ready(Ok(None))));
+        }
+
+        {
+            let (writer, reader) = DoubleBuffer::new(4);
+
+            let wake_ups = WakeUps::new();
+            let mut next = pin!(reader.get_next());
+            assert!(poll(next.as_mut(), &wake_ups).is_pending());
+
+            drop(writer);
+            assert_eq!(wake_ups.count(), 1);
+            assert!(matches!(
+                poll(next.as_mut(), &wake_ups),
+                Poll::Ready(Err(DoubleBufferError::Disconnected))
+            ));
+        }
+    }
+
+    #[test]
+    fn a_dropped_reader_ends_every_wait_of_the_writer() {
         let (writer, reader) = DoubleBuffer::new(4);
 
         send(&writer, b"ab");
@@ -545,14 +842,25 @@ mod tests {
         let wake_ups = WakeUps::new();
         let mut third = pin!(writer.get_buffer_to_read());
         assert!(poll(third.as_mut(), &wake_ups).is_pending());
+        let mut closed = pin!(writer.closed());
+        assert!(poll(closed.as_mut(), &wake_ups).is_pending());
+        assert!(!writer.is_closed());
 
         drop(reader);
-        assert_eq!(wake_ups.count(), 1);
-        assert!(matches!(poll(third.as_mut(), &wake_ups), Poll::Ready(None)));
+        assert_eq!(wake_ups.count(), 2);
+        assert!(matches!(
+            poll(third.as_mut(), &wake_ups),
+            Poll::Ready(Err(DoubleBufferError::Disconnected))
+        ));
+        assert_eq!(poll(closed.as_mut(), &wake_ups), Poll::Ready(()));
+        assert!(writer.is_closed());
 
         // What was taken before goes nowhere
         taken.send(1);
-        assert!(now(writer.get_buffer_to_read()).is_none());
+        assert!(matches!(
+            now(writer.get_buffer_to_read()),
+            Err(DoubleBufferError::Disconnected)
+        ));
     }
 
     #[test]
@@ -560,74 +868,247 @@ mod tests {
         let (writer, reader) = DoubleBuffer::new(4);
 
         send(&writer, b"ab");
-        let chunk = now(reader.get_next()).unwrap();
+        let chunk = now(reader.get_next()).unwrap().unwrap();
 
         drop(writer);
         drop(reader);
 
-        assert_eq!(chunk.as_slice(), b"ab");
+        assert_eq!(&*chunk, b"ab");
     }
 
     #[test]
-    fn bytes_hold_the_buffer_until_the_last_piece_of_them_is_dropped() {
-        let (writer, reader) = DoubleBuffer::new(8);
+    fn the_buffers_are_let_go_once_an_end_is_gone() {
+        {
+            let (writer, reader) = DoubleBuffer::new(4);
 
-        send(&writer, b"Hello");
-        send(&writer, b"World");
+            send(&writer, b"ab");
+            let chunk = now(reader.get_next()).unwrap().unwrap();
+            let taken = now(writer.get_buffer_to_read()).unwrap();
 
-        let chunk = now(reader.get_next()).unwrap();
-        let chunk_ptr = chunk.as_ptr();
+            // The reader is dropped: what is sent, and what comes back, is not kept
+            drop(reader);
+            drop(chunk);
+            drop(taken);
 
-        let hello = chunk.into_bytes();
-        assert_eq!(hello, "Hello");
-        // Not a copy
-        assert_eq!(hello.as_ptr(), chunk_ptr);
+            let state = writer.inner.state.lock();
+            assert!(state.free.is_empty());
+            assert!(state.read.is_empty());
+        }
 
-        let ll = hello.slice(2..4);
+        {
+            let (writer, reader) = DoubleBuffer::new(4);
 
-        let wake_ups = WakeUps::new();
-        let mut third = pin!(writer.get_buffer_to_read());
-        assert!(poll(third.as_mut(), &wake_ups).is_pending());
+            send(&writer, b"ab");
+            send(&writer, b"cd");
+            writer.finish();
 
-        drop(hello);
-        // A slice of it is still held
-        assert!(poll(third.as_mut(), &wake_ups).is_pending());
-        assert_eq!(wake_ups.count(), 0);
-        assert_eq!(ll, "ll");
+            // The writer is gone: the buffers which are processed are not kept
+            assert_eq!(next(&reader), Ok(Some(b"ab".to_vec())));
+            assert_eq!(next(&reader), Ok(Some(b"cd".to_vec())));
+            assert_eq!(next(&reader), Ok(None));
 
-        drop(ll);
-        assert_eq!(wake_ups.count(), 1);
-
-        let Poll::Ready(Some(buffer)) = poll(third.as_mut(), &wake_ups) else {
-            panic!("it waits");
-        };
-        assert_eq!(buffer.as_ptr(), chunk_ptr);
+            assert!(reader.inner.state.lock().free.is_empty());
+        }
     }
 
     #[test]
-    fn a_wait_which_is_given_up_does_not_take_the_wake_up_away() {
+    fn every_waker_is_woken_with_the_lock_released() {
+        let (done, wait_until_done) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            // send() wakes the reader up
+            {
+                let (writer, reader) = DoubleBuffer::new(4);
+                let wake_ups = WakeUps::taking_the_lock_of(&writer);
+
+                let mut next = pin!(reader.get_next());
+                assert!(poll(next.as_mut(), &wake_ups).is_pending());
+
+                send(&writer, b"a");
+                assert_eq!(wake_ups.count(), 1);
+            }
+
+            // The writer which is dropped wakes the reader up
+            {
+                let (writer, reader) = DoubleBuffer::new(4);
+                let wake_ups = WakeUps::taking_the_lock_of(&writer);
+
+                let mut next = pin!(reader.get_next());
+                assert!(poll(next.as_mut(), &wake_ups).is_pending());
+
+                drop(writer);
+                assert_eq!(wake_ups.count(), 1);
+            }
+
+            // A chunk which is processed wakes the writer up
+            {
+                let (writer, reader) = DoubleBuffer::new(4);
+                let wake_ups = WakeUps::taking_the_lock_of(&writer);
+
+                send(&writer, b"a");
+                send(&writer, b"b");
+
+                let mut third = pin!(writer.get_buffer_to_read());
+                assert!(poll(third.as_mut(), &wake_ups).is_pending());
+
+                next(&reader).unwrap();
+                assert_eq!(wake_ups.count(), 1);
+            }
+
+            // A buffer which is not sent wakes the writer up
+            {
+                let (writer, _reader) = DoubleBuffer::new(4);
+                let wake_ups = WakeUps::taking_the_lock_of(&writer);
+
+                let first = now(writer.get_buffer_to_read()).unwrap();
+                let _second = now(writer.get_buffer_to_read()).unwrap();
+
+                let mut third = pin!(writer.get_buffer_to_read());
+                assert!(poll(third.as_mut(), &wake_ups).is_pending());
+
+                drop(first);
+                assert_eq!(wake_ups.count(), 1);
+            }
+
+            // The reader which is dropped wakes up every wait of the writer
+            {
+                let (writer, reader) = DoubleBuffer::new(4);
+                let wake_ups = WakeUps::taking_the_lock_of(&writer);
+
+                let _first = now(writer.get_buffer_to_read()).unwrap();
+                let _second = now(writer.get_buffer_to_read()).unwrap();
+
+                let mut third = pin!(writer.get_buffer_to_read());
+                assert!(poll(third.as_mut(), &wake_ups).is_pending());
+                let mut closed = pin!(writer.closed());
+                assert!(poll(closed.as_mut(), &wake_ups).is_pending());
+
+                drop(reader);
+                assert_eq!(wake_ups.count(), 2);
+            }
+
+            done.send(()).unwrap();
+        });
+
+        wait_until_done
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a waker is woken with the lock held, and waits for it forever");
+    }
+
+    #[test]
+    fn a_wait_which_is_given_up_takes_no_wake_up_away() {
+        for give_up_the_first in [true, false] {
+            // Two waits for a buffer
+            {
+                let (writer, reader) = DoubleBuffer::new(4);
+
+                send(&writer, b"ab");
+                send(&writer, b"cd");
+
+                let (first, second) = (WakeUps::new(), WakeUps::new());
+                let mut a = Box::pin(writer.get_buffer_to_read());
+                let mut b = Box::pin(writer.get_buffer_to_read());
+                assert!(poll(a.as_mut(), &first).is_pending());
+                assert!(poll(b.as_mut(), &second).is_pending());
+
+                let (given_up, mut waits, wake_ups) = match give_up_the_first {
+                    true => (a, b, &second),
+                    false => (b, a, &first),
+                };
+
+                drop(given_up);
+                assert_eq!(writer.inner.state.lock().waiting_for_buffer.entries.len(), 1);
+
+                next(&reader).unwrap();
+
+                assert_eq!(wake_ups.count(), 1);
+                assert!(matches!(poll(waits.as_mut(), wake_ups), Poll::Ready(Ok(_))));
+            }
+
+            // Two waits for a chunk
+            {
+                let (writer, reader) = DoubleBuffer::new(4);
+
+                let (first, second) = (WakeUps::new(), WakeUps::new());
+                let mut a = Box::pin(reader.get_next());
+                let mut b = Box::pin(reader.get_next());
+                assert!(poll(a.as_mut(), &first).is_pending());
+                assert!(poll(b.as_mut(), &second).is_pending());
+
+                let (given_up, mut waits, wake_ups) = match give_up_the_first {
+                    true => (a, b, &second),
+                    false => (b, a, &first),
+                };
+
+                drop(given_up);
+                assert_eq!(writer.inner.state.lock().waiting_for_read.entries.len(), 1);
+
+                send(&writer, b"ab");
+
+                assert_eq!(wake_ups.count(), 1);
+                assert!(matches!(poll(waits.as_mut(), wake_ups), Poll::Ready(Ok(Some(_)))));
+            }
+        }
+    }
+
+    #[test]
+    fn a_wait_polled_again_and_again_is_kept_once() {
         let (writer, reader) = DoubleBuffer::new(4);
 
         send(&writer, b"ab");
         send(&writer, b"cd");
 
-        let given_up = WakeUps::new();
-        {
-            let mut fut = pin!(writer.get_buffer_to_read());
-            assert!(poll(fut.as_mut(), &given_up).is_pending());
+        // Every poll with a waker of its own - the way `will_wake()` may see them
+        let wake_ups: Vec<_> = (0..100).map(|_| WakeUps::new()).collect();
+
+        let mut third = pin!(writer.get_buffer_to_read());
+        for wake_ups in &wake_ups {
+            assert!(poll(third.as_mut(), wake_ups).is_pending());
         }
 
-        let wake_ups = WakeUps::new();
-        let mut fut = pin!(writer.get_buffer_to_read());
-        assert!(poll(fut.as_mut(), &wake_ups).is_pending());
+        assert_eq!(writer.inner.state.lock().waiting_for_buffer.entries.len(), 1);
 
-        drop(now(reader.get_next()));
+        next(&reader).unwrap();
 
-        assert_eq!(wake_ups.count(), 1);
-        assert!(matches!(
-            poll(fut.as_mut(), &wake_ups),
-            Poll::Ready(Some(_))
-        ));
+        // The waker it was polled with last is woken up, and only that one
+        assert_eq!(wake_ups[99].count(), 1);
+        assert_eq!(wake_ups.iter().map(|w| w.count()).sum::<usize>(), 1);
+    }
+
+    #[test]
+    fn the_one_who_waits_alone_leaves_the_room_of_the_list_to_the_next() {
+        let (writer, reader) = DoubleBuffer::new(4);
+
+        send(&writer, b"ab");
+        send(&writer, b"cd");
+
+        let mut third = pin!(writer.get_buffer_to_read());
+        assert!(poll(third.as_mut(), &WakeUps::new()).is_pending());
+
+        // "ab" is processed, and the one who waits is woken up
+        next(&reader).unwrap();
+
+        let state = writer.inner.state.lock();
+        assert!(state.waiting_for_buffer.entries.is_empty());
+        // The next wait allocates nothing
+        assert!(state.waiting_for_buffer.entries.capacity() > 0);
+    }
+
+    #[test]
+    fn a_wait_for_a_chunk_which_is_given_up_loses_nothing() {
+        let (writer, reader) = DoubleBuffer::new(4);
+
+        // It waits, and is given up - a `select!` which took the other branch
+        assert!(poll(pin!(reader.get_next()), &WakeUps::new()).is_pending());
+
+        send(&writer, b"ab");
+        assert_eq!(next(&reader), Ok(Some(b"ab".to_vec())));
+    }
+
+    #[test]
+    #[should_panic(expected = "DoubleBuffer::new: the size of a buffer is 0")]
+    fn a_buffer_of_no_size_panics() {
+        let _ = DoubleBuffer::new(0);
     }
 
     #[test]
@@ -639,74 +1120,100 @@ mod tests {
     }
 
     #[test]
-    fn it_is_read_in_one_thread_and_parsed_in_another() {
+    fn the_ends_the_chunks_and_the_futures_go_to_other_tasks() {
+        fn is_send<T: Send>(_: &T) {}
+        fn is_send_sync_and_static<T: Send + Sync + 'static>(_: T) {}
+
+        let (writer, reader) = DoubleBuffer::new(4);
+
+        is_send(&writer.get_buffer_to_read());
+        is_send(&writer.closed());
+        is_send(&reader.get_next());
+
+        send(&writer, b"ab");
+        is_send_sync_and_static(now(reader.get_next()).unwrap().unwrap());
+
+        is_send_sync_and_static(writer);
+        is_send_sync_and_static(reader);
+    }
+
+    #[test]
+    fn it_is_read_in_one_thread_and_processed_in_another() {
         const CHUNKS: u32 = 50_000;
         const BUFFER_SIZE: usize = 64;
 
-        let (writer, reader) = DoubleBuffer::new(BUFFER_SIZE);
+        for finish in [true, false] {
+            let (writer, reader) = DoubleBuffer::new(BUFFER_SIZE);
 
-        let reading = std::thread::spawn(move || {
-            rt().block_on(async move {
-                for no in 0..CHUNKS {
-                    let mut buffer = writer.get_buffer_to_read().await.unwrap();
+            let reading = std::thread::spawn(move || {
+                rt().block_on(async move {
+                    for no in 0..CHUNKS {
+                        let mut buffer = writer.get_buffer_to_read().await.unwrap();
 
-                    // The number of the chunk, and the size which is told by it
-                    let size = 4 + no as usize % (BUFFER_SIZE - 3);
-                    buffer[..size].fill(no as u8);
-                    buffer[..4].copy_from_slice(&no.to_le_bytes());
+                        // The number of the chunk, and the size which is told by it
+                        let size = 4 + no as usize % (BUFFER_SIZE - 3);
+                        buffer[..size].fill(no as u8);
+                        buffer[..4].copy_from_slice(&no.to_le_bytes());
 
-                    buffer.send(size);
-                }
-            })
-        });
+                        buffer.send(size);
+                    }
 
-        let parsing = async {
-            let mut buffers = HashSet::new();
-            let mut no = 0u32;
+                    if finish {
+                        writer.finish();
+                    }
+                })
+            });
 
-            while let Some(chunk) = reader.get_next().await {
-                buffers.insert(chunk.as_ptr() as usize);
+            let processing = async {
+                let mut buffers = HashSet::new();
+                let mut no = 0u32;
 
-                // The one who parses is slow now and then - so both get to wait
-                if no % 5 == 0 {
-                    tokio::task::yield_now().await;
-                }
+                let end = loop {
+                    let chunk = match reader.get_next().await {
+                        Ok(Some(chunk)) => chunk,
+                        Ok(None) => break Ok(()),
+                        Err(err) => break Err(err),
+                    };
 
-                // Whatever was read meanwhile, the chunk is what it was
-                assert_eq!(chunk.len(), 4 + no as usize % (BUFFER_SIZE - 3));
-                assert_eq!(chunk[..4], no.to_le_bytes());
-                assert!(chunk[4..].iter().all(|b| *b == no as u8));
+                    buffers.insert(chunk.as_ptr() as usize);
 
-                no += 1;
+                    // The one who processes is slow now and then - so both get to wait
+                    if no % 5 == 0 {
+                        tokio::task::yield_now().await;
+                    }
+
+                    // Whatever is read meanwhile, the chunk is what it was
+                    assert_eq!(chunk.len(), 4 + no as usize % (BUFFER_SIZE - 3));
+                    assert_eq!(chunk[..4], no.to_le_bytes());
+                    assert!(chunk[4..].iter().all(|b| *b == no as u8));
+
+                    no += 1;
+                };
+
+                (no, end, buffers.len())
+            };
+
+            let (processed, end, buffers) = rt()
+                .block_on(async { tokio::time::timeout(Duration::from_secs(60), processing).await })
+                .expect("somebody waits and is never woken up");
+
+            reading.join().unwrap();
+
+            assert_eq!(processed, CHUNKS);
+            assert!(buffers <= 2);
+
+            match finish {
+                true => assert_eq!(end, Ok(())),
+                false => assert_eq!(end, Err(DoubleBufferError::Disconnected)),
             }
-
-            assert_eq!(no, CHUNKS);
-            buffers
-        };
-
-        let buffers = rt()
-            .block_on(async { tokio::time::timeout(Duration::from_secs(60), parsing).await })
-            .expect("somebody waits and is never woken up");
-
-        reading.join().unwrap();
-        assert!(buffers.len() <= 2);
-    }
-
-    /// What a stream over a `DoubleBuffer` is: a chunk goes as a `Bytes`
-    struct ReadByChunks(DoubleBufferReader);
-
-    #[async_trait::async_trait]
-    impl AsyncBytesStream<String> for ReadByChunks {
-        async fn get_next(&self) -> Result<Option<Bytes>, String> {
-            Ok(self.0.get_next().await.map(DoubleBufferChunk::into_bytes))
-        }
-
-        fn get_size(&self) -> Option<usize> {
-            None
         }
     }
 
-    async fn read_lines(reader: &mut BufferedReader<String, ReadByChunks>) -> Vec<String> {
+    /// Reads the lines the way a parser does: takes what is complete, and asks for
+    /// more when nothing is. Gives the lines, and how the stream has ended
+    async fn read_lines(
+        reader: &mut BufferedReader<DoubleBufferError, DoubleBufferReader>,
+    ) -> (Vec<String>, Result<(), DoubleBufferError>) {
         let mut lines = Vec::new();
 
         loop {
@@ -717,13 +1224,13 @@ mod tests {
             }
 
             if !reader.read_mode() {
-                break;
+                return (lines, Ok(()));
             }
 
-            reader.get_next().await.unwrap();
+            if let Err(err) = reader.get_next().await {
+                return (lines, Err(err));
+            }
         }
-
-        lines
     }
 
     #[test]
@@ -733,43 +1240,80 @@ mod tests {
 
         rt().block_on(async {
             for buffer_size in 1..=SRC.len() + 1 {
-                let (writer, reader) = DoubleBuffer::new(buffer_size);
+                for finish in [true, false] {
+                    let (writer, reader) = DoubleBuffer::new(buffer_size);
+
+                    let reading = tokio::spawn(async move {
+                        for piece in SRC.as_bytes().chunks(buffer_size) {
+                            let mut buffer = writer.get_buffer_to_read().await.unwrap();
+                            buffer[..piece.len()].copy_from_slice(piece);
+                            buffer.send(piece.len());
+                        }
+
+                        if finish {
+                            writer.finish();
+                        }
+                    });
+
+                    let mut parser = BufferedReader::new(reader);
+
+                    // A line is longer than a buffer, and it is cut wherever it happens
+                    // to be
+                    let (lines, end) =
+                        tokio::time::timeout(Duration::from_secs(10), read_lines(&mut parser))
+                            .await
+                            .unwrap_or_else(|_| panic!("it hangs, buffer_size: {}", buffer_size));
+
+                    reading.await.unwrap();
+
+                    assert_eq!(
+                        lines,
+                        [
+                            "{\"id\":1}",
+                            "{\"id\":22,\"name\":\"some name\"}",
+                            "",
+                            "{\"id\":333}"
+                        ],
+                        "buffer_size: {}",
+                        buffer_size
+                    );
+                    assert_eq!(parser.as_slice(), b"not complete");
+
+                    // A stream which is cut short is not taken for a whole one
+                    match finish {
+                        true => assert_eq!(end, Ok(())),
+                        false => assert_eq!(end, Err(DoubleBufferError::Disconnected)),
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn into_vec_reads_it_all_or_learns_that_it_is_cut_short() {
+        rt().block_on(async {
+            for finish in [true, false] {
+                let (writer, reader) = DoubleBuffer::new(4);
 
                 let reading = tokio::spawn(async move {
-                    let mut buffers = HashSet::new();
-
-                    for piece in SRC.as_bytes().chunks(buffer_size) {
+                    for piece in b"hello world".chunks(4) {
                         let mut buffer = writer.get_buffer_to_read().await.unwrap();
-                        buffers.insert(buffer.as_ptr() as usize);
-
                         buffer[..piece.len()].copy_from_slice(piece);
                         buffer.send(piece.len());
                     }
 
-                    buffers.len()
+                    if finish {
+                        writer.finish();
+                    }
                 });
 
-                let mut parser = BufferedReader::new(ReadByChunks(reader));
+                let result = AsyncBytesStream::into_vec(&reader).await;
+                reading.await.unwrap();
 
-                // A line is longer than a buffer, and it is cut wherever it happens
-                // to be - the reader holds a chunk while it asks for the next one
-                let lines = tokio::time::timeout(Duration::from_secs(10), read_lines(&mut parser))
-                    .await
-                    .unwrap_or_else(|_| panic!("it hangs, buffer_size: {}", buffer_size));
-
-                assert_eq!(
-                    lines,
-                    [
-                        "{\"id\":1}",
-                        "{\"id\":22,\"name\":\"some name\"}",
-                        "",
-                        "{\"id\":333}"
-                    ],
-                    "buffer_size: {}",
-                    buffer_size
-                );
-                assert_eq!(parser.as_slice(), b"not complete");
-                assert!(reading.await.unwrap() <= 2);
+                match finish {
+                    true => assert_eq!(result, Ok(b"hello world".to_vec())),
+                    false => assert_eq!(result, Err(DoubleBufferError::Disconnected)),
+                }
             }
         });
     }

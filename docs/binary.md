@@ -151,34 +151,29 @@ async fn count_lines(path: &str) -> std::io::Result<usize> {
 
 A trait for a stream of bytes that arrives chunk by chunk: a file, a response body, a blob downloaded in parts. It needs no feature.
 
-- `get_next()` returns `Ok(Some(chunk))` with the next chunk, and `Ok(None)` at the end of the data. A chunk is a `Bytes` of the `bytes` crate, which is re-exported as `rust_extensions::bytes`.
+- `get_next()` returns `Ok(Some(chunk))` with the next chunk, and `Ok(None)` at the end of the data. A chunk gives its bytes as a `&[u8]` through `Deref`, whatever the stream holds them in — a `Vec<u8>`, a `Bytes`, a buffer of a `DoubleBuffer`. That is the `Chunk` type of the stream.
 - `get_size()` returns the size of the whole stream in bytes, or `None` when it is not known before the stream is read.
 - `into_vec()` is already implemented. It reads the stream to the end and returns everything as one `Vec<u8>`.
 
 ```rust
 use std::sync::atomic::{AtomicUsize, Ordering};
-use rust_extensions::bytes::Bytes;
 use rust_extensions::AsyncBytesStream;
 
+/// Hands its chunks over one by one
 struct Chunks {
-    chunks: Vec<Bytes>,
+    chunks: Vec<&'static [u8]>,
     next_chunk: AtomicUsize,
-}
-
-impl Chunks {
-    fn new(chunks: Vec<Vec<u8>>) -> Self {
-        // A `Vec<u8>` becomes a chunk with no copy
-        let chunks = chunks.into_iter().map(Bytes::from).collect();
-        Self { chunks, next_chunk: AtomicUsize::new(0) }
-    }
 }
 
 #[async_trait::async_trait]
 impl AsyncBytesStream<std::io::Error> for Chunks {
-    async fn get_next(&self) -> std::io::Result<Option<Bytes>> {
+    // Whatever gives a `&[u8]` through `Deref`: a `Vec<u8>`, a `Bytes`, a `&'static [u8]`
+    type Chunk = &'static [u8];
+
+    async fn get_next(&self) -> std::io::Result<Option<&'static [u8]>> {
         let chunk_no = self.next_chunk.fetch_add(1, Ordering::Relaxed);
-        // None once the chunks are over. Cloning a `Bytes` copies no data.
-        Ok(self.chunks.get(chunk_no).cloned())
+        // None once the chunks are over
+        Ok(self.chunks.get(chunk_no).copied())
     }
 
     fn get_size(&self) -> Option<usize> {
@@ -190,58 +185,53 @@ let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
 
 rt.block_on(async {
     // Chunk by chunk...
-    let src = Chunks::new(vec![b"hello ".to_vec(), b"world".to_vec()]);
-    let mut chunks = 0;
-    while let Some(_chunk) = src.get_next().await.unwrap() {
-        chunks += 1;
+    let src = Chunks { chunks: vec![b"hello ", b"world"], next_chunk: AtomicUsize::new(0) };
+    let mut read = 0;
+    while let Some(chunk) = src.get_next().await.unwrap() {
+        read += chunk.len(); // what is needed later is copied out of the chunk
     }
-    assert_eq!(chunks, 2);
+    assert_eq!(read, 11);
 
     // ...or everything at once.
-    let src = Chunks::new(vec![b"hello ".to_vec(), b"world".to_vec()]);
+    let src = Chunks { chunks: vec![b"hello ", b"world"], next_chunk: AtomicUsize::new(0) };
     assert_eq!(src.get_size(), Some(11));
     assert_eq!(src.into_vec().await.unwrap(), b"hello world");
 });
 ```
 
-`into_vec()` makes the first chunk the result itself. Nothing is allocated or copied for a chunk nobody else holds a part of — one made of a `Vec<u8>`, for example. A chunk that shares its buffer, such as a part of what was read off a socket, is copied out of it.
-
-- **The chunk is the whole stream** — its length is `get_size()`. It is returned as it is, and `get_next()` is not called again.
-- **The size is known and the chunk is smaller.** The chunk is extended to that size at once, so it does not grow while the rest is appended.
-- **The size is not known.** The rest is appended to the chunk until `get_next()` returns `None`.
-
 The contracts:
 
-- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the stream works as `Arc<dyn AsyncBytesStream<TError> + Send + Sync>`, `into_vec()` included. An `Arc` of a stream is a stream itself, so it goes wherever one is taken.
-- **A chunk is handed over with no copy.** A stream that already has `Bytes` returns them as they are, and a `Vec<u8>` becomes a chunk with `.into()`.
-- **`get_size()` must be exact.** `into_vec()` stops at a first chunk of exactly that length. It is asked after the first chunk has arrived, so a size that becomes known only then still counts.
+- **Dropping a chunk says that it is processed.** A stream which reads into buffers of its own reads into that one again. So a chunk is processed and dropped, and what is needed later is copied out of it. A chunk which is kept keeps its buffer: a `DoubleBuffer` stops reading while both of its chunks are held.
+- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the stream works as `Arc<dyn AsyncBytesStream<TError, Chunk = ...> + Send + Sync>`, `into_vec()` included. An `Arc` of a stream is a stream itself, so it goes wherever one is taken.
+- **`into_vec()` copies every chunk** into one `Vec`, allocated for `get_size()` bytes at once when the size is known. The size is only a hint for that: the stream is read until `None` whatever it says.
 - **`into_vec()` reads what is left.** Called after some `get_next()`, it returns only the remaining bytes.
 - **Errors.** `into_vec()` returns the first error, and the chunks read before it are dropped.
 
 ## BufferedReader — parsing a stream cut into chunks
 
-A stream is cut into chunks wherever it happens to be, so a JSON, a line or a frame may begin in one chunk and end in the next. `BufferedReader` wraps an `AsyncBytesStream` and keeps what is read and not parsed yet as one run of bytes. It needs no feature.
+A stream is cut into chunks wherever it happens to be, so a JSON, a line or a frame may begin in one chunk and end in the next. `BufferedReader` wraps an `AsyncBytesStream` and keeps what is read and not parsed yet in a buffer of its own, as one run of bytes. It needs no feature.
 
 - `as_slice()` is what there is to parse.
 - `mark_as_read(size)` drops `size` parsed bytes from the beginning.
-- `get_next()` reads the next chunk in when there is not enough to parse. It returns all there is to parse — the bytes of `as_slice()` — as a `Bytes`.
+- `get_next()` reads the next chunk in when there is not enough to parse. It returns all there is to parse — the bytes of `as_slice()`.
 - `read_mode()` is `false` once the stream is read to its end.
 
 ```rust
 use std::sync::atomic::{AtomicUsize, Ordering};
-use rust_extensions::bytes::Bytes;
 use rust_extensions::{AsyncBytesStream, BufferedReader};
 
 struct Chunks {
-    chunks: Vec<Bytes>,
+    chunks: Vec<&'static [u8]>,
     next_chunk: AtomicUsize,
 }
 
 #[async_trait::async_trait]
 impl AsyncBytesStream<std::io::Error> for Chunks {
-    async fn get_next(&self) -> std::io::Result<Option<Bytes>> {
+    type Chunk = &'static [u8];
+
+    async fn get_next(&self) -> std::io::Result<Option<&'static [u8]>> {
         let chunk_no = self.next_chunk.fetch_add(1, Ordering::Relaxed);
-        Ok(self.chunks.get(chunk_no).cloned())
+        Ok(self.chunks.get(chunk_no).copied())
     }
 
     fn get_size(&self) -> Option<usize> {
@@ -260,11 +250,7 @@ let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
 rt.block_on(async {
     // The chunks are cut in the middle of the lines
     let src = Chunks {
-        chunks: vec![
-            Bytes::from_static(b"{\"id\":1}\n{\"i"),
-            Bytes::from_static(b"d\":2}\n{\"id\""),
-            Bytes::from_static(b":3}\n"),
-        ],
+        chunks: vec![b"{\"id\":1}\n{\"i", b"d\":2}\n{\"id\"", b":3}\n"],
         next_chunk: AtomicUsize::new(0),
     };
 
@@ -292,29 +278,28 @@ rt.block_on(async {
 });
 ```
 
-The bytes are kept in a `Bytes`, and they are copied only to be joined:
+A chunk is copied into the reader's buffer as soon as it comes:
 
-- **Nothing is left to parse.** The next chunk becomes the buffer as it is, with no copy.
-- **Some bytes are not parsed yet.** The chunk is copied behind them. The buffer is reused: the room of what was marked as read is given back, and the buffer grows the way a `Vec` does.
-- **`mark_as_read()` moves nothing.** The bytes that are left stay where they are.
+- **The reader holds none of the chunks of the stream.** Each one is dropped once it is copied, so a `DoubleBuffer` has its buffer back at once and reads into it while the copy is parsed.
+- **The buffer is reused.** The room of what was marked as read is given back, and the buffer grows the way a `Vec` does — up to the longest run of bytes not parsed at once.
+- **To parse with no copy at all**, read the stream itself: parse a chunk in place, and copy out only what is left of it.
 
 The contracts:
 
-- **What `get_next()` returns shares the buffer.** It is not a copy, and it stays as it is whatever is read later: keep it, slice it, send it to another task. While it is alive the reader can not put the next chunk into that buffer, so the next `get_next()` copies the bytes not parsed yet to a new one. For a piece that lasts for many chunks that is a copy of everything read so far on every call. Drop it before the next call, or parse through `as_slice()`, unless it is there to be kept.
 - **`read_mode()` turns `false` one call after the last chunk.** The reader learns about the end when the stream returns `None`. That call returns what is left, and the stream is not asked again.
 - **Chunks with no bytes are skipped.** After `get_next()` there is something new to parse, or `read_mode()` is `false`.
 - **Errors.** `get_next()` returns the error of the stream as it is. What was read stays, and the next call asks the stream again.
 - **`mark_as_read()` panics** when there are fewer than `size` bytes.
 - **One parser.** Unlike the stream, the reader changes through `&mut self`.
 
-## DoubleBuffer — two buffers between reading and parsing
+## DoubleBuffer — read into one buffer while the other is processed
 
-One task reads a stream, another one parses it. `DoubleBuffer` gives them two buffers to pass the bytes through: while a chunk is being parsed, the next one is read into the other buffer. No bytes are copied, and there are never more than the two buffers. It needs no feature and no runtime.
+One task reads a stream, another one processes it. `DoubleBuffer` gives them two buffers: a buffer is read into and handed over, and while it is processed the next one is read into the other. Processed means all of it — the buffer is free to be read into again. The buffers are `Vec<u8>`s, allocated once, and nothing is copied. It needs no feature and no runtime.
 
 `DoubleBuffer::new(buffer_size)` returns the two ends.
 
-- **`DoubleBufferWriter`** is for the one who reads. `get_buffer_to_read()` gives a buffer — a `&mut [u8]` of `buffer_size` bytes — and waits until one of the two is free. `send(size)` of that buffer hands over the first `size` bytes of it.
-- **`DoubleBufferReader`** is for the one who parses. `get_next()` gives what is read — a chunk, which is a `&[u8]` — and waits until there is one. Dropping the chunk frees its buffer to be read into again.
+- **`DoubleBufferWriter`** is for the one who reads. `get_buffer_to_read()` gives a buffer — a `&mut [u8]` of `buffer_size` bytes — and waits until one of the two is free. `send(size)` of that buffer hands over the first `size` bytes of it, and `finish()` is the end of the stream.
+- **`DoubleBufferReader`** is for the one who processes. `get_next()` gives what is read — a `DoubleBufferChunk`, a `&[u8]` through `Deref` — and waits until there is one. Dropping the chunk says that it is processed, and its buffer is free again. The reader is an `AsyncBytesStream` as well.
 
 ```rust
 use rust_extensions::DoubleBuffer;
@@ -326,52 +311,82 @@ rt.block_on(async {
     let (writer, reader) = DoubleBuffer::new(8);
 
     // The one who reads
-    let reading = tokio::spawn(async move {
+    tokio::spawn(async move {
         let mut src: &[u8] = b"hello world, hello buffers"; // a socket, a file
 
-        // None - the reader is dropped, so nobody is going to parse
-        while let Some(mut buffer) = writer.get_buffer_to_read().await {
-            let size = src.read(&mut buffer).await?;
+        loop {
+            // Err - the reader is dropped: nobody is going to process what is read
+            let Ok(mut buffer) = writer.get_buffer_to_read().await else {
+                return;
+            };
 
-            if size == 0 {
-                break; // the stream is over
+            match src.read(&mut buffer).await {
+                Ok(0) => {
+                    // The stream is over. `buffer` borrows the writer - it goes first
+                    drop(buffer);
+                    writer.finish();
+                    return;
+                }
+                Ok(size) => buffer.send(size),
+                // The connection is gone: the writer is dropped with no finish(),
+                // and the reader gets Err(Disconnected)
+                Err(_) => return,
             }
-
-            buffer.send(size);
         }
-
-        std::io::Result::Ok(())
-        // `writer` is dropped here - that is the end for the one who parses
     });
 
-    // The one who parses
+    // The one who processes
     let mut result = Vec::new();
 
-    while let Some(chunk) = reader.get_next().await {
+    while let Some(chunk) = reader.get_next().await.unwrap() {
         assert!(chunk.len() <= 8);
-        result.extend_from_slice(&chunk);
-        // `chunk` is dropped here - its buffer is free to be read into again
+        result.extend_from_slice(&chunk); // what is needed later is copied
+        // `chunk` is dropped here - it is processed, and its buffer is free again
     }
 
     assert_eq!(result, b"hello world, hello buffers");
-
-    // `None` does not say why the reading is over - the task does
-    reading.await.unwrap().unwrap();
 });
 ```
 
-A chunk becomes a `Bytes` with `into_bytes()`, which is what a chunk of an `AsyncBytesStream` is. It is not a copy: the buffer is free once the last piece of that `Bytes` — a clone of it, a slice of it — is dropped. So a stream over a `DoubleBufferReader` is `reader.get_next().await.map(DoubleBufferChunk::into_bytes)`, and a `BufferedReader` parses it as any other stream.
+A writer which is gone before `finish()` leaves a stream which is not read to its end — the connection is dropped, the read has failed, the task has panicked or is cancelled. The reader learns it:
+
+```rust
+use rust_extensions::{DoubleBuffer, DoubleBufferError};
+
+let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+rt.block_on(async {
+    let (writer, reader) = DoubleBuffer::new(8);
+
+    let mut buffer = writer.get_buffer_to_read().await.unwrap();
+    buffer[..5].copy_from_slice(b"hello");
+    buffer.send(5);
+
+    // The connection is gone before the end of the stream
+    drop(writer);
+
+    // What was read before it still comes...
+    let chunk = reader.get_next().await.unwrap();
+    assert_eq!(chunk.as_deref(), Some(&b"hello"[..]));
+    drop(chunk);
+
+    // ...and then it is known that it was not all of it
+    assert_eq!(reader.get_next().await.err(), Some(DoubleBufferError::Disconnected));
+});
+```
 
 The contracts:
 
-- **The one who reads is at most two buffers ahead.** With both buffers sent and not parsed yet, `get_buffer_to_read()` waits.
-- **A chunk holds its buffer.** Parse it and drop it. Whoever keeps both chunks — or a piece of the `Bytes` of both — and calls `get_next()` waits forever, since there is nothing to read into. `BufferedReader` holds one chunk at most: the bytes not parsed yet are copied out of it when the next chunk comes.
+- **The one who reads is at most two buffers ahead.** With both buffers sent and not processed yet, `get_buffer_to_read()` waits.
+- **A chunk is processed when it is dropped.** Process it and drop it, and copy out what is needed later. While both chunks are held nothing is read, so whoever holds both and waits for the next one waits forever. A `BufferedReader` over the reader copies each chunk as it comes and drops it at once.
 - **A buffer dropped with no `send()` is free again.** That is what a read which was given up leaves — a `select!` which took the other branch, for example. `send(0)` does the same.
 - **A buffer is not cleared.** What was read into it before is still there, so only the first `size` bytes of a read mean something.
-- **The end goes both ways.** With the writer dropped, `get_next()` gives what was sent before and `None` after it. With the reader dropped, `get_buffer_to_read()` gives `None`, and what was sent and not taken is dropped.
-- **`None` is not an error.** A reading task which has failed drops its writer just the same. It tells about the failure its own way — by what the task returns, as above.
-- **`send()` panics** when the buffer is smaller than `size` bytes.
-- **Everything takes `&self`**, and waiting needs no runtime — it works under `tokio` and in a browser alike.
+- **The end of the stream is `finish()`.** The reader gets what was sent, then `Ok(None)`.
+- **A writer dropped with no `finish()` is a stream cut short.** The reader gets what was sent, then `Err(DoubleBufferError::Disconnected)` on every call. A `get_next()` which waits is woken up with it.
+- **A dropped reader stops the writer.** Every `get_buffer_to_read()`, waiting or not, gives `Err(DoubleBufferError::Disconnected)`, and what was sent and not taken is dropped. `closed()` resolves then: race it against a read which may wait long, such as a silent socket. `is_closed()` asks without waiting.
+- **Memory.** A buffer is allocated when it is taken for the first time, and let go once an end is gone — that of a chunk which outlives the reader, too.
+- **`new(0)` panics**, and so does `send()` of more than the buffer has.
+- **Everything takes `&self`, and waiting needs no runtime** — it works under `tokio` and in a browser alike. A wait which is given up takes no wake-up away from the others.
 
 ## binary_search
 

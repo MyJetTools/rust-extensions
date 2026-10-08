@@ -109,7 +109,6 @@ pub use buffered_reader::*;
 mod double_buffer;
 pub use double_buffer::*;
 
-pub extern crate bytes;
 pub extern crate macros;
 
 #[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
