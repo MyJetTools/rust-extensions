@@ -8,9 +8,9 @@ use bytes::Bytes;
 /// `get_next()` returns `Ok(Some(chunk))` with the next chunk and `Ok(None)`
 /// once there is nothing left to read.
 ///
-/// A chunk is a `Bytes`, so a stream hands it over the way it has it: a body
-/// read off the network is a `Bytes` already and goes as it is, a `Vec<u8>`
-/// becomes one by `.into()`. Neither copies the data.
+/// A chunk is a `Bytes`, so a stream hands it over the way it has it: bytes read
+/// off a network are a `Bytes` already and go as they are, a `Vec<u8>` becomes
+/// one by `.into()`. Neither copies the data.
 #[async_trait::async_trait]
 pub trait AsyncBytesStream<TError> {
     async fn get_next(&self) -> Result<Option<Bytes>, TError>;
