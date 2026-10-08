@@ -1,31 +1,28 @@
-/// A source which is read in portions - a paged request, a cursor, a stream of
-/// batches.
+/// A source of bytes which is read in chunks - a file, a response body, a blob
+/// downloaded part by part.
 ///
-/// `get_next()` returns `Ok(Some(items))` with the next portion and `Ok(None)`
+/// `get_next()` returns `Ok(Some(chunk))` with the next chunk and `Ok(None)`
 /// once there is nothing left to read.
 #[async_trait::async_trait]
-pub trait AsyncIterator<T, TError> {
-    async fn get_next(&self) -> Result<Option<Vec<T>>, TError>;
+pub trait AsyncBytesReader<TError> {
+    async fn get_next(&self) -> Result<Option<Vec<u8>>, TError>;
 
-    /// The amount of items of the whole stream - `None` if it is not known
-    /// until the stream is read to the end.
+    /// The size of the whole stream in bytes - `None` if it is not known until
+    /// the stream is read to the end.
     fn get_size(&self) -> Option<usize>;
 
     /// Reads the stream to the end and returns everything as a single `Vec`.
     ///
     /// A known size - see `get_size()` - is allocated at once, so the `Vec`
-    /// does not grow while the portions are being appended.
-    async fn into_vec(&self) -> Result<Vec<T>, TError>
-    where
-        T: Send,
-    {
+    /// does not grow while the chunks are being appended.
+    async fn into_vec(&self) -> Result<Vec<u8>, TError> {
         let mut result = match self.get_size() {
             Some(size) => Vec::with_capacity(size),
             None => Vec::new(),
         };
 
-        while let Some(items) = self.get_next().await? {
-            result.extend(items);
+        while let Some(chunk) = self.get_next().await? {
+            result.extend_from_slice(&chunk);
         }
 
         Ok(result)
@@ -37,19 +34,19 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use super::AsyncIterator;
+    use super::AsyncBytesReader;
 
-    struct Pages {
-        pages: Vec<Result<Vec<u32>, String>>,
-        next_page: AtomicUsize,
+    struct Chunks {
+        chunks: Vec<Result<Vec<u8>, String>>,
+        next_chunk: AtomicUsize,
         size: Option<usize>,
     }
 
-    impl Pages {
-        fn new(pages: Vec<Result<Vec<u32>, String>>) -> Self {
+    impl Chunks {
+        fn new(chunks: Vec<Result<Vec<u8>, String>>) -> Self {
             Self {
-                pages,
-                next_page: AtomicUsize::new(0),
+                chunks,
+                next_chunk: AtomicUsize::new(0),
                 size: None,
             }
         }
@@ -61,10 +58,10 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl AsyncIterator<u32, String> for Pages {
-        async fn get_next(&self) -> Result<Option<Vec<u32>>, String> {
-            let page_no = self.next_page.fetch_add(1, Ordering::Relaxed);
-            self.pages.get(page_no).cloned().transpose()
+    impl AsyncBytesReader<String> for Chunks {
+        async fn get_next(&self) -> Result<Option<Vec<u8>>, String> {
+            let chunk_no = self.next_chunk.fetch_add(1, Ordering::Relaxed);
+            self.chunks.get(chunk_no).cloned().transpose()
         }
 
         fn get_size(&self) -> Option<usize> {
@@ -79,16 +76,16 @@ mod tests {
     }
 
     #[test]
-    fn reads_portions_until_none() {
+    fn reads_chunks_until_none() {
         rt().block_on(async {
-            let src: Arc<dyn AsyncIterator<u32, String> + Send + Sync + 'static> =
-                Arc::new(Pages::new(vec![Ok(vec![1, 2]), Ok(vec![3])]));
+            let src: Arc<dyn AsyncBytesReader<String> + Send + Sync + 'static> =
+                Arc::new(Chunks::new(vec![Ok(vec![1, 2]), Ok(vec![3])]));
 
             // Read from a spawned task - the future of `get_next()` is `Send`.
             let result = tokio::spawn(async move {
                 let mut result = Vec::new();
-                while let Some(items) = src.get_next().await.unwrap() {
-                    result.extend(items);
+                while let Some(chunk) = src.get_next().await.unwrap() {
+                    result.extend(chunk);
                 }
                 result
             })
@@ -102,7 +99,7 @@ mod tests {
     #[test]
     fn error_is_handed_to_the_caller() {
         rt().block_on(async {
-            let src = Pages::new(vec![Ok(vec![1]), Err("no connection".to_string())]);
+            let src = Chunks::new(vec![Ok(vec![1]), Err("no connection".to_string())]);
 
             assert_eq!(src.get_next().await, Ok(Some(vec![1])));
             assert_eq!(src.get_next().await, Err("no connection".to_string()));
@@ -111,10 +108,10 @@ mod tests {
     }
 
     #[test]
-    fn into_vec_merges_all_the_portions() {
+    fn into_vec_merges_all_the_chunks() {
         rt().block_on(async {
-            let src: Arc<dyn AsyncIterator<u32, String> + Send + Sync + 'static> =
-                Arc::new(Pages::new(vec![Ok(vec![1, 2]), Ok(vec![3])]));
+            let src: Arc<dyn AsyncBytesReader<String> + Send + Sync + 'static> =
+                Arc::new(Chunks::new(vec![Ok(vec![1, 2]), Ok(vec![3])]));
 
             let result = tokio::spawn(async move { src.into_vec().await })
                 .await
@@ -127,8 +124,8 @@ mod tests {
     #[test]
     fn into_vec_allocates_a_known_size_at_once() {
         rt().block_on(async {
-            // Three items would never make a `Vec` grow that far by itself.
-            let src = Pages::new(vec![Ok(vec![1, 2]), Ok(vec![3])]).with_size(100);
+            // Three bytes would never make a `Vec` grow that far by itself.
+            let src = Chunks::new(vec![Ok(vec![1, 2]), Ok(vec![3])]).with_size(100);
 
             let result = src.into_vec().await.unwrap();
 
@@ -140,14 +137,14 @@ mod tests {
     #[test]
     fn into_vec_stops_at_the_first_error() {
         rt().block_on(async {
-            let src = Pages::new(vec![
+            let src = Chunks::new(vec![
                 Ok(vec![1]),
                 Err("no connection".to_string()),
                 Ok(vec![2]),
             ]);
 
             assert_eq!(src.into_vec().await, Err("no connection".to_string()));
-            // The portion after the broken one was not asked for.
+            // The chunk after the broken one was not asked for.
             assert_eq!(src.get_next().await, Ok(Some(vec![2])));
         });
     }

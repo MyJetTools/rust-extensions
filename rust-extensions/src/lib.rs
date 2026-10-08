@@ -102,8 +102,8 @@ mod queue_to_save;
 pub use queue_to_save::*;
 mod as_str;
 pub use as_str::*;
-mod async_iterator;
-pub use async_iterator::*;
+mod async_bytes_reader;
+pub use async_bytes_reader::*;
 
 pub extern crate macros;
 

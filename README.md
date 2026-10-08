@@ -39,7 +39,7 @@ The crate is documented by topic. Each topic below links to a document in [`docs
 
 ### Bytes
 
-- [**binary**](docs/binary.md) — write little-endian payloads and variable-size lengths, keep a borrowed or an owned buffer behind one type, search and walk through bytes in memory or in a file, binary-search by key, encode hex and base64.
+- [**binary**](docs/binary.md) — write little-endian payloads and variable-size lengths, keep a borrowed or an owned buffer behind one type, search and walk through bytes in memory or in a file, read a byte stream chunk by chunk through `AsyncBytesReader`, binary-search by key, encode hex and base64.
 - [**sized-chunks**](docs/sized-chunks.md) — split a collection into batches by measured size, so a gRPC message or a request body stays under its byte limit however large the items are.
 
 ### Collections

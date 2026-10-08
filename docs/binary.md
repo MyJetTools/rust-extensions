@@ -1,6 +1,6 @@
 # binary
 
-Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, hex and base64.
+Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks, hex and base64.
 
 ## BinaryPayloadBuilder
 
@@ -146,6 +146,63 @@ async fn count_lines(path: &str) -> std::io::Result<usize> {
     Ok(lines)
 }
 ```
+
+## AsyncBytesReader — bytes read in chunks
+
+A trait for a source of bytes that arrives chunk by chunk: a file, a response body, a blob downloaded in parts. It needs no feature.
+
+- `get_next()` returns `Ok(Some(chunk))` with the next chunk, and `Ok(None)` at the end of the data.
+- `get_size()` returns the size of the whole stream in bytes, or `None` when it is not known before the stream is read.
+- `into_vec()` is already implemented. It reads the stream to the end and returns everything as one `Vec<u8>`. A known size is allocated at once, so the `Vec` does not grow while the chunks are appended.
+
+```rust
+use std::sync::atomic::{AtomicUsize, Ordering};
+use rust_extensions::AsyncBytesReader;
+
+struct Chunks {
+    chunks: Vec<Vec<u8>>,
+    next_chunk: AtomicUsize,
+}
+
+impl Chunks {
+    fn new(chunks: Vec<Vec<u8>>) -> Self {
+        Self { chunks, next_chunk: AtomicUsize::new(0) }
+    }
+}
+
+#[async_trait::async_trait]
+impl AsyncBytesReader<std::io::Error> for Chunks {
+    async fn get_next(&self) -> std::io::Result<Option<Vec<u8>>> {
+        let chunk_no = self.next_chunk.fetch_add(1, Ordering::Relaxed);
+        Ok(self.chunks.get(chunk_no).cloned()) // None once the chunks are over
+    }
+
+    fn get_size(&self) -> Option<usize> {
+        Some(self.chunks.iter().map(|chunk| chunk.len()).sum())
+    }
+}
+
+let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+rt.block_on(async {
+    // Chunk by chunk...
+    let src = Chunks::new(vec![b"hello ".to_vec(), b"world".to_vec()]);
+    let mut chunks = 0;
+    while let Some(_chunk) = src.get_next().await.unwrap() {
+        chunks += 1;
+    }
+    assert_eq!(chunks, 2);
+
+    // ...or everything at once.
+    let src = Chunks::new(vec![b"hello ".to_vec(), b"world".to_vec()]);
+    assert_eq!(src.get_size(), Some(11));
+    assert_eq!(src.into_vec().await.unwrap(), b"hello world");
+});
+```
+
+- **Everything takes `&self`.** The position lives in an atomic or behind a lock, and the source works as `Arc<dyn AsyncBytesReader<TError> + Send + Sync>`.
+- **`into_vec()` reads what is left.** Called after some `get_next()`, it returns only the remaining bytes.
+- **Errors.** `into_vec()` returns the first error, and the chunks read before it are dropped.
 
 ## binary_search
 
