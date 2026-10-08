@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::future::Future;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
@@ -16,7 +16,8 @@ const BUFFERS: usize = 2;
 ///
 /// `new()` gives the two ends:
 /// - [`DoubleBufferWriter`] is for the one who reads: `get_buffer_to_read()` gives a
-///   buffer to read into, `send()` of that buffer hands over what is read, and
+///   buffer to read into, `send()` of that buffer hands over what is read -
+///   `send_range()` a part of it, with what frames the data cut off - and
 ///   `finish()` is the end of the stream;
 /// - [`DoubleBufferReader`] is for the one who processes: `get_next()` gives what is
 ///   read - a [`DoubleBufferChunk`], a `&[u8]` through `Deref`. Dropping the chunk
@@ -109,9 +110,9 @@ struct State {
     free: Vec<Vec<u8>>,
     /// How many of the two buffers are not allocated yet
     not_created: usize,
-    /// What is read and not taken to be processed yet - a buffer and how many bytes
-    /// of it are read, in the order they were sent
-    read: VecDeque<(Vec<u8>, usize)>,
+    /// What is read and not taken to be processed yet - a buffer and where in it the
+    /// bytes to process are, in the order they were sent
+    read: VecDeque<(Vec<u8>, Range<usize>)>,
     writer: WriterState,
     reader_is_dropped: bool,
     /// The waits for a buffer to read into
@@ -157,7 +158,7 @@ impl State {
     /// What is read next, `None` while nothing is. `Some(Ok(None))` is the end of
     /// the stream.
     #[allow(clippy::type_complexity)]
-    fn take_read(&mut self) -> Option<Result<Option<(Vec<u8>, usize)>, DoubleBufferError>> {
+    fn take_read(&mut self) -> Option<Result<Option<(Vec<u8>, Range<usize>)>, DoubleBufferError>> {
         if let Some(read) = self.read.pop_front() {
             return Some(Ok(Some(read)));
         }
@@ -257,8 +258,8 @@ impl Drop for DoubleBufferWriter {
 /// A buffer to read the stream into - all the `buffer_size` bytes of it, as a
 /// `&mut [u8]`. What was read into it before is still there: it is not cleared.
 ///
-/// `send()` hands over what is read. A buffer dropped with no `send()` - a read
-/// which was given up, say - is free to be taken again.
+/// `send()` hands over what is read, `send_range()` a part of it. A buffer dropped
+/// with no `send()` - a read which was given up, say - is free to be taken again.
 pub struct BufferToRead<'s> {
     /// Empty once it is sent
     buffer: Vec<u8>,
@@ -273,7 +274,7 @@ impl BufferToRead<'_> {
     /// there is nobody to process it: the buffer is just free again.
     ///
     /// Panics when the buffer is smaller than `size` bytes.
-    pub fn send(mut self, size: usize) {
+    pub fn send(self, size: usize) {
         assert!(
             size <= self.buffer.len(),
             "send: {} bytes are sent, and the buffer has {} of them",
@@ -281,7 +282,37 @@ impl BufferToRead<'_> {
             self.buffer.len()
         );
 
-        if size == 0 {
+        self.hand_over(0..size);
+    }
+
+    /// The bytes to process are `data` of the buffer - what is read, with what frames
+    /// it cut off: the head of a response before them, the size of a chunk, the
+    /// separator after them. They go to the reader, and the chunk one of its next
+    /// `get_next()` gives is those bytes and nothing else. The buffer is still free
+    /// again as a whole once the chunk is dropped, and the next read into it is given
+    /// all of it again.
+    ///
+    /// `data` has its end: the bytes behind what is read are what was read into the
+    /// buffer before. `send_range(0..size)` is `send(size)`.
+    ///
+    /// With `data` empty there is nothing to process, and with the reader dropped
+    /// there is nobody to process it: the buffer is just free again.
+    ///
+    /// Panics when `data` ends past the buffer, or begins after its end.
+    pub fn send_range(self, data: Range<usize>) {
+        assert!(
+            data.start <= data.end && data.end <= self.buffer.len(),
+            "send_range: {}..{} is sent, and the buffer has {} bytes",
+            data.start,
+            data.end,
+            self.buffer.len()
+        );
+
+        self.hand_over(data);
+    }
+
+    fn hand_over(mut self, data: Range<usize>) {
+        if data.is_empty() {
             return;
         }
 
@@ -294,7 +325,7 @@ impl BufferToRead<'_> {
             return;
         }
 
-        state.read.push_back((buffer, size));
+        state.read.push_back((buffer, data));
         let waiting = state.waiting_for_read.take();
         drop(state);
 
@@ -351,9 +382,9 @@ impl DoubleBufferReader {
     pub async fn get_next(&self) -> Result<Option<DoubleBufferChunk>, DoubleBufferError> {
         let read = Waiting::new(&self.inner, State::take_read, State::read_waiters).await?;
 
-        Ok(read.map(|(buffer, size)| DoubleBufferChunk {
+        Ok(read.map(|(buffer, data)| DoubleBufferChunk {
             buffer,
-            size,
+            data,
             inner: self.inner.clone(),
         }))
     }
@@ -396,19 +427,21 @@ impl Drop for DoubleBufferReader {
     }
 }
 
-/// What is read - the bytes to process, as a `&[u8]` through `Deref`.
+/// What is read - the bytes to process, as a `&[u8]` through `Deref`: what `send()`
+/// or `send_range()` has handed over, and nothing else of the buffer.
 ///
 /// It holds one of the two buffers. Dropping it says that it is processed - all of
 /// it: the buffer is free to be read into again.
 pub struct DoubleBufferChunk {
     buffer: Vec<u8>,
-    size: usize,
+    /// Where the bytes to process are in `buffer`
+    data: Range<usize>,
     inner: Arc<DoubleBufferInner>,
 }
 
 impl DoubleBufferChunk {
     pub fn as_slice(&self) -> &[u8] {
-        &self.buffer[..self.size]
+        &self.buffer[self.data.clone()]
     }
 }
 
@@ -775,6 +808,85 @@ mod tests {
     }
 
     #[test]
+    fn send_range_hands_over_the_data_with_what_frames_it_cut_off() {
+        let (writer, reader) = DoubleBuffer::new(16);
+
+        // A head before the data
+        let mut buffer = now(writer.get_buffer_to_read()).unwrap();
+        let head_ptr = buffer.as_ptr();
+        buffer[..13].copy_from_slice(b"HEAD\r\n\r\nHello");
+        buffer.send_range(8..13);
+
+        // The size of a chunk before the data, the separator after it
+        let mut buffer = now(writer.get_buffer_to_read()).unwrap();
+        let chunk_ptr = buffer.as_ptr();
+        buffer[..10].copy_from_slice(b"5\r\nWorld\r\n");
+        buffer.send_range(3..8);
+
+        let hello = now(reader.get_next()).unwrap().unwrap();
+        assert_eq!(&*hello, b"Hello");
+        assert_eq!(hello.as_slice(), b"Hello");
+        // The very same buffer - nothing is copied
+        assert_eq!(hello.as_ptr(), head_ptr.wrapping_add(8));
+
+        let world = now(reader.get_next()).unwrap().unwrap();
+        assert_eq!(&*world, b"World");
+        assert_eq!(world.as_ptr(), chunk_ptr.wrapping_add(3));
+    }
+
+    #[test]
+    fn a_buffer_a_range_was_sent_from_is_read_into_as_a_whole_again() {
+        let (writer, reader) = DoubleBuffer::new(8);
+
+        let mut buffer = now(writer.get_buffer_to_read()).unwrap();
+        let buffer_ptr = buffer.as_ptr();
+        buffer[..5].copy_from_slice(b"HEADx");
+        buffer.send_range(4..5);
+
+        drop(now(reader.get_next()).unwrap().unwrap());
+
+        // The same buffer, all of it - and what is sent of it now begins where it is
+        // sent from
+        let mut buffer = now(writer.get_buffer_to_read()).unwrap();
+        assert_eq!(buffer.as_ptr(), buffer_ptr);
+        assert_eq!(buffer.len(), 8);
+
+        buffer[..2].copy_from_slice(b"ab");
+        buffer.send(2);
+
+        assert_eq!(next(&reader), Ok(Some(b"ab".to_vec())));
+    }
+
+    #[test]
+    fn an_empty_range_is_nothing_to_process() {
+        let (writer, reader) = DoubleBuffer::new(4);
+
+        now(writer.get_buffer_to_read()).unwrap().send_range(0..0);
+        now(writer.get_buffer_to_read()).unwrap().send_range(4..4);
+
+        // Both buffers are free again
+        let _first = now(writer.get_buffer_to_read()).unwrap();
+        let _second = now(writer.get_buffer_to_read()).unwrap();
+
+        assert!(poll(pin!(reader.get_next()), &WakeUps::new()).is_pending());
+    }
+
+    #[test]
+    fn a_stream_of_ranges_is_the_data_and_nothing_else() {
+        let (writer, reader) = DoubleBuffer::new(16);
+
+        for (framed, data) in [(&b"HEAD\r\n\r\nHel"[..], 8..11), (b"2\r\nlo\r\n", 3..5)] {
+            let mut buffer = now(writer.get_buffer_to_read()).unwrap();
+            buffer[..framed.len()].copy_from_slice(framed);
+            buffer.send_range(data);
+        }
+
+        writer.finish();
+
+        assert_eq!(now(reader.into_vec()), Ok(b"Hello".to_vec()));
+    }
+
+    #[test]
     fn finish_is_the_end_of_the_stream() {
         let (writer, reader) = DoubleBuffer::new(4);
 
@@ -1117,6 +1229,23 @@ mod tests {
         let (writer, _reader) = DoubleBuffer::new(4);
 
         now(writer.get_buffer_to_read()).unwrap().send(5);
+    }
+
+    #[test]
+    #[should_panic(expected = "send_range: 2..5 is sent, and the buffer has 4 bytes")]
+    fn send_range_past_the_end_of_the_buffer_panics() {
+        let (writer, _reader) = DoubleBuffer::new(4);
+
+        now(writer.get_buffer_to_read()).unwrap().send_range(2..5);
+    }
+
+    #[test]
+    #[should_panic(expected = "send_range: 3..2 is sent, and the buffer has 4 bytes")]
+    #[allow(clippy::reversed_empty_ranges)]
+    fn send_range_which_begins_after_its_end_panics() {
+        let (writer, _reader) = DoubleBuffer::new(4);
+
+        now(writer.get_buffer_to_read()).unwrap().send_range(3..2);
     }
 
     #[test]
