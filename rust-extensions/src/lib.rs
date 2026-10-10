@@ -108,6 +108,11 @@ mod buffered_reader;
 pub use buffered_reader::*;
 mod double_buffer;
 pub use double_buffer::*;
+// needs `tokio::fs`, which does not exist on wasm
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
+mod file_stream_reader;
+#[cfg(all(feature = "with-tokio", not(target_arch = "wasm32")))]
+pub use file_stream_reader::*;
 
 pub extern crate macros;
 

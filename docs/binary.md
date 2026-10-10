@@ -1,6 +1,6 @@
 # binary
 
-Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks and parsed across them, two buffers between the task which reads and the task which parses, hex and base64.
+Build and read byte payloads: integers, variable-size lengths, borrowed-or-owned buffers, byte search, cursors over bytes, byte streams read in chunks and parsed across them, a file read as such a stream, two buffers between the task which reads and the task which parses, hex and base64.
 
 ## BinaryPayloadBuilder
 
@@ -291,6 +291,53 @@ The contracts:
 - **Errors.** `get_next()` returns the error of the stream as it is. What was read stays, and the next call asks the stream again.
 - **`mark_as_read()` panics** when there are fewer than `size` bytes.
 - **One parser.** Unlike the stream, the reader changes through `&mut self`.
+
+## FileStreamReader — a file read in chunks
+
+An `AsyncBytesStream` over a file: each `get_next()` reads the next 64 KB of it. `FileStreamReader::builder()` sets another size of a chunk. It needs `with-tokio`, and it is not on wasm.
+
+```rust
+use rust_extensions::{AsyncBytesStream, BufferedReader, FileStreamReader};
+
+let path = std::env::temp_dir().join(format!("lines-{}.jsonl", std::process::id()));
+std::fs::write(&path, "{\"id\":1}\n{\"id\":2}\n").unwrap();
+
+let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+rt.block_on(async {
+    // 64 KB a chunk
+    let reader = FileStreamReader::open(&path).await.unwrap();
+    assert_eq!(reader.get_size(), Some(18)); // the size of the file
+    assert_eq!(reader.into_vec().await.unwrap(), b"{\"id\":1}\n{\"id\":2}\n");
+
+    // 8 bytes a chunk - only the last one of the file is shorter
+    let reader = FileStreamReader::builder().chunk_size(8).open(&path).await.unwrap();
+    let mut sizes = Vec::new();
+    while let Some(chunk) = reader.get_next().await.unwrap() {
+        sizes.push(chunk.len()); // what is needed later is copied out of the chunk
+    }
+    assert_eq!(sizes, [8, 8, 2]);
+
+    // A BufferedReader puts the chunks together for a parser - a line is cut where a chunk ends
+    let reader = FileStreamReader::builder().chunk_size(8).open(&path).await.unwrap();
+    let mut reader = BufferedReader::new(reader);
+    reader.get_next().await.unwrap();
+    assert_eq!(reader.get_next().await.unwrap(), b"{\"id\":1}\n{\"id\":2");
+});
+
+std::fs::remove_file(&path).unwrap();
+```
+
+The contracts:
+
+- **A chunk is `chunk_size` bytes** — 64 KB (`FileStreamReader::DEFAULT_CHUNK_SIZE`) unless the builder sets another size. Only the last chunk of the file is shorter, and `get_next()` returns `Ok(None)` after it: a file of whole chunks ends with `Ok(None)`, not with an empty chunk. A chunk is read to its size even where one read gives less — tokio reads a file 2 MB at most at a time.
+- **One buffer.** A chunk is read into a buffer of the reader, and dropping the chunk gives the buffer back for the next one. So a file read a chunk at a time — by `into_vec()`, through a `BufferedReader` — is read with one buffer, allocated once. A chunk which is kept keeps its buffer, and the next chunk is read into a new one.
+- **`get_size()` is the size of the file when it was opened**, so `into_vec()` allocates for all of it at once. A pipe or a device has no size: `None`.
+- **Errors.** `open()` returns the error of opening the file, and `get_next()` the error of a read. What was read before the error is kept, and the next `get_next()` goes on from there.
+- **A `get_next()` which is given up loses nothing** — a `select!` which took the other branch, a timeout. What it has read is kept, and the next `get_next()` goes on from there.
+- **Everything takes `&self`.** Calls of `get_next()` from several tasks read one after another, and each of them gets the next chunk. An `Arc<FileStreamReader>` is a stream as well.
+- **A tokio runtime.** The file is read through `tokio::fs`, in the blocking pool of the runtime.
+- **The builder.** `chunk_size(0)` panics. The builder is `Copy`, and one builder opens as many files as needed.
 
 ## DoubleBuffer — read into one buffer while the other is processed
 
