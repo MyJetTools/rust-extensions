@@ -120,6 +120,23 @@ fn assert_parsing_matches(src: &str) {
     assert_eq!(parsed, chrono, "parsing {:?}", src);
 }
 
+/// `from_str` is the tolerant reader and takes more than chrono does, so only what chrono reads is
+/// compared: that has to be the same moment, plain and URL-encoded.
+fn assert_from_str_matches(src: &str) {
+    let Ok(chrono) = DateTime::parse_from_rfc3339(src) else {
+        return;
+    };
+
+    let expected = Some(chrono.timestamp_micros());
+    let url_encoded = src.replace(':', "%3A").replace('+', "%2B");
+
+    for src in [src, url_encoded.as_str()] {
+        let parsed = DateTimeAsMicroseconds::from_str(src).map(|v| v.unix_microseconds);
+
+        assert_eq!(parsed, expected, "parsing {:?}", src);
+    }
+}
+
 #[test]
 fn instants_around_the_epoch() {
     for unix_microseconds in -3_000..=3_000 {
@@ -298,6 +315,7 @@ fn spellings_of_a_date_time_with_an_offset() {
         "not-a-date-not-a-date-not-a-date",
     ] {
         assert_parsing_matches(src);
+        assert_from_str_matches(src);
     }
 }
 
@@ -356,6 +374,9 @@ fn mutated_date_times_with_an_offset() {
             }
         }
 
-        assert_parsing_matches(chars.into_iter().collect::<String>().as_str());
+        let src = chars.into_iter().collect::<String>();
+
+        assert_parsing_matches(src.as_str());
+        assert_from_str_matches(src.as_str());
     }
 }

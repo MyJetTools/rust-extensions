@@ -1,11 +1,15 @@
 use std::{
+    borrow::Cow,
     fmt::Display,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 
-use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct, TimeStruct};
+use super::{
+    ClientServerTimeDifference, DateTimeAsMicrosecondsWithTimeZone, DateTimeDuration,
+    DateTimeStruct, TimeStruct,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateTimeAsMicroseconds {
@@ -82,7 +86,14 @@ impl DateTimeAsMicroseconds {
             return None;
         }
 
-        if let Some(result) = DateTimeStruct::from_str(src) {
+        let src = decode_url_encoded(src);
+
+        // A string with an offset names one moment. Without an offset this is None.
+        if let Some(result) = DateTimeAsMicrosecondsWithTimeZone::from_str(&src) {
+            return Some(result.date_time);
+        }
+
+        if let Some(result) = DateTimeStruct::from_str(&src) {
             return Some(Self::new(result.to_unix_microseconds()?));
         }
 
@@ -104,6 +115,7 @@ impl DateTimeAsMicroseconds {
     /// |---|---|
     /// | `"2021-04-25T17:30:03.000000Z"` | RFC 3339, `Z` |
     /// | `"2021-04-25T17:30:03+00:00"` | RFC 3339, numeric zero offset (older `to_rfc3339()`) |
+    /// | `"2021-04-25T17:30:03+03:00"` | RFC 3339, the offset is applied: 14:30:03 UTC |
     /// | `"2021-04-25"` / `"2021-04-25T17:30"` | date, or date-time without seconds |
     /// | `"1619371803000000"` | digits in a string -> unix timestamp, unit sniffed by magnitude |
     /// | `1619371803000000` | bare number -> unix timestamp, unit sniffed by magnitude |
@@ -132,6 +144,11 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {
+        // A string with an offset names one moment. Without an offset this is None.
+        if let Some(result) = DateTimeAsMicrosecondsWithTimeZone::from_str(iso_string) {
+            return Some(result.date_time);
+        }
+
         DateTimeStruct::parse_rfc3339_str(iso_string.as_bytes())?.to_date_time_as_microseconds()
     }
 
@@ -320,6 +337,35 @@ fn strip_json_quotes(src: &str) -> Option<&str> {
     }
 
     None
+}
+
+/// `%3A` and `%2B` of a date-time out of a query string, in either case. A value without a `%` -
+/// which is all of JSON - stays without an allocation.
+fn decode_url_encoded(src: &str) -> Cow<'_, str> {
+    if !src.contains('%') {
+        return Cow::Borrowed(src);
+    }
+
+    let mut result = String::with_capacity(src.len());
+    let mut rest = src;
+
+    while let Some(position) = rest.find('%') {
+        result.push_str(&rest[..position]);
+        rest = &rest[position..];
+
+        let (decoded, escape_len) = match rest.as_bytes().get(1..3) {
+            Some(b"3A" | b"3a") => (':', 3),
+            Some(b"2B" | b"2b") => ('+', 3),
+            _ => ('%', 1),
+        };
+
+        result.push(decoded);
+        rest = &rest[escape_len..];
+    }
+
+    result.push_str(rest);
+
+    Cow::Owned(result)
 }
 
 impl Into<DateTimeAsMicroseconds> for SystemTime {
@@ -669,6 +715,89 @@ mod tests {
         }
     }
 
+    /// The values with an offset are chrono's, the ones without it are what the parser has always
+    /// answered. The first `PLAIN_CASES` rows are plain strings, the rest is a number and
+    /// URL-encoded spellings.
+    const FROM_STR_CASES: [(&str, i64); 19] = [
+        ("2026-08-01T10:13:32+03:00", 1785568412000000),
+        ("2026-08-01T10:13:32-05:30", 1785599012000000),
+        ("2026-08-01T10:13:32.5+03:00", 1785568412500000),
+        ("2026-08-01T10:13:32.782580149+02:00", 1785572012782580),
+        ("2026-01-01T01:00:00+03:00", 1767218400000000),
+        ("2026-08-01T10:13:32+00:00", 1785579212000000),
+        ("2026-08-01T10:13:32-00:00", 1785579212000000),
+        ("2026-08-01T10:13:32Z", 1785579212000000),
+        ("2026-08-01T10:13:32.605123Z", 1785579212605123),
+        ("2026-08-01T10:13:32", 1785579212000000),
+        ("2026-08-01T10:13", 1785579180000000),
+        ("2026-08-01", 1785542400000000),
+        ("1785579212000000", 1785579212000000),
+        ("2026-08-01T10%3A13%3A32Z", 1785579212000000),
+        ("2026-08-01T10%3A13%3A32%2B00%3A00", 1785579212000000),
+        ("2026-08-01T10%3A13%3A32%2B03%3A00", 1785568412000000),
+        ("2026-08-01T10%3A13%3A32-05%3A30", 1785599012000000),
+        ("2026-08-01T10%3A13%3A32.605%2B00%3A00", 1785579212605000),
+        ("2026-08-01T10%3A13%3A32.605123Z", 1785579212605123),
+    ];
+
+    const PLAIN_CASES: usize = 12;
+
+    #[test]
+    fn from_str_reads_the_moment() {
+        for (src, expected) in FROM_STR_CASES {
+            assert_eq!(
+                Some(expected),
+                DateTimeAsMicroseconds::from_str(src).map(|v| v.unix_microseconds),
+                "{}",
+                src
+            );
+        }
+    }
+
+    #[test]
+    fn parse_iso_string_reads_plain_strings_only() {
+        let (plain, the_rest) = FROM_STR_CASES.split_at(PLAIN_CASES);
+
+        for (src, expected) in plain {
+            assert_eq!(
+                Some(*expected),
+                DateTimeAsMicroseconds::parse_iso_string(src).map(|v| v.unix_microseconds),
+                "{}",
+                src
+            );
+        }
+
+        for (src, _) in the_rest {
+            assert_eq!(None, DateTimeAsMicroseconds::parse_iso_string(src), "{}", src);
+        }
+    }
+
+    /// Either case of an escape, and every plain form - `hh:mm` too, which the encoded time parser
+    /// of `DateTimeStruct` does not take.
+    #[test]
+    fn from_str_reads_url_encoded_the_same_as_plain() {
+        for (src, expected) in &FROM_STR_CASES[..PLAIN_CASES] {
+            for (colon, plus) in [("%3A", "%2B"), ("%3a", "%2b")] {
+                let encoded = src.replace(':', colon).replace('+', plus);
+
+                assert_eq!(
+                    Some(*expected),
+                    DateTimeAsMicroseconds::from_str(&encoded).map(|v| v.unix_microseconds),
+                    "{}",
+                    encoded
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn from_str_reads_rfc_5322_and_compact_as_before() {
+        let expected = Some(DateTimeAsMicroseconds::create(2032, 9, 8, 18, 41, 54, 0));
+
+        assert_eq!(expected, DateTimeAsMicroseconds::from_str("Sep  8 18:41:54 2032 GMT"));
+        assert_eq!(expected, DateTimeAsMicroseconds::from_str("20320908184154"));
+    }
+
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
     struct TestStruct {
         a: DateTimeAsMicroseconds,
@@ -803,6 +932,21 @@ mod tests {
             serde_json::from_str("\"2021-04-25T17:30:03.605123+00:00\"").unwrap();
 
         assert_eq!(with_z, with_offset);
+    }
+
+    /// serde and `from_json_value_str` both end up in `from_str`.
+    #[test]
+    fn json_readers_apply_a_non_zero_offset() {
+        let expected = DateTimeAsMicroseconds::create(2021, 4, 25, 14, 30, 3, 0);
+
+        let value: TestStruct =
+            serde_json::from_str("{\"a\":\"2021-04-25T17:30:03+03:00\"}").unwrap();
+        assert_eq!(expected, value.a);
+
+        assert_eq!(
+            Some(expected),
+            DateTimeAsMicroseconds::from_json_value_str("\"2021-04-25T17:30:03+03:00\"")
+        );
     }
 
     #[test]

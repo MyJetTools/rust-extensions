@@ -173,7 +173,7 @@ impl TimeStruct {
 
         let mut micros = 0;
 
-        if src.len() > 9 {
+        if src.len() > 9 && src[8] == b'.' {
             let d = &src[9..];
             micros = parse_microseconds(d)
         }
@@ -200,7 +200,7 @@ impl TimeStruct {
 
         let mut micros = 0;
 
-        if src.len() > 13 {
+        if src.len() > 13 && src[12] == b'.' {
             let d = &src[13..];
             micros = parse_microseconds(d)
         }

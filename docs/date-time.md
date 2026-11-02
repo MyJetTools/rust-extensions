@@ -94,7 +94,7 @@ assert_eq!((parts.year, parts.month, parts.day), (2021, 4, 25));
 assert_eq!((parts.time.hour, parts.time.min, parts.time.sec), (17, 30, 3));
 ```
 
-The parsers ignore a non-zero offset: `2024-01-02T03:04:05+03:00` reads as `03:04:05` UTC. `Z` and `+00:00` are fine.
+`from_str` and `parse_iso_string` apply the offset: `2024-01-02T03:04:05+03:00` is `00:04:05` UTC. A string without an offset reads as UTC. `from_str` also takes the URL-encoded spelling (`%3A`, `%2B`). `DateTimeStruct::from_str` stays a wall clock: the same string gives `03:04:05`, the offset is dropped.
 
 ## DateTimeStruct — calendar fields
 
@@ -136,7 +136,7 @@ assert!(DateTimeStruct::from_str("Apr 25 17:30:03 2021 GMT").is_some());
 Asymmetric on purpose — keep it that way.
 
 - **Writes** RFC 3339 in UTC, `Z`, 6 fraction digits: `"2021-04-25T17:30:03.000000Z"`. Never a number.
-- **Reads** that string, an RFC 3339 with `+00:00`, and a unix timestamp as a number or as digits in a string. A number goes through `From<i64>`, so its unit is sniffed.
+- **Reads** that string, an RFC 3339 with any offset (it is applied), and a unix timestamp as a number or as digits in a string. A number goes through `From<i64>`, so its unit is sniffed.
 
 Data stored by older versions as `1619371803000000` stays readable. Reading uses `deserialize_any`, so it needs a self-describing format such as JSON.
 

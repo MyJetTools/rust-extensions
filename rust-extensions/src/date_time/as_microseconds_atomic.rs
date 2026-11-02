@@ -15,20 +15,7 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn from_str(src: &str) -> Option<Self> {
-        if src == "" {
-            return None;
-        }
-
-        if let Some(result) = DateTimeStruct::from_str(src) {
-            return Some(Self::new(result.to_unix_microseconds()?));
-        }
-
-        let value: Result<i64, _> = src.parse();
-
-        match value {
-            Ok(result) => return Some(Self::new(result)),
-            Err(_) => return None,
-        }
+        Some(DateTimeAsMicroseconds::from_str(src)?.into())
     }
 
     pub fn get_unix_microseconds(&self) -> i64 {
@@ -56,8 +43,7 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn parse_iso_string(iso_string: &str) -> Option<Self> {
-        let dt = DateTimeStruct::parse_rfc3339_str(iso_string.as_bytes())?;
-        return Some(Self::new(dt.to_unix_microseconds()?));
+        Some(DateTimeAsMicroseconds::parse_iso_string(iso_string)?.into())
     }
 
     pub fn seconds_before(&self, before: DateTimeAsMicroseconds) -> i64 {
@@ -111,5 +97,44 @@ mod tests {
         let value = AtomicDateTimeAsMicroseconds::new(-1);
 
         assert_eq!("1969-12-31T23:59:59.999999+00:00", value.to_rfc3339());
+    }
+
+    #[test]
+    fn from_str_applies_the_offset() {
+        for src in [
+            "2026-08-01T10:13:32.5+03:00",
+            "2026-08-01T10%3A13%3A32.5%2B03%3A00",
+        ] {
+            let value = AtomicDateTimeAsMicroseconds::from_str(src).unwrap();
+
+            assert_eq!(1785568412500000, value.get_unix_microseconds(), "{}", src);
+        }
+    }
+
+    #[test]
+    fn parse_iso_string_applies_the_offset() {
+        let value =
+            AtomicDateTimeAsMicroseconds::parse_iso_string("2026-08-01T10:13:32.5+03:00").unwrap();
+
+        assert_eq!(1785568412500000, value.get_unix_microseconds());
+
+        assert!(
+            AtomicDateTimeAsMicroseconds::parse_iso_string("2026-08-01T10%3A13%3A32Z").is_none()
+        );
+    }
+
+    /// A number goes through `From<i64>`, the same as in `DateTimeAsMicroseconds::from_str`.
+    #[test]
+    fn from_str_sniffs_the_unit_of_a_number() {
+        for src in ["1785579212", "1785579212000", "1785579212000000"] {
+            let value = AtomicDateTimeAsMicroseconds::from_str(src).unwrap();
+
+            assert_eq!(1785579212000000, value.get_unix_microseconds(), "{}", src);
+        }
+    }
+
+    #[test]
+    fn from_str_empty() {
+        assert!(AtomicDateTimeAsMicroseconds::from_str("").is_none());
     }
 }

@@ -190,6 +190,22 @@ mod tests {
         assert_eq!(0, src.time.micros);
     }
 
+    /// It is a wall clock: the offset is dropped, and it does not end up in the fraction.
+    #[test]
+    fn test_from_str_ignores_the_offset() {
+        for src in [
+            "2026-08-01T10:13:32+03:00",
+            "2026-08-01T10%3A13%3A32%2B03%3A00",
+        ] {
+            let result = DateTimeStruct::from_str(src).unwrap();
+
+            assert_eq!(10, result.time.hour, "{}", src);
+            assert_eq!(13, result.time.min, "{}", src);
+            assert_eq!(32, result.time.sec, "{}", src);
+            assert_eq!(0, result.time.micros, "{}", src);
+        }
+    }
+
     #[test]
     fn test() {
         let src = DateTimeStruct {
