@@ -1,7 +1,6 @@
-use chrono::{Datelike, SecondsFormat, Timelike};
 use serde::{Deserialize, Serialize};
 
-use super::{DateTimeAsMicroseconds, DateTimeStruct, TimeStruct, TimeZone};
+use super::{DateTimeAsMicroseconds, DateTimeStruct, TimeZone};
 
 /// A UTC instant paired with a [`TimeZone`], so it can be rendered back into the
 /// human-visible local wall-clock time it was captured in.
@@ -41,46 +40,41 @@ impl DateTimeAsMicrosecondsWithTimeZone {
     /// Parses an RFC 3339 string that carries an offset (`...+01:00` or `...Z`) into the
     /// UTC instant plus the [`TimeZone`]. `Z` is read as `UTC+0`.
     pub fn from_str(src: &str) -> Option<Self> {
-        let parsed = chrono::DateTime::parse_from_rfc3339(src).ok()?;
+        let (local, offset_in_minutes) = DateTimeStruct::parse_rfc3339_with_offset(src)?;
+
+        // The string holds the local wall clock, the stored instant is UTC.
+        let mut date_time = local.to_date_time_as_microseconds()?;
+        date_time.add_minutes(-(offset_in_minutes as i64));
 
         Some(Self {
-            date_time: DateTimeAsMicroseconds::new(parsed.timestamp_micros()),
-            // local_minus_utc() is in seconds; the offset is exact to the minute.
-            time_zone: TimeZone::from_minutes(parsed.offset().local_minus_utc() / 60),
+            date_time,
+            time_zone: TimeZone::from_minutes(offset_in_minutes),
         })
     }
 
     /// The **local wall-clock time** (offset applied) as a [`DateTimeStruct`] — its
     /// `year`/`month`/`day`/`time`/`dow` are all the local values a person would read off a clock.
     pub fn to_local_date_time_struct(&self) -> DateTimeStruct {
-        let local = self
-            .date_time
-            .to_chrono_utc()
-            .with_timezone(&self.time_zone.to_fixed_offset());
+        let offset = self.time_zone.applied_offset_in_minutes() as i64
+            * super::MICRO_SECONDS_IN_ONE_MINUTE;
 
-        DateTimeStruct {
-            year: local.year(),
-            month: local.month(),
-            day: local.day(),
-            dow: Some(local.weekday()),
-            time: TimeStruct {
-                hour: local.hour(),
-                min: local.minute(),
-                sec: local.second(),
-                micros: local.nanosecond() / 1000,
-            },
-        }
+        DateTimeStruct::from_unix_microseconds(
+            self.date_time.unix_microseconds.saturating_add(offset),
+        )
     }
 
     /// RFC 3339 with the numeric offset suffix and fixed microsecond precision, e.g.
     /// `2021-04-25T18:30:03.000000+01:00`. This is the serde wire format.
     pub fn to_rfc3339(&self) -> String {
-        let local = self
-            .date_time
-            .to_chrono_utc()
-            .with_timezone(&self.time_zone.to_fixed_offset());
+        let local = self.to_local_date_time_struct();
 
-        local.to_rfc3339_opts(SecondsFormat::Micros, false)
+        let mut result = String::with_capacity(32);
+
+        local.push_rfc3339_no_fraction_to_str(&mut result);
+        local.time.push_micros_to_str(&mut result);
+        self.time_zone.push_offset_to_str(&mut result);
+
+        result
     }
 
     /// Human-readable local time without the zone suffix: `2021-04-25 18:30:03`.

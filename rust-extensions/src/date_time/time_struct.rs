@@ -1,4 +1,4 @@
-use chrono::Weekday;
+use super::Weekday;
 
 #[derive(Default, Debug, Clone)]
 pub struct TimeStruct {
@@ -9,6 +9,15 @@ pub struct TimeStruct {
 }
 
 impl TimeStruct {
+    /// `micros` may run over a second only on `:59` - that is how a leap second is held.
+    pub(super) fn is_valid(&self) -> bool {
+        if self.hour > 23 || self.min > 59 || self.sec > 59 {
+            return false;
+        }
+
+        self.micros < 1_000_000 || (self.sec == 59 && self.micros < 2_000_000)
+    }
+
     pub fn to_micro_seconds(&self) -> u64 {
         self.micros as u64
             + self.sec as u64 * 1_000_000
@@ -43,28 +52,19 @@ impl TimeStruct {
     }
 
     pub fn push_time_no_micros_to_str(&self, dest: &mut String) {
-        if self.hour < 10 {
-            dest.push('0');
-        }
-
-        dest.push_str(self.hour.to_string().as_str());
-
+        super::utils::push_zero_padded(dest, self.hour, 2);
         dest.push(':');
-
-        if self.min < 10 {
-            dest.push('0');
-        }
-
-        dest.push_str(self.min.to_string().as_str());
-
+        super::utils::push_zero_padded(dest, self.min, 2);
         dest.push(':');
-
-        if self.sec < 10 {
-            dest.push('0');
-        }
-
-        dest.push_str(self.sec.to_string().as_str());
+        super::utils::push_zero_padded(dest, self.sec, 2);
     }
+
+    /// `.605123` - always all six digits.
+    pub(super) fn push_micros_to_str(&self, dest: &mut String) {
+        dest.push('.');
+        super::utils::push_zero_padded(dest, self.micros, 6);
+    }
+
     pub fn parse_from_str(src: &str) -> Option<Self> {
         let mut v = Vec::with_capacity(2);
 

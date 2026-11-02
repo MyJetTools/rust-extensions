@@ -70,7 +70,6 @@ pub mod array_of_bytes_iterator;
 mod maybe_short_string;
 pub use maybe_short_string::*;
 
-pub extern crate chrono;
 mod min_value;
 pub use min_value::*;
 mod max_value;

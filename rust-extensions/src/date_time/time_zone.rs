@@ -1,6 +1,6 @@
-use chrono::FixedOffset;
-
 use super::DateTimeAsMicroseconds;
+
+const MINUTES_IN_ONE_DAY: i32 = 24 * 60;
 
 /// A timezone expressed purely as a fixed offset from UTC, stored in **minutes**.
 ///
@@ -46,18 +46,37 @@ impl TimeZone {
         self.offset_in_minutes * 60
     }
 
-    /// chrono offset for this timezone. Falls back to `UTC+0` for an out-of-range value
+    /// The offset a time is really moved by. Falls back to `UTC+0` for an out-of-range value
     /// (real offsets never exceed ±14:00, so this only guards against garbage).
-    pub fn to_fixed_offset(&self) -> FixedOffset {
-        FixedOffset::east_opt(self.offset_in_seconds())
-            .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap())
+    pub(super) fn applied_offset_in_minutes(&self) -> i32 {
+        if self.offset_in_minutes > -MINUTES_IN_ONE_DAY
+            && self.offset_in_minutes < MINUTES_IN_ONE_DAY
+        {
+            self.offset_in_minutes
+        } else {
+            0
+        }
+    }
+
+    /// `+01:00` / `-05:00`
+    pub(super) fn push_offset_to_str(&self, dest: &mut String) {
+        let offset_in_minutes = self.applied_offset_in_minutes();
+
+        dest.push(if offset_in_minutes < 0 { '-' } else { '+' });
+
+        let offset_in_minutes = offset_in_minutes.unsigned_abs();
+
+        super::utils::push_zero_padded(dest, offset_in_minutes / 60, 2);
+        dest.push(':');
+        super::utils::push_zero_padded(dest, offset_in_minutes % 60, 2);
     }
 }
 
 impl std::fmt::Debug for TimeZone {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // FixedOffset's Display renders as `+01:00` / `-05:00`.
-        write!(f, "{}", self.to_fixed_offset())
+        let mut result = String::with_capacity(6);
+        self.push_offset_to_str(&mut result);
+        f.write_str(result.as_str())
     }
 }
 
@@ -92,5 +111,27 @@ mod tests {
         let tz = TimeZone::from_minutes(90);
         assert_eq!(90, tz.offset_in_minutes());
         assert_eq!(5400, tz.offset_in_seconds());
+    }
+
+    #[test]
+    fn debug_renders_the_offset() {
+        assert_eq!("+00:00", format!("{:?}", TimeZone::utc()));
+        assert_eq!("+01:00", format!("{:?}", TimeZone::from_minutes(60)));
+        assert_eq!("-05:00", format!("{:?}", TimeZone::from_minutes(-300)));
+        assert_eq!("+05:45", format!("{:?}", TimeZone::from_minutes(345)));
+        assert_eq!("-00:30", format!("{:?}", TimeZone::from_minutes(-30)));
+    }
+
+    #[test]
+    fn an_offset_of_a_day_or_more_falls_back_to_utc() {
+        for minutes in [1440, -1440, i32::MAX, i32::MIN] {
+            let tz = TimeZone::from_minutes(minutes);
+
+            assert_eq!(0, tz.applied_offset_in_minutes(), "{}", minutes);
+            assert_eq!("+00:00", format!("{:?}", tz), "{}", minutes);
+        }
+
+        assert_eq!(1439, TimeZone::from_minutes(1439).applied_offset_in_minutes());
+        assert_eq!(-1439, TimeZone::from_minutes(-1439).applied_offset_in_minutes());
     }
 }

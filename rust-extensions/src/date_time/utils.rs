@@ -24,3 +24,15 @@ pub fn parse_four_digits(src: &[u8]) -> Option<i32> {
 
     Some(result as i32)
 }
+
+/// Writes `value` with leading zeros, `digits` wide. It goes right into `dest`, without the
+/// allocation of a `to_string()`: the serde format of a date-time comes through here.
+#[inline]
+pub(super) fn push_zero_padded(dest: &mut String, value: u32, digits: u32) {
+    let mut divider = 10u32.pow(digits - 1);
+
+    while divider > 0 {
+        dest.push((START_ZERO + (value / divider % 10) as u8) as char);
+        divider /= 10;
+    }
+}

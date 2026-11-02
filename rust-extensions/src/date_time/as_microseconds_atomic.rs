@@ -1,9 +1,4 @@
-use std::{
-    sync::atomic::AtomicI64,
-    time::{Duration, UNIX_EPOCH},
-};
-
-use chrono::{DateTime, Utc};
+use std::sync::atomic::AtomicI64;
 
 use super::{DateTimeAsMicroseconds, DateTimeDuration, DateTimeStruct};
 
@@ -65,11 +60,6 @@ impl AtomicDateTimeAsMicroseconds {
         return Some(Self::new(dt.to_unix_microseconds()?));
     }
 
-    pub fn to_chrono_utc(&self) -> DateTime<Utc> {
-        let d = UNIX_EPOCH + Duration::from_micros(self.get_unix_microseconds() as u64);
-        return DateTime::<Utc>::from(d);
-    }
-
     pub fn seconds_before(&self, before: DateTimeAsMicroseconds) -> i64 {
         (self.get_unix_microseconds() - before.unix_microseconds) / 1000000
     }
@@ -80,8 +70,7 @@ impl AtomicDateTimeAsMicroseconds {
     }
 
     pub fn to_rfc3339(&self) -> String {
-        let chrono = self.to_chrono_utc();
-        return chrono.to_rfc3339();
+        return self.as_date_time().to_rfc3339();
     }
 
     pub fn to_rfc5322(&self) -> String {
@@ -109,5 +98,18 @@ impl Clone for AtomicDateTimeAsMicroseconds {
 impl Into<AtomicDateTimeAsMicroseconds> for DateTimeAsMicroseconds {
     fn into(self) -> AtomicDateTimeAsMicroseconds {
         AtomicDateTimeAsMicroseconds::new(self.unix_microseconds)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A moment before 1970 used to go through `as u64` and panic.
+    #[test]
+    fn to_rfc3339_before_the_epoch() {
+        let value = AtomicDateTimeAsMicroseconds::new(-1);
+
+        assert_eq!("1969-12-31T23:59:59.999999+00:00", value.to_rfc3339());
     }
 }

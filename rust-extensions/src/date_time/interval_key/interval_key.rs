@@ -976,7 +976,6 @@ mod tests {
     #[test]
     fn test_week_start_lands_on_correct_weekday() {
         use crate::date_time::interval_key::interval_utils::{week_monday, week_sunday};
-        use chrono::Datelike;
 
         for s in [
             "2021-03-01T00:00:00.000000Z", // Mon
@@ -987,11 +986,11 @@ mod tests {
         ] {
             let d = DateTimeAsMicroseconds::from_str(s).unwrap();
 
-            let wm = week_monday::to_week_start(d);
-            assert_eq!(wm.to_chrono_utc().weekday(), chrono::Weekday::Mon, "monday start for {s}");
+            let wm: DateTimeStruct = week_monday::to_week_start(d).into();
+            assert_eq!(wm.get_day_of_week(), Weekday::Mon, "monday start for {s}");
 
-            let ws = week_sunday::to_week_start(d);
-            assert_eq!(ws.to_chrono_utc().weekday(), chrono::Weekday::Sun, "sunday start for {s}");
+            let ws: DateTimeStruct = week_sunday::to_week_start(d).into();
+            assert_eq!(ws.get_day_of_week(), Weekday::Sun, "sunday start for {s}");
         }
     }
 
@@ -1018,9 +1017,8 @@ mod tests {
 
     #[test]
     fn test_pre_1970_timestamps() {
-        // 1969-12-31 22:37:15 UTC (negative unix micros). Wall-clock fields are
-        // derived via chrono and stay non-negative, so slots floor toward the slot
-        // start (not toward zero).
+        // 1969-12-31 22:37:15 UTC (negative unix micros). Wall-clock fields stay
+        // non-negative, so slots floor toward the slot start (not toward zero).
         let d = DateTimeAsMicroseconds::from_str("1969-12-31T22:37:15.000000Z").unwrap();
 
         let m30: super::IntervalKey<Minute30Key> = d.into();

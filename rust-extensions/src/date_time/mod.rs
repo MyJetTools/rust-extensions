@@ -1,5 +1,6 @@
 mod as_microseconds;
 mod as_microseconds_atomic;
+mod calendar;
 pub mod compact_date_time;
 mod date_time_duration;
 mod date_time_struct;
@@ -12,6 +13,7 @@ mod time_difference;
 mod time_struct;
 mod time_zone;
 mod utils;
+mod weekday;
 
 pub use as_microseconds::DateTimeAsMicroseconds;
 pub use as_microseconds_atomic::AtomicDateTimeAsMicroseconds;
@@ -23,6 +25,7 @@ pub use time_difference::*;
 pub use time_struct::*;
 pub use time_zone::*;
 pub use utils::*;
+pub use weekday::*;
 pub mod rfc_7231;
 pub use interval_key::*;
 

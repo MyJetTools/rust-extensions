@@ -88,7 +88,6 @@ assert_eq!(dt.to_rfc7231(), "Sun, 25 Apr 2021 17:30:03 GMT"); // HTTP headers
 assert_eq!(dt.to_rfc2822(), "Sun, 25 Apr 2021 17:30:03 +0000");
 assert_eq!(dt.to_rfc5322(), "Apr 25 17:30:03 2021 GMT"); // despite the name: the X.509 / OpenSSL form
 assert_eq!(dt.to_compact_date_time_string(), "20210425173003");
-assert_eq!(dt.to_chrono_utc().timestamp(), 1_619_371_803);
 
 let parts: DateTimeStruct = dt.into();
 assert_eq!((parts.year, parts.month, parts.day), (2021, 4, 25));
@@ -102,8 +101,7 @@ The parsers ignore a non-zero offset: `2024-01-02T03:04:05+03:00` reads as `03:0
 The UTC instant taken apart: `year`, `month`, `day`, `time` (`hour`, `min`, `sec`, `micros`) and `dow: Option<Weekday>`. It is the way to work with calendar fields — step a month, compare dates, get the day of the week.
 
 ```rust
-use rust_extensions::chrono::Weekday;
-use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct};
+use rust_extensions::date_time::{DateTimeAsMicroseconds, DateTimeStruct, Weekday};
 
 let dt = DateTimeAsMicroseconds::create(2021, 4, 25, 17, 30, 3, 0);
 let mut parts: DateTimeStruct = dt.into();

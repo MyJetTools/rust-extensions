@@ -19,7 +19,6 @@ vec-maybe-stack = []
 
 [dependencies]
 futures = { version = "*", optional = true }
-chrono = "*"
 async-trait = "*"
 base64 = { version = "*", optional = true }
 serde = { version = "*", features = ["derive"] }
@@ -44,8 +43,7 @@ tokio = { version = "*", features = [
 signal-hook = { version = "*", optional = true }
 uuid = { version = "*", features = ["v4"], optional = true }
 
-# `chrono`'s default features already pull `js-sys` in on wasm - this makes the dependency explicit,
-# `uuid::generate_v4()` and `DateTimeAsMicroseconds::now()` need it there.
+# `uuid::generate_v4()` and `DateTimeAsMicroseconds::now()` need `js-sys` there.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokio = { version = "*", features = [
     "time",
@@ -56,5 +54,7 @@ tokio = { version = "*", features = [
 js-sys = "0.3"
 
 [dev-dependencies]
+# Only `tests/chrono_parity.rs`: `date_time` is written without it and has to answer the way it does.
+chrono = { version = "*", default-features = false, features = ["std"] }
 serde_json = "*"
 criterion = "*"

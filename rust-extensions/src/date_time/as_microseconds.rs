@@ -3,10 +3,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct};
+use super::{ClientServerTimeDifference, DateTimeDuration, DateTimeStruct, TimeStruct};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateTimeAsMicroseconds {
@@ -33,21 +32,32 @@ impl DateTimeAsMicroseconds {
         second: u32,
         microsecond: i64,
     ) -> Self {
-        let date_time = NaiveDate::from_ymd_opt(year, month, day).expect(&format!(
+        assert!(
+            super::calendar::is_valid_date(year, month, day),
             "Invalid date with year:{}, month:{}, day:{}",
-            year, month, day
-        ));
+            year,
+            month,
+            day
+        );
 
-        /* cSpell:disable */
-        let date_time = date_time
-            .and_hms_milli_opt(hour, minute, second, 0)
-            .expect(&format!(
-                "Invalid date with hour:{}, min:{}, sec:{}",
-                hour, minute, second
-            ));
-        /* cSpell:enable */
+        let time = TimeStruct {
+            hour,
+            min: minute,
+            sec: second,
+            micros: 0,
+        };
 
-        let result = date_time.and_utc().timestamp_millis() * 1000;
+        assert!(
+            time.is_valid(),
+            "Invalid date with hour:{}, min:{}, sec:{}",
+            hour,
+            minute,
+            second
+        );
+
+        let result = super::calendar::days_from_civil(year, month, day)
+            * super::MICRO_SECONDS_IN_ONE_DAY
+            + time.to_micro_seconds() as i64;
 
         Self {
             unix_microseconds: result + microsecond,
@@ -125,16 +135,6 @@ impl DateTimeAsMicroseconds {
         DateTimeStruct::parse_rfc3339_str(iso_string.as_bytes())?.to_date_time_as_microseconds()
     }
 
-    pub fn to_chrono_utc(&self) -> DateTime<Utc> {
-        if self.unix_microseconds > 0 {
-            let d = UNIX_EPOCH + Duration::from_micros(self.unix_microseconds as u64);
-            DateTime::<Utc>::from(d)
-        } else {
-            let d = UNIX_EPOCH - Duration::from_micros(-self.unix_microseconds as u64);
-            DateTime::<Utc>::from(d)
-        }
-    }
-
     pub fn seconds_before(&self, before: DateTimeAsMicroseconds) -> i64 {
         (self.unix_microseconds - before.unix_microseconds) / super::MICRO_SECONDS_IN_ONE_SECOND
     }
@@ -172,8 +172,8 @@ impl DateTimeAsMicroseconds {
     }
 
     pub fn to_rfc3339(&self) -> String {
-        let chrono = self.to_chrono_utc();
-        return chrono.to_rfc3339();
+        let dt: DateTimeStruct = self.into();
+        return dt.to_rfc3339();
     }
 
     /// RFC 3339 in UTC with a `Z` suffix and fixed microsecond precision:
@@ -182,8 +182,8 @@ impl DateTimeAsMicroseconds {
     /// Unlike [`Self::to_rfc3339`] (which renders the zero offset as `+00:00`),
     /// the width is fixed, so lexicographic order matches chronological order.
     pub fn to_rfc3339_utc(&self) -> String {
-        let chrono = self.to_chrono_utc();
-        return chrono.to_rfc3339_opts(SecondsFormat::Micros, true);
+        let dt: DateTimeStruct = self.into();
+        return dt.to_rfc3339_utc();
     }
 
     pub fn to_rfc5322(&self) -> String {
@@ -1061,6 +1061,33 @@ mod tests {
             let result: Result<TestStruct, _> = serde_json::from_str(bad);
             assert!(result.is_err(), "expected an error for {}", bad);
         }
+    }
+
+    /// The whole `i64` range renders: past the year 262142 this used to panic.
+    #[test]
+    fn extreme_timestamps_render_instead_of_panicking() {
+        let max = DateTimeAsMicroseconds::new(i64::MAX);
+        assert_eq!("+294247-01-10T04:00:54.775807+00:00", max.to_rfc3339());
+        assert_eq!("+294247-01-10T04:00:54.775807Z", max.to_rfc3339_utc());
+        assert_eq!(
+            "\"+294247-01-10T04:00:54.775807Z\"",
+            serde_json::to_string(&max).unwrap()
+        );
+
+        let min = DateTimeAsMicroseconds::new(i64::MIN);
+        assert_eq!("-290308-12-21T19:59:05.224192+00:00", min.to_rfc3339());
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid date with year:2021, month:2, day:29")]
+    fn create_refuses_an_invalid_date() {
+        DateTimeAsMicroseconds::create(2021, 2, 29, 0, 0, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid date with hour:24, min:0, sec:0")]
+    fn create_refuses_an_invalid_time() {
+        DateTimeAsMicroseconds::create(2021, 2, 28, 24, 0, 0, 0);
     }
 
     #[test]

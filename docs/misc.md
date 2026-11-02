@@ -82,12 +82,4 @@ assert_eq!(name.to_string(), "acme");
 
 ## Re-exports
 
-`rust_extensions::chrono` is the `chrono` this crate is built with — use it to name the types that `DateTimeAsMicroseconds::to_chrono_utc()` returns without a version mismatch. `rust_extensions::macros` holds the derives.
-
-```rust
-use rust_extensions::chrono::{DateTime, Utc};
-use rust_extensions::date_time::DateTimeAsMicroseconds;
-
-let utc: DateTime<Utc> = DateTimeAsMicroseconds::new(0).to_chrono_utc();
-assert_eq!(utc.timestamp(), 0);
-```
+`rust_extensions::macros` holds the derives.

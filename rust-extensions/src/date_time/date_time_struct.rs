@@ -1,6 +1,4 @@
-use chrono::{Timelike, Weekday};
-
-use super::{DateTimeAsMicroseconds, TimeStruct};
+use super::{DateTimeAsMicroseconds, TimeStruct, Weekday};
 
 #[derive(Debug, Clone)]
 pub struct DateTimeStruct {
@@ -12,6 +10,29 @@ pub struct DateTimeStruct {
 }
 
 impl DateTimeStruct {
+    /// The fields of a unix timestamp. Days are floored, so before 1970 the time of day still
+    /// counts forward from midnight.
+    pub(super) fn from_unix_microseconds(unix_microseconds: i64) -> Self {
+        let days = unix_microseconds.div_euclid(super::MICRO_SECONDS_IN_ONE_DAY);
+        let time_of_day = unix_microseconds.rem_euclid(super::MICRO_SECONDS_IN_ONE_DAY);
+
+        let (year, month, day) = super::calendar::civil_from_days(days);
+        let seconds = time_of_day / super::MICRO_SECONDS_IN_ONE_SECOND;
+
+        Self {
+            year,
+            month,
+            day,
+            dow: Some(Weekday::from_unix_days(days)),
+            time: TimeStruct {
+                hour: (seconds / 3600) as u32,
+                min: (seconds / 60 % 60) as u32,
+                sec: (seconds % 60) as u32,
+                micros: (time_of_day % super::MICRO_SECONDS_IN_ONE_SECOND) as u32,
+            },
+        }
+    }
+
     pub fn is_date_the_same(&self, other: &Self) -> bool {
         self.year == other.year && self.month == other.month && self.day == other.day
     }
@@ -72,10 +93,9 @@ impl DateTimeStruct {
         match self.dow {
             Some(dow) => dow,
             None => {
-                use chrono::Datelike;
                 let dt = self.to_date_time_as_microseconds().unwrap();
-                let date = dt.to_chrono_utc();
-                date.weekday()
+                let days = dt.unix_microseconds.div_euclid(super::MICRO_SECONDS_IN_ONE_DAY);
+                Weekday::from_unix_days(days)
             }
         }
     }
@@ -141,47 +161,13 @@ mod test {
 
 impl Into<DateTimeStruct> for DateTimeAsMicroseconds {
     fn into(self) -> DateTimeStruct {
-        use chrono::Datelike;
-        let dt = self.to_chrono_utc();
-
-        let date = dt.date_naive();
-
-        let time = dt.time();
-        DateTimeStruct {
-            year: date.year(),
-            month: date.month(),
-            day: date.day(),
-            dow: Some(date.weekday()),
-            time: TimeStruct {
-                hour: time.hour(),
-                min: time.minute(),
-                sec: time.second(),
-                micros: time.nanosecond() / 1000,
-            },
-        }
+        DateTimeStruct::from_unix_microseconds(self.unix_microseconds)
     }
 }
 
 impl<'s> Into<DateTimeStruct> for &'s DateTimeAsMicroseconds {
     fn into(self) -> DateTimeStruct {
-        use chrono::Datelike;
-        let dt = self.to_chrono_utc();
-
-        let date = dt.date_naive();
-
-        let time = dt.time();
-        DateTimeStruct {
-            year: date.year(),
-            month: date.month(),
-            day: date.day(),
-            dow: Some(date.weekday()),
-            time: TimeStruct {
-                hour: time.hour(),
-                min: time.minute(),
-                sec: time.second(),
-                micros: time.nanosecond() / 1000,
-            },
-        }
+        DateTimeStruct::from_unix_microseconds(self.unix_microseconds)
     }
 }
 
